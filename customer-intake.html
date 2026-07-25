@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PoolLog — Customer Intake</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#114B4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F2E2E;
+  --surface:#F4F7F6;
+  --card:#FFFFFF;
+  --teal-deep:#114B4F;
+  --teal-mid:#1F8A8C;
+  --teal-pale:#E4F1EF;
+  --gold:#C68A17;
+  --green:#3E8F5F;
+  --rust:#B8492E;
+  --line:#DDE5E3;
+  --muted:#5E7371;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--surface);
+  color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;}
+
+header{
+  background:var(--teal-deep);
+  color:#fff;
+  padding:20px 20px 16px;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-mark{
+  width:34px;height:34px;border-radius:8px;
+  background:var(--teal-mid);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:-0.01em;}
+.brand p{margin:1px 0 0;font-size:12px;color:#B9D9D6;font-weight:500;}
+.back-link{
+  display:inline-block;margin-top:12px;font-size:13px;font-weight:600;
+  color:#fff;text-decoration:none;border-bottom:1px solid rgba(255,255,255,0.5);
+}
+
+main{max-width:640px;margin:0 auto;padding:18px 16px 60px;}
+
+.notice{
+  background:#FBF1DD;border:1px solid #E7CE95;color:#7A5A0C;
+  border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.5;margin-bottom:18px;
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:18px;
+  margin-bottom:16px;
+}
+.card h2{font-size:15px;margin-bottom:12px;}
+.field{margin-bottom:14px;}
+.field label{
+  display:block;font-size:12px;font-weight:600;color:var(--muted);
+  margin-bottom:5px;text-transform:uppercase;letter-spacing:0.03em;
+}
+input,select{
+  width:100%;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  font-size:15px;
+  font-family:'Inter',sans-serif;
+  background:#fff;
+  color:var(--ink);
+}
+input:focus,select:focus{outline:2px solid var(--teal-mid);outline-offset:1px;}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 16px;border-radius:9px;border:none;
+  font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.btn-primary{background:var(--teal-deep);color:#fff;width:100%;}
+.btn-primary:active{background:#0c3a3d;}
+.btn-ghost{background:transparent;color:var(--teal-deep);border:1px solid var(--line);width:auto;}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+.cust-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 4px;border-bottom:1px solid var(--line);
+}
+.cust-row:last-child{border-bottom:none;}
+.cust-name{font-weight:600;font-size:14.5px;}
+.cust-meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.empty{text-align:center;padding:36px 20px;color:var(--muted);}
+
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:var(--teal-deep);color:#fff;padding:10px 20px;border-radius:20px;
+  font-size:13px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;
+  z-index:50;
+}
+.toast.show{opacity:1;}
+
+.confirm-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(15,46,46,0.45);
+  display:flex;align-items:center;justify-content:center;
+  z-index:100;padding:20px;
+}
+.confirm-box{background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%;}
+.confirm-box p{font-size:14.5px;margin:0 0 16px;color:var(--ink);line-height:1.5;}
+.confirm-box .btn-row{gap:8px;}
+.confirm-box .btn{flex:1;width:auto;}
+
+.history-type-btn.active{background:var(--teal-deep);color:#fff;border-color:var(--teal-deep);}
+.hist-row{
+  display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 1fr;
+  gap:6px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;
+  align-items:center;
+}
+.hist-row.head{font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:0.02em;}
+.hist-val{font-family:'JetBrains Mono',monospace;font-weight:600;text-align:center;}
+.hist-val.low{color:var(--gold);}
+.hist-val.high{color:var(--rust);}
+.hist-val.ideal{color:var(--green);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C12 2 6 10 6 15C6 18.3 8.7 21 12 21C15.3 21 18 18.3 18 15C18 10 12 2 12 2Z" fill="#fff"/>
+      </svg>
+    </div>
+    <div>
+      <h1>PoolLog</h1>
+      <p>Customer intake</p>
+    </div>
+  </div>
+  <a class="back-link" href="pool-readings-app.html">← Back to the main app</a>
+</header>
+
+<main>
+  <div class="notice">
+    This page shares customer data with the main PoolLog app through your browser's on-device storage. That only works if this file and <strong>pool-readings-app.html</strong> stay in the same folder and are opened the same way (e.g. both saved to the same phone or computer). Add a test customer here, then open the main app to confirm it shows up before relying on this for real customers.
+  </div>
+
+  <div class="card" id="formCard">
+    <h2 id="formHeading">Add a customer</h2>
+    <div class="field"><label>Name</label><input id="icName" placeholder="Jordan Ellis"></div>
+    <div class="field"><label>Address</label><input id="icAddress" placeholder="142 Willow Creek Dr"></div>
+    <div class="field"><label>Email</label><input id="icEmail" type="email" placeholder="jordan@email.com"></div>
+    <div class="field"><label>Phone (for texting)</label><input id="icPhone" type="tel" placeholder="(555) 123-4567"></div>
+    <div class="field">
+      <label>Has</label>
+      <div class="btn-row" style="gap:16px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;"><input type="checkbox" id="icHasPool" style="width:auto;" checked> Pool</label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;"><input type="checkbox" id="icHasSpa" style="width:auto;"> Spa</label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Service day</label>
+      <select id="icDay">
+        <option value="Sunday">Sunday</option>
+        <option value="Monday" selected>Monday</option>
+        <option value="Tuesday">Tuesday</option>
+        <option value="Wednesday">Wednesday</option>
+        <option value="Thursday">Thursday</option>
+        <option value="Friday">Friday</option>
+        <option value="Saturday">Saturday</option>
+      </select>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnSave" style="width:auto;">Save customer</button>
+      <button class="btn btn-ghost" id="btnCancelEdit" style="display:none;">Cancel edit</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>All customers</h2>
+    <div id="customerList"></div>
+  </div>
+
+  <div class="card">
+    <h2>Reading history</h2>
+    <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Select a customer to see their logged readings.</p>
+    <div id="historyCustomerList"></div>
+  </div>
+  <div class="card" id="historyCard" style="display:none;">
+    <h2 id="historyTitle">History</h2>
+    <div class="btn-row" style="margin-bottom:12px;">
+      <button class="btn btn-ghost history-type-btn active" data-type="pool" style="width:auto;">Pool</button>
+      <button class="btn btn-ghost history-type-btn" data-type="spa" style="width:auto;">Spa</button>
+    </div>
+    <div class="hist-row head">
+      <div>Date</div><div>Cl</div><div>pH</div><div>TA</div><div>CYA</div><div>TDS</div>
+    </div>
+    <div id="historyList"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_PREFIX = 'poollog:';
+const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+function lsGet(key){
+  try{
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    return raw !== null ? JSON.parse(raw) : null;
+  }catch(e){
+    return null;
+  }
+}
+function lsSet(key, value){
+  try{
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+let customers = lsGet('customers') || [];
+let editingId = null;
+
+function saveCustomers(){
+  const ok = lsSet('customers', customers);
+  if(!ok) showToast('Could not save — your browser storage may be full');
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function confirmDialog(message){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <p>${message}</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+          <button class="btn btn-primary" id="confirmOk" style="background:var(--rust);">Delete</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const cleanup = (result)=>{
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
+    overlay.querySelector('#confirmCancel').addEventListener('click', ()=>cleanup(false));
+    overlay.querySelector('#confirmOk').addEventListener('click', ()=>cleanup(true));
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(false); });
+  });
+}
+
+function badgeText(c){
+  const parts = [];
+  if(c.hasPool !== false) parts.push('Pool');
+  if(c.hasSpa) parts.push('Spa');
+  return parts.length ? parts.join(' + ') : 'No pool/spa set';
+}
+
+const CHEMICALS = [
+  {key:'chlorine', label:'Chlorine', idealLow:2, idealHigh:4},
+  {key:'ph', label:'pH', idealLow:7.4, idealHigh:7.6},
+  {key:'alkalinity', label:'TA', idealLow:80, idealHigh:120},
+  {key:'cya', label:'CYA', idealLow:30, idealHigh:50},
+  {key:'tds', label:'TDS', idealLow:0, idealHigh:1500}
+];
+const SPA_CHEMICALS = [
+  {key:'chlorine', label:'Chlorine', idealLow:3, idealHigh:5},
+  {key:'ph', label:'pH', idealLow:7.4, idealHigh:7.6},
+  {key:'alkalinity', label:'TA', idealLow:80, idealHigh:100},
+  {key:'cya', label:'CYA', idealLow:0, idealHigh:20},
+  {key:'tds', label:'TDS', idealLow:0, idealHigh:1500}
+];
+
+function statusOf(chem, value){
+  if(value === null || value === undefined || value === '') return null;
+  const v = parseFloat(value);
+  if(isNaN(v)) return null;
+  if(v < chem.idealLow) return 'low';
+  if(v > chem.idealHigh) return 'high';
+  return 'ideal';
+}
+
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+}
+
+let selectedHistoryCustomerId = null;
+let selectedHistoryType = 'pool';
+
+function renderHistoryCustomerList(){
+  const container = document.getElementById('historyCustomerList');
+  if(customers.length === 0){
+    container.innerHTML = '<div class="empty">No customers yet.</div>';
+    document.getElementById('historyCard').style.display = 'none';
+    return;
+  }
+  container.innerHTML = '';
+  customers.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${badgeText(c)}</div></div>`;
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', ()=>showHistory(c.id, c.name));
+    container.appendChild(row);
+  });
+}
+
+function showHistory(customerId, name){
+  selectedHistoryCustomerId = customerId;
+  const type = selectedHistoryType;
+  const key = (type === 'spa' ? 'spaReadings:' : 'readings:') + customerId;
+  const list = lsGet(key) || [];
+  const card = document.getElementById('historyCard');
+  card.style.display = 'block';
+  document.getElementById('historyTitle').textContent = name + ' — ' + (type === 'spa' ? 'Spa' : 'Pool') + ' history';
+  const histList = document.getElementById('historyList');
+  const chemList = type === 'spa' ? SPA_CHEMICALS : CHEMICALS;
+  if(list.length === 0){
+    histList.innerHTML = '<div class="empty">No ' + (type === 'spa' ? 'spa' : 'pool') + ' readings logged yet for this customer.</div>';
+    return;
+  }
+  histList.innerHTML = '';
+  list.forEach(r=>{
+    const row = document.createElement('div');
+    row.className = 'hist-row';
+    let cells = `<div>${fmtDate(r.date)}</div>`;
+    chemList.forEach(chem=>{
+      const val = r[chem.key];
+      const st = statusOf(chem, val);
+      cells += `<div class="hist-val ${st || ''}">${val !== '' && val !== undefined ? val : '—'}</div>`;
+    });
+    row.innerHTML = cells;
+    histList.appendChild(row);
+  });
+}
+
+document.querySelectorAll('.history-type-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    selectedHistoryType = btn.dataset.type;
+    document.querySelectorAll('.history-type-btn').forEach(b=>b.classList.toggle('active', b === btn));
+    if(selectedHistoryCustomerId){
+      const cust = customers.find(c => c.id === selectedHistoryCustomerId);
+      if(cust) showHistory(selectedHistoryCustomerId, cust.name);
+    }
+  });
+});
+
+function resetForm(){
+  editingId = null;
+  document.getElementById('icName').value = '';
+  document.getElementById('icAddress').value = '';
+  document.getElementById('icEmail').value = '';
+  document.getElementById('icPhone').value = '';
+  document.getElementById('icDay').value = 'Monday';
+  document.getElementById('icHasPool').checked = true;
+  document.getElementById('icHasSpa').checked = false;
+  document.getElementById('formHeading').textContent = 'Add a customer';
+  document.getElementById('btnSave').textContent = 'Save customer';
+  document.getElementById('btnCancelEdit').style.display = 'none';
+}
+
+function editCustomer(c){
+  editingId = c.id;
+  document.getElementById('icName').value = c.name || '';
+  document.getElementById('icAddress').value = c.address || '';
+  document.getElementById('icEmail').value = c.email || '';
+  document.getElementById('icPhone').value = c.phone || '';
+  document.getElementById('icDay').value = c.day || 'Monday';
+  document.getElementById('icHasPool').checked = c.hasPool !== false;
+  document.getElementById('icHasSpa').checked = !!c.hasSpa;
+  document.getElementById('formHeading').textContent = 'Edit customer';
+  document.getElementById('btnSave').textContent = 'Save changes';
+  document.getElementById('btnCancelEdit').style.display = 'inline-flex';
+  document.getElementById('formCard').scrollIntoView({behavior:'smooth'});
+}
+
+async function deleteCustomer(c){
+  const confirmed = await confirmDialog(`Delete ${c.name}? This won't delete their past readings, but they'll disappear from customer lists.`);
+  if(!confirmed) return;
+  customers = customers.filter(x => x.id !== c.id);
+  saveCustomers();
+  renderList();
+  showToast('Customer deleted');
+}
+
+function renderList(){
+  const container = document.getElementById('customerList');
+  if(customers.length === 0){
+    container.innerHTML = '<div class="empty">No customers yet. Add one above.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  customers
+    .slice()
+    .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+    .forEach(c=>{
+      const row = document.createElement('div');
+      row.className = 'cust-row';
+      const dayLabel = c.day ? c.day : 'No day set';
+      row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${dayLabel} · ${badgeText(c)}</div></div>`;
+      const rightWrap = document.createElement('div');
+      rightWrap.style.display = 'flex';
+      rightWrap.style.gap = '8px';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost';
+      editBtn.style.padding = '6px 10px';
+      editBtn.style.fontSize = '12px';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', ()=>editCustomer(c));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-ghost';
+      delBtn.style.padding = '6px 10px';
+      delBtn.style.fontSize = '12px';
+      delBtn.style.color = 'var(--rust)';
+      delBtn.style.borderColor = '#EFC9BC';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', ()=>deleteCustomer(c));
+      rightWrap.appendChild(editBtn);
+      rightWrap.appendChild(delBtn);
+      row.appendChild(rightWrap);
+      container.appendChild(row);
+    });
+  renderHistoryCustomerList();
+}
+
+document.getElementById('btnCancelEdit').addEventListener('click', resetForm);
+
+document.getElementById('btnSave').addEventListener('click', ()=>{
+  const name = document.getElementById('icName').value.trim();
+  const address = document.getElementById('icAddress').value.trim();
+  const email = document.getElementById('icEmail').value.trim();
+  const phone = document.getElementById('icPhone').value.trim();
+  const day = document.getElementById('icDay').value;
+  const hasPool = document.getElementById('icHasPool').checked;
+  const hasSpa = document.getElementById('icHasSpa').checked;
+  if(!name){ showToast('Enter a customer name'); return; }
+
+  if(editingId){
+    const existing = customers.find(c => c.id === editingId);
+    if(existing){
+      existing.name = name;
+      existing.address = address;
+      existing.email = email;
+      existing.phone = phone;
+      existing.day = day;
+      existing.hasPool = hasPool;
+      existing.hasSpa = hasSpa;
+    }
+    saveCustomers();
+    renderList();
+    resetForm();
+    showToast('Customer updated');
+    return;
+  }
+
+  const id = 'cust_' + Date.now();
+  customers.push({id, name, address, email, phone, day, hasPool, hasSpa});
+  saveCustomers();
+  renderList();
+  resetForm();
+  showToast('Customer added');
+});
+
+renderList();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>

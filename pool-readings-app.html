@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PoolLog — Chemical Readings & Reports</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#114B4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F2E2E;
+  --surface:#F4F7F6;
+  --card:#FFFFFF;
+  --teal-deep:#114B4F;
+  --teal-mid:#1F8A8C;
+  --teal-pale:#E4F1EF;
+  --gold:#C68A17;
+  --green:#3E8F5F;
+  --rust:#B8492E;
+  --line:#DDE5E3;
+  --muted:#5E7371;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--surface);
+  color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+  padding-bottom:88px;
+}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;}
+.mono{font-family:'JetBrains Mono',monospace;}
+
+header{
+  background:var(--teal-deep);
+  color:#fff;
+  padding:20px 20px 16px;
+  position:sticky;
+  top:0;
+  z-index:10;
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-mark{
+  width:34px;height:34px;border-radius:8px;
+  background:var(--teal-mid);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:-0.01em;}
+.brand p{margin:1px 0 0;font-size:12px;color:#B9D9D6;font-weight:500;}
+
+nav{
+  display:flex;
+  gap:4px;
+  max-width:720px;
+  margin:0 auto;
+  padding:0 16px;
+}
+.tab{
+  flex:1;
+  text-align:center;
+  padding:10px 4px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--muted);
+  background:none;
+  border:none;
+  border-bottom:3px solid transparent;
+  cursor:pointer;
+}
+.tab.active{color:var(--teal-deep);border-bottom-color:var(--gold);}
+
+main{max-width:720px;margin:0 auto;padding:18px 16px 40px;}
+.view{display:none;}
+.view.active{display:block;}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:18px;
+  margin-bottom:16px;
+}
+.card h2{font-size:15px;margin-bottom:12px;}
+.field{margin-bottom:14px;}
+.field label{
+  display:block;font-size:12px;font-weight:600;color:var(--muted);
+  margin-bottom:5px;text-transform:uppercase;letter-spacing:0.03em;
+}
+input,select,textarea{
+  width:100%;
+  padding:10px 12px;
+  border:1px solid var(--line);
+  border-radius:9px;
+  font-size:15px;
+  font-family:'Inter',sans-serif;
+  background:#fff;
+  color:var(--ink);
+}
+input.mono{font-family:'JetBrains Mono',monospace;font-weight:600;}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--teal-mid);outline-offset:1px;}
+textarea{min-height:64px;resize:vertical;}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:11px 16px;border-radius:9px;border:none;
+  font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.btn-primary{background:var(--teal-deep);color:#fff;width:100%;}
+.btn-primary:active{background:#0c3a3d;}
+.btn-secondary{background:var(--teal-pale);color:var(--teal-deep);}
+.btn-ghost{background:transparent;color:var(--teal-deep);border:1px solid var(--line);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* Signature element: test-strip visual */
+.strip{
+  display:flex;
+  gap:6px;
+  margin-bottom:6px;
+}
+.pad{
+  flex:1;
+  border-radius:8px;
+  padding:10px 6px 8px;
+  text-align:center;
+  border:1.5px dashed var(--line);
+  background:#fafcfb;
+}
+.pad.filled{border-style:solid;}
+.pad.ideal{background:#EAF5EE;border-color:var(--green);}
+.pad.low{background:#FBF1DD;border-color:var(--gold);}
+.pad.high{background:#F7E7E1;border-color:var(--rust);}
+.pad .pad-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.02em;display:block;margin-bottom:4px;}
+.pad .pad-value{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:15px;display:block;}
+.pad.ideal .pad-value{color:#256B41;}
+.pad.low .pad-value{color:#8C620F;}
+.pad.high .pad-value{color:var(--rust);}
+.pad .pad-status{font-size:9.5px;font-weight:600;margin-top:2px;display:block;letter-spacing:0.02em;}
+.pad.ideal .pad-status{color:#256B41;}
+.pad.low .pad-status{color:#8C620F;}
+.pad.high .pad-status{color:var(--rust);}
+
+.legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin:0 0 16px;flex-wrap:wrap;}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.dot.ideal{background:var(--green);}
+.dot.low{background:var(--gold);}
+.dot.high{background:var(--rust);}
+
+.voice-row{
+  display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;
+}
+.btn-voice{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 14px;border-radius:9px;border:1px solid var(--line);
+  background:var(--teal-pale);color:var(--teal-deep);
+  font-size:13.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.btn-voice.listening{background:var(--rust);color:#fff;border-color:var(--rust);}
+.btn-voice .mic-dot{
+  width:8px;height:8px;border-radius:50%;background:currentColor;
+  animation:none;
+}
+.btn-voice.listening .mic-dot{animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+.voice-status{font-size:12px;color:var(--muted);}
+.voice-transcript{
+  display:none;background:#F7F5EF;border:1px solid var(--line);border-radius:9px;
+  padding:10px 12px;font-size:12.5px;color:var(--muted);margin-bottom:14px;min-height:20px;
+}
+.voice-hint{font-size:11.5px;color:var(--muted);margin:0 0 14px;}
+
+.empty{
+  text-align:center;padding:36px 20px;color:var(--muted);
+}
+.empty i{font-size:13px;}
+
+.cust-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;
+}
+.cust-row:last-child{border-bottom:none;}
+.cust-row:active{background:var(--teal-pale);}
+.cust-name{font-weight:600;font-size:14.5px;}
+.cust-meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.chev{color:var(--muted);font-size:18px;}
+
+.hist-row{
+  display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 1fr 28px;
+  gap:6px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;
+  align-items:center;
+}
+.hist-row.head{font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:0.02em;}
+.hist-row:not(.head):hover{background:var(--teal-pale);}
+.hist-val{font-family:'JetBrains Mono',monospace;font-weight:600;text-align:center;}
+.hist-val.low{color:var(--gold);}
+.hist-val.high{color:var(--rust);}
+.hist-val.ideal{color:var(--green);}
+.hist-del{
+  background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;
+  width:26px;height:26px;border-radius:6px;line-height:1;padding:0;
+}
+.hist-del:hover{color:var(--rust);background:#F7E7E1;}
+
+.report-doc{
+  background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:26px 24px;
+}
+.report-head{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  border-bottom:2px solid var(--teal-deep);padding-bottom:14px;margin-bottom:16px;
+}
+.report-head h2{color:var(--teal-deep);font-size:18px;}
+.report-head .rdate{font-size:12.5px;color:var(--muted);margin-top:3px;}
+.report-badge{
+  background:var(--teal-deep);color:#fff;font-size:11px;font-weight:600;
+  padding:5px 10px;border-radius:7px;white-space:nowrap;
+}
+.report-table{width:100%;font-size:13.5px;border-collapse:collapse;margin-bottom:14px;}
+.report-table td{padding:9px 4px;border-bottom:1px solid var(--line);}
+.report-table td:first-child{color:var(--muted);}
+.report-table td:last-child{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;}
+.report-notes{
+  background:var(--teal-pale);border-radius:9px;padding:12px 14px;font-size:13px;
+  color:var(--teal-deep);margin-top:8px;
+}
+.status-tag{font-size:10.5px;font-weight:700;margin-left:8px;letter-spacing:0.02em;}
+.status-tag.ideal{color:var(--green);}
+.status-tag.low{color:var(--gold);}
+.status-tag.high{color:var(--rust);}
+
+.bottombar{
+  position:fixed;bottom:0;left:0;right:0;
+  background:#fff;border-top:1px solid var(--line);
+  display:flex;max-width:720px;margin:0 auto;
+}
+.bottombar .tab{padding:12px 4px 10px;font-size:11.5px;}
+.bottombar .tab i{display:block;font-size:19px;margin-bottom:2px;}
+
+select#customerSelect{font-weight:600;}
+.toast{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  background:var(--teal-deep);color:#fff;padding:10px 20px;border-radius:20px;
+  font-size:13px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;
+  z-index:50;
+}
+.toast.show{opacity:1;}
+
+.confirm-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(15,46,46,0.45);
+  display:flex;align-items:center;justify-content:center;
+  z-index:100;padding:20px;
+}
+.confirm-box{
+  background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%;
+}
+.confirm-box p{font-size:14.5px;margin:0 0 16px;color:var(--ink);line-height:1.5;}
+.confirm-box .btn-row{gap:8px;}
+.confirm-box .btn{flex:1;width:auto;}
+.day-tab{padding:8px 12px;font-size:12.5px;}
+.day-tab.active{background:var(--teal-deep);color:#fff;border-color:var(--teal-deep);}
+@media (min-width:640px){
+  .bottombar{display:none;}
+  body{padding-bottom:0;}
+}
+@media (max-width:639px){
+  nav{display:none;}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C12 2 6 10 6 15C6 18.3 8.7 21 12 21C15.3 21 18 18.3 18 15C18 10 12 2 12 2Z" fill="#fff"/>
+      </svg>
+    </div>
+    <div>
+      <h1>PoolLog</h1>
+      <p>Chemical readings & reports</p>
+    </div>
+  </div>
+  <nav>
+    <button class="tab active" data-view="home">Today</button>
+    <button class="tab" data-view="log">Pool Readings</button>
+    <button class="tab" data-view="spa">Spa Readings</button>
+    <button class="tab" data-view="customers">Customer</button>
+    <button class="tab" data-view="report">Report</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- HOME VIEW -->
+  <div class="view active" id="view-home">
+    <div class="card">
+      <h2>Today's customers</h2>
+      <div class="btn-row" id="dayTabs" style="flex-wrap:wrap;margin-bottom:14px;"></div>
+      <div id="homeCustomerList"></div>
+    </div>
+  </div>
+
+  <!-- LOG READING VIEW -->
+  <div class="view" id="view-log">
+    <div class="card">
+      <h2>Customer & pool</h2>
+      <div class="field">
+        <label>Select customer</label>
+        <select id="customerSelect"></select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="btnNewCustomer">+ Add new customer</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Today's strip</h2>
+      <div class="voice-row">
+        <button class="btn-voice" id="btnVoice"><span class="mic-dot"></span><span id="voiceBtnLabel">Start voice entry</span></button>
+        <span class="voice-status" id="voiceStatus"></span>
+      </div>
+      <p class="voice-hint">Say readings naturally, e.g. "chlorine 2.5, ph 7.4, alkalinity 100." Works best in Chrome or Safari.</p>
+      <div class="voice-transcript" id="voiceTranscript"></div>
+      <div class="strip" id="stripPreview"></div>
+
+      <div class="field">
+        <label>Free chlorine (ppm)</label>
+        <input class="mono" type="number" step="0.1" id="inChlorine" placeholder="2.5">
+      </div>
+      <div class="field">
+        <label>pH level</label>
+        <input class="mono" type="number" step="0.1" id="inPh" placeholder="7.5">
+      </div>
+      <div class="field">
+        <label>Total alkalinity (ppm)</label>
+        <input class="mono" type="number" step="1" id="inAlk" placeholder="100">
+      </div>
+      <div class="field">
+        <label>Cyanuric acid (ppm)</label>
+        <input class="mono" type="number" step="1" id="inCya" placeholder="40">
+      </div>
+      <div class="field">
+        <label>TDS (ppm)</label>
+        <input class="mono" type="number" step="10" id="inTds" placeholder="900">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Products added</h2>
+      <div class="voice-row">
+        <button class="btn-voice" id="btnVoice2"><span class="mic-dot"></span><span id="voiceBtnLabel2">Start voice entry</span></button>
+        <span class="voice-status" id="voiceStatus2"></span>
+      </div>
+      <p class="voice-hint">Say things like "2 chlorine tabs, 1 pound of shock, 8 ounces of algaecide." Works best in Chrome or Safari.</p>
+      <div class="voice-transcript" id="voiceTranscript2"></div>
+      <div class="field">
+        <label>Chlorine tabs (count)</label>
+        <input class="mono" type="number" step="1" id="inTabs" placeholder="2">
+      </div>
+      <div class="field">
+        <label>Acid added (oz)</label>
+        <input class="mono" type="number" step="1" id="inAcid" placeholder="16">
+      </div>
+      <div class="field">
+        <label>Shock added (lbs)</label>
+        <input class="mono" type="number" step="0.5" id="inShock" placeholder="2">
+      </div>
+      <div class="field">
+        <label>Sodium bicarbonate added (lbs)</label>
+        <input class="mono" type="number" step="0.5" id="inSoda" placeholder="1">
+      </div>
+      <div class="field">
+        <label>Algaecide added (oz)</label>
+        <input class="mono" type="number" step="1" id="inAlgaecide" placeholder="8">
+      </div>
+      <div class="field">
+        <label>Phosphate remover added (oz)</label>
+        <input class="mono" type="number" step="1" id="inPhosphate" placeholder="4">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Photo</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Optional. Saved with this visit — you can send it along with the report.</p>
+      <div id="photoPreviewWrap" style="display:none;margin-bottom:12px;">
+        <img id="photoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btnTakePhoto" style="width:auto;">Take / choose photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhoto" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhoto" style="display:none;">
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label>Notes for customer (optional)</label>
+        <textarea id="inNotes" placeholder="Added 2 lbs shock, backwashed filter..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="btnSaveReading">Save reading</button>
+    </div>
+  </div>
+
+  <!-- SPA VIEW -->
+  <div class="view" id="view-spa">
+    <div class="card">
+      <h2>Customer & spa</h2>
+      <div class="field">
+        <label>Select customer</label>
+        <select id="spaCustomerSelect"></select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Today's spa strip</h2>
+      <div class="voice-row">
+        <button class="btn-voice" id="btnVoiceSpa1"><span class="mic-dot"></span><span id="voiceBtnLabelSpa1">Start voice entry</span></button>
+        <span class="voice-status" id="voiceStatusSpa1"></span>
+      </div>
+      <p class="voice-hint">Say readings naturally, e.g. "chlorine 4, ph 7.5, alkalinity 90." Works best in Chrome or Safari.</p>
+      <div class="voice-transcript" id="voiceTranscriptSpa1"></div>
+      <div class="strip" id="spaStripPreview"></div>
+
+      <div class="field">
+        <label>Free chlorine (ppm)</label>
+        <input class="mono" type="number" step="0.1" id="inSpaChlorine" placeholder="4">
+      </div>
+      <div class="field">
+        <label>pH level</label>
+        <input class="mono" type="number" step="0.1" id="inSpaPh" placeholder="7.5">
+      </div>
+      <div class="field">
+        <label>Total alkalinity (ppm)</label>
+        <input class="mono" type="number" step="1" id="inSpaAlk" placeholder="90">
+      </div>
+      <div class="field">
+        <label>Cyanuric acid (ppm)</label>
+        <input class="mono" type="number" step="1" id="inSpaCya" placeholder="10">
+      </div>
+      <div class="field">
+        <label>TDS (ppm)</label>
+        <input class="mono" type="number" step="10" id="inSpaTds" placeholder="800">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Products added</h2>
+      <div class="voice-row">
+        <button class="btn-voice" id="btnVoiceSpa2"><span class="mic-dot"></span><span id="voiceBtnLabelSpa2">Start voice entry</span></button>
+        <span class="voice-status" id="voiceStatusSpa2"></span>
+      </div>
+      <p class="voice-hint">Say things like "2 chlorine tabs, 1 pound of shock." Works best in Chrome or Safari.</p>
+      <div class="voice-transcript" id="voiceTranscriptSpa2"></div>
+      <div class="field">
+        <label>Chlorine tabs (count)</label>
+        <input class="mono" type="number" step="1" id="inSpaTabs" placeholder="1">
+      </div>
+      <div class="field">
+        <label>Acid added (oz)</label>
+        <input class="mono" type="number" step="1" id="inSpaAcid" placeholder="8">
+      </div>
+      <div class="field">
+        <label>Shock added (lbs)</label>
+        <input class="mono" type="number" step="0.5" id="inSpaShock" placeholder="0.5">
+      </div>
+      <div class="field">
+        <label>Sodium bicarbonate added (lbs)</label>
+        <input class="mono" type="number" step="0.5" id="inSpaSoda" placeholder="0.5">
+      </div>
+      <div class="field">
+        <label>Algaecide added (oz)</label>
+        <input class="mono" type="number" step="1" id="inSpaAlgaecide" placeholder="4">
+      </div>
+      <div class="field">
+        <label>Phosphate remover added (oz)</label>
+        <input class="mono" type="number" step="1" id="inSpaPhosphate" placeholder="2">
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Photo</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Optional. Saved with this visit — you can send it along with the report.</p>
+      <div id="photoPreviewWrapSpa" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btnTakePhotoSpa" style="width:auto;">Take / choose photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoSpa" style="display:none;">
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <label>Notes for customer (optional)</label>
+        <textarea id="inSpaNotes" placeholder="Drained and refilled, cleaned filter..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="btnSaveSpaReading">Save spa reading</button>
+    </div>
+  </div>
+
+  <!-- CUSTOMERS VIEW -->
+  <div class="view" id="view-customers">
+    <div class="card" id="newCustomerCard" style="display:none;">
+      <h2 id="newCustomerHeading">New customer</h2>
+      <div class="field"><label>Name</label><input id="ncName" placeholder="Jordan Ellis"></div>
+      <div class="field"><label>Pool / property address</label><input id="ncAddress" placeholder="142 Willow Creek Dr"></div>
+      <div class="field"><label>Email</label><input id="ncEmail" type="email" placeholder="jordan@email.com"></div>
+      <div class="field"><label>Phone (for texting)</label><input id="ncPhone" type="tel" placeholder="(555) 123-4567"></div>
+      <div class="field">
+        <label>Has</label>
+        <div class="btn-row" style="gap:16px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;"><input type="checkbox" id="ncHasPool" style="width:auto;" checked> Pool</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;"><input type="checkbox" id="ncHasSpa" style="width:auto;"> Spa</label>
+        </div>
+      </div>
+      <div class="field">
+        <label>Service day</label>
+        <select id="ncDay">
+          <option value="Sunday">Sunday</option>
+          <option value="Monday">Monday</option>
+          <option value="Tuesday">Tuesday</option>
+          <option value="Wednesday">Wednesday</option>
+          <option value="Thursday">Thursday</option>
+          <option value="Friday">Friday</option>
+          <option value="Saturday">Saturday</option>
+        </select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnSaveCustomer" style="width:auto;">Save customer</button>
+        <button class="btn btn-ghost" id="btnCancelCustomer">Cancel</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Your customers</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">
+        Prefer a bigger form for entering customers (e.g. at a desk instead of in the field)?
+        <a href="customer-intake.html" style="color:var(--teal-mid);font-weight:600;">Open the customer intake page →</a>
+      </p>
+      <div class="btn-row" style="margin-bottom:14px;">
+        <button class="btn btn-ghost" id="btnNewCustomerTab" style="width:auto;">+ Add new customer</button>
+      </div>
+      <div id="customerList"></div>
+    </div>
+    <div class="card">
+      <h2>Backup & restore</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Your data lives on this device only, so it works fully offline — but that also means it can be lost if you clear browser data or switch phones. Back it up regularly.</p>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btnExportBackup" style="width:auto;">Download backup (.json)</button>
+        <label class="btn btn-ghost" id="btnImportBackup" style="width:auto;cursor:pointer;">Restore from backup</label>
+      </div>
+      <input type="file" accept="application/json" id="importBackupInput" style="display:none;">
+    </div>
+  </div>
+
+  <!-- REPORT VIEW -->
+  <div class="view" id="view-report">
+    <div class="card">
+      <h2>Choose reading to send</h2>
+      <div class="field">
+        <label>Type</label>
+        <select id="reportTypeSelect">
+          <option value="pool">Pool</option>
+          <option value="spa">Spa</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Customer</label>
+        <select id="reportCustomerSelect"></select>
+      </div>
+      <div class="field">
+        <label>Reading date</label>
+        <select id="reportReadingSelect"></select>
+      </div>
+    </div>
+    <div id="reportOutput"></div>
+    <div class="btn-row" id="reportActions" style="display:none;">
+      <button class="btn btn-primary" id="btnSharePhoto" style="width:auto;display:none;">Share report + photo</button>
+      <button class="btn btn-secondary" id="btnCopyReport">Copy report text</button>
+      <button class="btn btn-secondary" id="btnEmailReport">Try opening email app</button>
+      <button class="btn btn-ghost" id="btnDownloadReport">Download .txt</button>
+      <button class="btn btn-ghost" id="btnDownloadPhoto" style="display:none;">Download photo</button>
+      <button class="btn btn-ghost" id="btnDeleteReport" style="color:var(--rust);border-color:#EFC9BC;">Delete this report</button>
+    </div>
+  </div>
+
+</main>
+
+<div class="bottombar">
+  <button class="tab active" data-view="home"><i>&#9679;</i>Today</button>
+  <button class="tab" data-view="log"><i>&#9679;</i>Pool</button>
+  <button class="tab" data-view="spa"><i>&#9679;</i>Spa</button>
+  <button class="tab" data-view="customers"><i>&#9679;</i>Customer</button>
+  <button class="tab" data-view="report"><i>&#9679;</i>Report</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CHEMICALS = [
+  {key:'chlorine', label:'Chlorine', full:'Free Chlorine', unit:'ppm', idealLow:2, idealHigh:5, hardLow:0, hardHigh:10, noStatus:true},
+  {key:'ph', label:'pH', full:'pH Level', unit:'', idealLow:7.2, idealHigh:7.6, hardLow:6.8, hardHigh:8.4, noStatus:true},
+  {key:'alkalinity', label:'TA', full:'Total Alkalinity', unit:'ppm', idealLow:80, idealHigh:120, hardLow:0, hardHigh:240, noStatus:true},
+  {key:'cya', label:'CYA', full:'Cyanuric Acid', unit:'ppm', idealLow:30, idealHigh:50, hardLow:0, hardHigh:120, noStatus:true},
+  {key:'tds', label:'TDS', full:'Total Dissolved Solids', unit:'ppm', idealLow:0, idealHigh:1500, hardLow:0, hardHigh:3500, noStatus:true}
+];
+
+const SPA_CHEMICALS = [
+  {key:'chlorine', label:'Chlorine', full:'Free Chlorine', unit:'ppm', idealLow:3, idealHigh:5, hardLow:0, hardHigh:10, noStatus:true},
+  {key:'ph', label:'pH', full:'pH Level', unit:'', idealLow:7.4, idealHigh:7.6, hardLow:6.8, hardHigh:8.4, noStatus:true},
+  {key:'alkalinity', label:'TA', full:'Total Alkalinity', unit:'ppm', idealLow:80, idealHigh:100, hardLow:0, hardHigh:240, noStatus:true},
+  {key:'cya', label:'CYA', full:'Cyanuric Acid', unit:'ppm', idealLow:0, idealHigh:20, hardLow:0, hardHigh:120, noStatus:true},
+  {key:'tds', label:'TDS', full:'Total Dissolved Solids', unit:'ppm', idealLow:0, idealHigh:1500, hardLow:0, hardHigh:3500, noStatus:true}
+];
+
+const PRODUCTS = [
+  {key:'tabs', label:'Chlorine tabs', unit:'', inputId:'inTabs'},
+  {key:'acid', label:'Acid', unit:'oz', inputId:'inAcid'},
+  {key:'shock', label:'Shock', unit:'lbs', inputId:'inShock'},
+  {key:'soda', label:'Sodium bicarbonate', unit:'lbs', inputId:'inSoda'},
+  {key:'algaecide', label:'Algaecide', unit:'oz', inputId:'inAlgaecide'},
+  {key:'phosphate', label:'Phosphate remover', unit:'oz', inputId:'inPhosphate'}
+];
+
+const SPA_PRODUCTS = [
+  {key:'tabs', label:'Chlorine tabs', unit:'', inputId:'inSpaTabs'},
+  {key:'acid', label:'Acid', unit:'oz', inputId:'inSpaAcid'},
+  {key:'shock', label:'Shock', unit:'lbs', inputId:'inSpaShock'},
+  {key:'soda', label:'Sodium bicarbonate', unit:'lbs', inputId:'inSpaSoda'},
+  {key:'algaecide', label:'Algaecide', unit:'oz', inputId:'inSpaAlgaecide'},
+  {key:'phosphate', label:'Phosphate remover', unit:'oz', inputId:'inSpaPhosphate'}
+];
+
+let customers = [];
+let readingsCache = {};
+
+function statusOf(chem, value){
+  if(value === null || value === undefined || value === '') return null;
+  const v = parseFloat(value);
+  if(isNaN(v)) return null;
+  if(v < chem.idealLow) return 'low';
+  if(v > chem.idealHigh) return 'high';
+  return 'ideal';
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function confirmDialog(message){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <p>${message}</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+          <button class="btn btn-primary" id="confirmOk" style="background:var(--rust);">Delete</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const cleanup = (result)=>{
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
+    overlay.querySelector('#confirmCancel').addEventListener('click', ()=>cleanup(false));
+    overlay.querySelector('#confirmOk').addEventListener('click', ()=>cleanup(true));
+    overlay.addEventListener('click', (e)=>{
+      if(e.target === overlay) cleanup(false);
+    });
+  });
+}
+
+function switchView(view){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+view).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.view === view);
+  });
+  if(view === 'customers'){
+    renderCustomerList();
+    hideCustomerForm();
+  }
+  if(view === 'report') refreshReportSelectors();
+  if(view === 'home') renderHomeList();
+  if(view === 'spa'){
+    const spaSel = document.getElementById('spaCustomerSelect');
+    const prevValue = spaSel.value;
+    populateCustomerSelect(spaSel);
+    if(prevValue) spaSel.value = prevValue;
+  }
+}
+
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>switchView(t.dataset.view));
+});
+
+const STORAGE_PREFIX = 'poollog:';
+
+function lsGet(key){
+  try{
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    return raw !== null ? JSON.parse(raw) : null;
+  }catch(e){
+    return null;
+  }
+}
+
+function lsSet(key, value){
+  try{
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function lsListKeys(prefix){
+  const keys = [];
+  const fullPrefix = STORAGE_PREFIX + prefix;
+  for(let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if(key && key.indexOf(fullPrefix) === 0){
+      keys.push(key.slice(STORAGE_PREFIX.length));
+    }
+  }
+  return keys;
+}
+
+async function loadCustomers(){
+  const stored = lsGet('customers');
+  customers = stored || [];
+}
+
+async function saveCustomers(){
+  const ok = lsSet('customers', customers);
+  if(!ok){
+    showToast('Could not save — your browser storage may be full');
+  }
+}
+
+function readingsStorageKey(customerId, type){
+  return (type === 'spa' ? 'spaReadings:' : 'readings:') + customerId;
+}
+function readingsCacheKey(customerId, type){
+  return (type === 'spa' ? 'spa:' : 'pool:') + customerId;
+}
+
+async function loadReadings(customerId, type='pool'){
+  const cacheKey = readingsCacheKey(customerId, type);
+  if(readingsCache[cacheKey]) return readingsCache[cacheKey];
+  const stored = lsGet(readingsStorageKey(customerId, type));
+  const list = stored || [];
+  readingsCache[cacheKey] = list;
+  return list;
+}
+
+async function saveReadings(customerId, list, type='pool'){
+  const cacheKey = readingsCacheKey(customerId, type);
+  readingsCache[cacheKey] = list;
+  const ok = lsSet(readingsStorageKey(customerId, type), list);
+  if(!ok){
+    showToast('Could not save reading — your browser storage may be full');
+  }
+}
+
+function populateCustomerSelect(selectEl, placeholder){
+  selectEl.innerHTML = '';
+  if(customers.length === 0){
+    const opt = document.createElement('option');
+    opt.textContent = placeholder || 'No customers yet';
+    opt.value = '';
+    selectEl.appendChild(opt);
+    return;
+  }
+  customers.forEach(c=>{
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    selectEl.appendChild(opt);
+  });
+}
+
+function renderStripGeneric(chemList, fieldIds, containerId){
+  const strip = document.getElementById(containerId);
+  const values = {};
+  chemList.forEach((chem, i)=>{
+    values[chem.key] = document.getElementById(fieldIds[i]).value;
+  });
+  strip.innerHTML = '';
+  chemList.forEach(chem=>{
+    const val = values[chem.key];
+    const hasValue = val !== '' && val !== undefined;
+    const st = chem.noStatus ? null : statusOf(chem, val);
+    const pad = document.createElement('div');
+    pad.className = 'pad' + (st ? ' filled '+st : (hasValue ? ' filled' : ''));
+    pad.innerHTML = `<span class="pad-label">${chem.label}</span>
+      <span class="pad-value">${hasValue ? val : '—'}</span>
+      <span class="pad-status">${st ? (st==='ideal'?'ideal':st) : ''}</span>`;
+    strip.appendChild(pad);
+  });
+}
+
+function renderStripPreview(){
+  renderStripGeneric(CHEMICALS, ['inChlorine','inPh','inAlk','inCya','inTds'], 'stripPreview');
+}
+
+function renderSpaStripPreview(){
+  renderStripGeneric(SPA_CHEMICALS, ['inSpaChlorine','inSpaPh','inSpaAlk','inSpaCya','inSpaTds'], 'spaStripPreview');
+}
+
+['inChlorine','inPh','inAlk','inCya','inTds'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderStripPreview);
+});
+
+['inSpaChlorine','inSpaPh','inSpaAlk','inSpaCya','inSpaTds'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderSpaStripPreview);
+});
+
+const FIELD_LABELS = {
+  inChlorine:'chlorine', inPh:'pH', inAlk:'alkalinity', inCya:'CYA', inTds:'TDS',
+  inTabs:'chlorine tabs', inAcid:'acid', inShock:'shock', inSoda:'sodium bicarbonate',
+  inAlgaecide:'algaecide', inPhosphate:'phosphate remover',
+  inSpaChlorine:'spa chlorine', inSpaPh:'spa pH', inSpaAlk:'spa alkalinity', inSpaCya:'spa CYA', inSpaTds:'spa TDS',
+  inSpaTabs:'spa chlorine tabs', inSpaAcid:'spa acid', inSpaShock:'spa shock', inSpaSoda:'spa sodium bicarbonate',
+  inSpaAlgaecide:'spa algaecide', inSpaPhosphate:'spa phosphate remover'
+};
+
+const VOICE_FIELDS = [
+  {phrases:['cyanuric acid','cya','stabilizer'], field:'inCya'},
+  {phrases:['sodium bicarbonate','baking soda','bicarbonate'], field:'inSoda'},
+  {phrases:['chlorine tabs','chlorine tab'], field:'inTabs'},
+  {phrases:['phosphate remover','phosphate'], field:'inPhosphate'},
+  {phrases:['free chlorine','chlorine'], field:'inChlorine'},
+  {phrases:['total alkalinity','alkalinity'], field:'inAlk'},
+  {phrases:['total dissolved solids','tds'], field:'inTds'},
+  {phrases:['algaecide'], field:'inAlgaecide'},
+  {phrases:['shock'], field:'inShock'},
+  {phrases:['acid'], field:'inAcid'},
+  {phrases:['ph level','ph'], field:'inPh'}
+];
+
+const SPA_VOICE_FIELDS = [
+  {phrases:['cyanuric acid','cya','stabilizer'], field:'inSpaCya'},
+  {phrases:['sodium bicarbonate','baking soda','bicarbonate'], field:'inSpaSoda'},
+  {phrases:['chlorine tabs','chlorine tab'], field:'inSpaTabs'},
+  {phrases:['phosphate remover','phosphate'], field:'inSpaPhosphate'},
+  {phrases:['free chlorine','chlorine'], field:'inSpaChlorine'},
+  {phrases:['total alkalinity','alkalinity'], field:'inSpaAlk'},
+  {phrases:['total dissolved solids','tds'], field:'inSpaTds'},
+  {phrases:['algaecide'], field:'inSpaAlgaecide'},
+  {phrases:['shock'], field:'inSpaShock'},
+  {phrases:['acid'], field:'inSpaAcid'},
+  {phrases:['ph level','ph'], field:'inSpaPh'}
+];
+
+const NUMBER_WORDS = {
+  'zero':0, 'a':1, 'an':1, 'one':1, 'two':2, 'three':3, 'four':4, 'five':5,
+  'six':6, 'seven':7, 'eight':8, 'nine':9, 'ten':10, 'eleven':11, 'twelve':12
+};
+const NUMBER_WORD_ALT = Object.keys(NUMBER_WORDS).sort((a,b)=>b.length-a.length).join('|');
+const NUMBER_TOKEN = '\\b(?:\\d+(?:\\.\\d+)?|' + NUMBER_WORD_ALT + ')\\b';
+
+function wordToNumber(token){
+  if(/^\d+(?:\.\d+)?$/.test(token)) return parseFloat(token);
+  const lower = token.toLowerCase();
+  return NUMBER_WORDS.hasOwnProperty(lower) ? NUMBER_WORDS[lower] : null;
+}
+
+function parseVoiceText(text, fieldSet){
+  let workingText = ' ' + text.toLowerCase() + ' ';
+  const updates = {};
+  fieldSet.forEach(entry=>{
+    const escaped = entry.phrases.map(p=>p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    const phraseAlt = escaped.join('|');
+    // Matches "2 pounds of shock" / "two tabs" (number first) OR "chlorine 2.5" / "ph is 7.4" (number after)
+    const pattern = new RegExp(
+      '(?:(?<num1>'+NUMBER_TOKEN+')\\s*(?:pounds?|lbs?|ounces?|oz|tabs?|of)*\\s*(?:'+phraseAlt+')\\b)' +
+      '|' +
+      '(?:\\b(?:'+phraseAlt+')\\b\\s*(?:is|of|at|to|reads?)?\\s*(?<num2>'+NUMBER_TOKEN+'))',
+      'gi'
+    );
+    let match; let lastMatch = null;
+    while((match = pattern.exec(workingText)) !== null){
+      lastMatch = match;
+      if(pattern.lastIndex === match.index) pattern.lastIndex++;
+    }
+    if(lastMatch){
+      const raw = lastMatch.groups.num1 || lastMatch.groups.num2;
+      const value = wordToNumber(raw);
+      if(value !== null){
+        updates[entry.field] = value;
+        const start = lastMatch.index;
+        const len = lastMatch[0].length;
+        workingText = workingText.slice(0,start) + ' '.repeat(len) + workingText.slice(start+len);
+      }
+    }
+  });
+  return updates;
+}
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function makeVoiceController(config){
+  // config: {fieldSet, buttonIds, labelIds, statusIds, transcriptIds, onUpdate}
+  let recognition = null;
+  let listening = false;
+  let finalTranscript = '';
+
+  function setButtonState(state){
+    listening = state;
+    config.buttonIds.forEach((btnId, i)=>{
+      document.getElementById(btnId).classList.toggle('listening', state);
+      document.getElementById(config.labelIds[i]).textContent = state ? 'Stop listening' : 'Start voice entry';
+    });
+  }
+
+  function setStatus(text){
+    config.statusIds.forEach(id=>{ document.getElementById(id).textContent = text; });
+  }
+
+  function setTranscript(text){
+    config.transcriptIds.forEach(id=>{
+      const el = document.getElementById(id);
+      el.style.display = 'block';
+      el.textContent = text;
+    });
+  }
+
+  function applyUpdates(updates){
+    const labels = [];
+    Object.keys(updates).forEach(fieldId=>{
+      const el = document.getElementById(fieldId);
+      if(el){
+        el.value = updates[fieldId];
+        labels.push(FIELD_LABELS[fieldId] || fieldId);
+      }
+    });
+    if(labels.length){
+      config.onUpdate();
+      showToast('Updated: ' + labels.join(', '));
+    }
+  }
+
+  function toggle(){
+    if(!SpeechRecognitionCtor){
+      setStatus('Voice entry isn\'t supported in this browser — try Chrome or Safari.');
+      return;
+    }
+
+    if(listening){
+      recognition && recognition.stop();
+      setButtonState(false);
+      setStatus('Stopped listening.');
+      return;
+    }
+
+    if(!recognition){
+      recognition = new SpeechRecognitionCtor();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event)=>{
+        let interim = '';
+        for(let i = event.resultIndex; i < event.results.length; i++){
+          const transcriptPiece = event.results[i][0].transcript;
+          if(event.results[i].isFinal){
+            finalTranscript += transcriptPiece + ' ';
+            const updates = parseVoiceText(transcriptPiece, config.fieldSet);
+            applyUpdates(updates);
+          } else {
+            interim += transcriptPiece;
+          }
+        }
+        setTranscript((finalTranscript + interim).trim() || 'Listening...');
+      };
+
+      recognition.onerror = (event)=>{
+        if(event.error === 'not-allowed' || event.error === 'service-not-allowed'){
+          setStatus('Microphone access was blocked. Allow it in your browser\'s site settings and try again.');
+        } else if(event.error === 'no-speech'){
+          setStatus('Didn\'t catch that — try again.');
+        } else {
+          setStatus('Voice entry stopped due to an error (' + event.error + ').');
+        }
+        setButtonState(false);
+      };
+
+      recognition.onend = ()=>{
+        if(listening){
+          try{ recognition.start(); }catch(e){ setButtonState(false); }
+        }
+      };
+    }
+
+    try{
+      finalTranscript = '';
+      setTranscript('Listening...');
+      setStatus('Listening — say your readings.');
+      recognition.start();
+      setButtonState(true);
+    }catch(e){
+      setStatus('Could not start listening. Try again.');
+      setButtonState(false);
+    }
+  }
+
+  config.buttonIds.forEach(btnId=>{
+    document.getElementById(btnId).addEventListener('click', toggle);
+  });
+
+  return {toggle};
+}
+
+makeVoiceController({
+  fieldSet: VOICE_FIELDS,
+  buttonIds: ['btnVoice', 'btnVoice2'],
+  labelIds: ['voiceBtnLabel', 'voiceBtnLabel2'],
+  statusIds: ['voiceStatus', 'voiceStatus2'],
+  transcriptIds: ['voiceTranscript', 'voiceTranscript2'],
+  onUpdate: renderStripPreview
+});
+
+makeVoiceController({
+  fieldSet: SPA_VOICE_FIELDS,
+  buttonIds: ['btnVoiceSpa1', 'btnVoiceSpa2'],
+  labelIds: ['voiceBtnLabelSpa1', 'voiceBtnLabelSpa2'],
+  statusIds: ['voiceStatusSpa1', 'voiceStatusSpa2'],
+  transcriptIds: ['voiceTranscriptSpa1', 'voiceTranscriptSpa2'],
+  onUpdate: renderSpaStripPreview
+});
+
+function resetCustomerForm(){
+  editingCustomerId = null;
+  document.getElementById('ncName').value = '';
+  document.getElementById('ncAddress').value = '';
+  document.getElementById('ncEmail').value = '';
+  document.getElementById('ncPhone').value = '';
+  document.getElementById('ncDay').value = 'Monday';
+  document.getElementById('ncHasPool').checked = true;
+  document.getElementById('ncHasSpa').checked = false;
+  document.getElementById('newCustomerHeading').textContent = 'New customer';
+  document.getElementById('btnSaveCustomer').textContent = 'Save customer';
+}
+
+function showCustomerForm(){
+  document.getElementById('newCustomerCard').style.display = 'block';
+  document.getElementById('newCustomerCard').scrollIntoView({behavior:'smooth'});
+}
+
+function hideCustomerForm(){
+  document.getElementById('newCustomerCard').style.display = 'none';
+}
+
+function resizeImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not load image'));
+      img.onload = () => {
+        let { width, height } = img;
+        if(width > maxDim || height > maxDim){
+          if(width > height){
+            height = Math.round(height * (maxDim / width));
+            width = maxDim;
+          } else {
+            width = Math.round(width * (maxDim / height));
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function makePhotoController(ids){
+  let currentDataUrl = null;
+  const takeBtn = document.getElementById(ids.takeBtn);
+  const fileInput = document.getElementById(ids.fileInput);
+  const previewWrap = document.getElementById(ids.previewWrap);
+  const previewImg = document.getElementById(ids.previewImg);
+  const removeBtn = document.getElementById(ids.removeBtn);
+
+  function showPreview(dataUrl){
+    currentDataUrl = dataUrl;
+    previewImg.src = dataUrl;
+    previewWrap.style.display = 'block';
+    removeBtn.style.display = 'inline-flex';
+  }
+
+  function clear(){
+    currentDataUrl = null;
+    previewImg.src = '';
+    previewWrap.style.display = 'none';
+    removeBtn.style.display = 'none';
+    fileInput.value = '';
+  }
+
+  takeBtn.addEventListener('click', ()=>{ fileInput.click(); });
+
+  fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await resizeImageFile(file, 1200, 0.7);
+      showPreview(dataUrl);
+    }catch(err){
+      showToast('Could not load that photo — try again');
+    }
+  });
+
+  removeBtn.addEventListener('click', clear);
+
+  return {
+    getData: ()=> currentDataUrl,
+    clear
+  };
+}
+
+const poolPhotoController = makePhotoController({
+  takeBtn: 'btnTakePhoto', fileInput: 'inPhoto',
+  previewWrap: 'photoPreviewWrap', previewImg: 'photoPreview', removeBtn: 'btnRemovePhoto'
+});
+
+const spaPhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoSpa', fileInput: 'inPhotoSpa',
+  previewWrap: 'photoPreviewWrapSpa', previewImg: 'photoPreviewSpa', removeBtn: 'btnRemovePhotoSpa'
+});
+
+document.getElementById('btnNewCustomer').addEventListener('click', ()=>{
+  resetCustomerForm();
+  switchView('customers');
+  showCustomerForm();
+});
+document.getElementById('btnNewCustomerTab').addEventListener('click', ()=>{
+  resetCustomerForm();
+  showCustomerForm();
+});
+document.getElementById('btnCancelCustomer').addEventListener('click', ()=>{
+  editingCustomerId = null;
+  hideCustomerForm();
+});
+
+document.getElementById('btnSaveCustomer').addEventListener('click', async ()=>{
+  const name = document.getElementById('ncName').value.trim();
+  const address = document.getElementById('ncAddress').value.trim();
+  const email = document.getElementById('ncEmail').value.trim();
+  const phone = document.getElementById('ncPhone').value.trim();
+  const day = document.getElementById('ncDay').value;
+  const hasPool = document.getElementById('ncHasPool').checked;
+  const hasSpa = document.getElementById('ncHasSpa').checked;
+  if(!name){ showToast('Enter a customer name'); return; }
+
+  if(editingCustomerId){
+    const existing = customers.find(c => c.id === editingCustomerId);
+    if(existing){
+      existing.name = name;
+      existing.address = address;
+      existing.email = email;
+      existing.phone = phone;
+      existing.day = day;
+      existing.hasPool = hasPool;
+      existing.hasSpa = hasSpa;
+    }
+    editingCustomerId = null;
+    await saveCustomers();
+    populateCustomerSelect(document.getElementById('customerSelect'));
+    populateCustomerSelect(document.getElementById('spaCustomerSelect'));
+    showToast('Customer updated');
+    renderHomeList();
+    renderCustomerList();
+    hideCustomerForm();
+    return;
+  }
+
+  const id = 'cust_' + Date.now();
+  customers.push({id, name, address, email, phone, day, hasPool, hasSpa});
+  await saveCustomers();
+  populateCustomerSelect(document.getElementById('customerSelect'));
+  document.getElementById('customerSelect').value = id;
+  populateCustomerSelect(document.getElementById('spaCustomerSelect'));
+  document.getElementById('spaCustomerSelect').value = id;
+  document.getElementById('ncName').value = '';
+  document.getElementById('ncAddress').value = '';
+  document.getElementById('ncEmail').value = '';
+  document.getElementById('ncPhone').value = '';
+  showToast('Customer added');
+  renderHomeList();
+  renderCustomerList();
+  hideCustomerForm();
+});
+
+async function sendReportAndNavigate(customerId, type, goToReport){
+  document.getElementById('reportTypeSelect').value = type;
+  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
+  document.getElementById('reportCustomerSelect').value = customerId;
+  await refreshReadingSelector(customerId, type);
+  if(goToReport) switchView('report');
+  await attemptAutoSend(customerId, type);
+}
+
+document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
+  const customerId = document.getElementById('customerSelect').value;
+  if(!customerId){ showToast('Select or add a customer first'); return; }
+  const reading = {
+    id: 'read_' + Date.now(),
+    date: new Date().toISOString(),
+    chlorine: document.getElementById('inChlorine').value,
+    ph: document.getElementById('inPh').value,
+    alkalinity: document.getElementById('inAlk').value,
+    cya: document.getElementById('inCya').value,
+    tds: document.getElementById('inTds').value,
+    notes: document.getElementById('inNotes').value.trim(),
+    photo: poolPhotoController.getData() || null
+  };
+  PRODUCTS.forEach(p=>{
+    reading[p.key] = document.getElementById(p.inputId).value;
+  });
+  const anyValue = CHEMICALS.some(c => reading[c.key] !== '') || PRODUCTS.some(p => reading[p.key] !== '') || reading.photo;
+  if(!anyValue){ showToast('Enter at least one reading or product'); return; }
+  const list = await loadReadings(customerId);
+  list.unshift(reading);
+  await saveReadings(customerId, list);
+  ['inChlorine','inPh','inAlk','inCya','inTds'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('inNotes').value = '';
+  PRODUCTS.forEach(p=>{ document.getElementById(p.inputId).value = ''; });
+  poolPhotoController.clear();
+  renderStripPreview();
+
+  const customer = customers.find(c => c.id === customerId);
+  const hasSpa = customer && customer.hasSpa;
+
+  if(hasSpa){
+    await sendReportAndNavigate(customerId, 'pool', false);
+    const spaSel = document.getElementById('spaCustomerSelect');
+    populateCustomerSelect(spaSel);
+    spaSel.value = customerId;
+    switchView('spa');
+    return;
+  }
+
+  await sendReportAndNavigate(customerId, 'pool', true);
+});
+
+document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=>{
+  const customerId = document.getElementById('spaCustomerSelect').value;
+  if(!customerId){ showToast('Select or add a customer first'); return; }
+  const reading = {
+    id: 'spa_' + Date.now(),
+    date: new Date().toISOString(),
+    chlorine: document.getElementById('inSpaChlorine').value,
+    ph: document.getElementById('inSpaPh').value,
+    alkalinity: document.getElementById('inSpaAlk').value,
+    cya: document.getElementById('inSpaCya').value,
+    tds: document.getElementById('inSpaTds').value,
+    notes: document.getElementById('inSpaNotes').value.trim(),
+    photo: spaPhotoController.getData() || null
+  };
+  SPA_PRODUCTS.forEach(p=>{
+    reading[p.key] = document.getElementById(p.inputId).value;
+  });
+  const anyValue = SPA_CHEMICALS.some(c => reading[c.key] !== '') || SPA_PRODUCTS.some(p => reading[p.key] !== '') || reading.photo;
+  if(!anyValue){ showToast('Enter at least one reading or product'); return; }
+  const list = await loadReadings(customerId, 'spa');
+  list.unshift(reading);
+  await saveReadings(customerId, list, 'spa');
+  ['inSpaChlorine','inSpaPh','inSpaAlk','inSpaCya','inSpaTds'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('inSpaNotes').value = '';
+  SPA_PRODUCTS.forEach(p=>{ document.getElementById(p.inputId).value = ''; });
+  spaPhotoController.clear();
+  renderSpaStripPreview();
+
+  await sendReportAndNavigate(customerId, 'spa', true);
+});
+
+
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+}
+
+const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const HOME_TABS = [...DAYS_OF_WEEK, 'Unassigned'];
+let selectedHomeDay = DAYS_OF_WEEK[new Date().getDay()];
+
+function renderDayTabs(){
+  const container = document.getElementById('dayTabs');
+  container.innerHTML = '';
+  HOME_TABS.forEach(day=>{
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost day-tab' + (day === selectedHomeDay ? ' active' : '');
+    btn.textContent = day === 'Unassigned' ? 'Unassigned' : day.slice(0,3);
+    btn.addEventListener('click', ()=>{
+      selectedHomeDay = day;
+      renderHomeList();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function poolSpaBadgeText(c){
+  const hasPool = c.hasPool !== false;
+  const hasSpa = !!c.hasSpa;
+  const parts = [];
+  if(hasPool) parts.push('Pool');
+  if(hasSpa) parts.push('Spa');
+  return parts.length ? parts.join(' + ') : 'No pool/spa set';
+}
+
+function renderHomeList(){
+  renderDayTabs();
+  const container = document.getElementById('homeCustomerList');
+  const todaysCustomers = selectedHomeDay === 'Unassigned'
+    ? customers.filter(c => !c.day)
+    : customers.filter(c => c.day === selectedHomeDay);
+  if(todaysCustomers.length === 0){
+    container.innerHTML = selectedHomeDay === 'Unassigned'
+      ? '<div class="empty">No customers without a service day — everyone\'s scheduled.</div>'
+      : `<div class="empty">No customers scheduled for ${selectedHomeDay}. Add one from the Log reading tab, or edit an existing customer's day from the Customers tab.</div>`;
+    return;
+  }
+  container.innerHTML = '';
+  todaysCustomers.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>`;
+    const rightWrap = document.createElement('div');
+    rightWrap.style.display = 'flex';
+    rightWrap.style.alignItems = 'center';
+    rightWrap.style.gap = '10px';
+    const onWayBtn = document.createElement('button');
+    onWayBtn.className = 'btn btn-secondary';
+    onWayBtn.style.width = 'auto';
+    onWayBtn.style.padding = '7px 12px';
+    onWayBtn.style.fontSize = '12px';
+    onWayBtn.textContent = 'On my way';
+    onWayBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      sendOnMyWay(c);
+    });
+    rightWrap.appendChild(onWayBtn);
+    const chev = document.createElement('div');
+    chev.className = 'chev';
+    chev.textContent = '›';
+    rightWrap.appendChild(chev);
+    row.appendChild(rightWrap);
+    row.addEventListener('click', ()=>{
+      populateCustomerSelect(document.getElementById('customerSelect'));
+      document.getElementById('customerSelect').value = c.id;
+      switchView('log');
+    });
+    container.appendChild(row);
+  });
+}
+
+function sendOnMyWay(customer){
+  const smsText = `Hi ${customer.name}, this is your pool tech — just a heads up that I'll be at your house soon to service your pool${customer.hasSpa ? ' and spa' : ''}. See you shortly!`;
+
+  if(customer.phone){
+    const digits = customer.phone.replace(/[^\d+]/g, '');
+    const encodedText = encodeURIComponent(smsText);
+    const link = document.createElement('a');
+    link.href = `sms:${digits}?body=${encodedText}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Text message opening — review and hit send');
+    return;
+  }
+
+  if(customer.email){
+    const subject = encodeURIComponent('On my way!');
+    const bodyText = `Hi ${customer.name},\n\nJust letting you know I'm on my way to service your pool${customer.hasSpa ? ' and spa' : ''} today.\n\nSee you soon!`;
+    const encodedBody = encodeURIComponent(bodyText);
+    const link = document.createElement('a');
+    link.href = `mailto:${customer.email}?subject=${subject}&body=${encodedBody}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('No phone on file — opening email instead');
+    return;
+  }
+
+  showToast('No phone or email on file for ' + customer.name);
+}
+
+async function renderCustomerList(){
+  const container = document.getElementById('customerList');
+  if(customers.length === 0){
+    container.innerHTML = '<div class="empty">No customers yet. Add one from the Log reading tab.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  customers.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    const dayLabel = c.day ? c.day : 'No day set';
+    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${dayLabel} · ${poolSpaBadgeText(c)}</div></div>`;
+    const rightWrap = document.createElement('div');
+    rightWrap.style.display = 'flex';
+    rightWrap.style.alignItems = 'center';
+    rightWrap.style.gap = '10px';
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-ghost';
+    editBtn.style.width = 'auto';
+    editBtn.style.padding = '6px 10px';
+    editBtn.style.fontSize = '12px';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openCustomerEditor(c);
+    });
+    rightWrap.appendChild(editBtn);
+    const chev = document.createElement('div');
+    chev.className = 'chev';
+    chev.textContent = '›';
+    rightWrap.appendChild(chev);
+    row.appendChild(rightWrap);
+    row.addEventListener('click', ()=>openCustomerEditor(c));
+    container.appendChild(row);
+  });
+}
+
+let editingCustomerId = null;
+
+function openCustomerEditor(customer){
+  editingCustomerId = customer.id;
+  document.getElementById('ncName').value = customer.name || '';
+  document.getElementById('ncAddress').value = customer.address || '';
+  document.getElementById('ncEmail').value = customer.email || '';
+  document.getElementById('ncPhone').value = customer.phone || '';
+  document.getElementById('ncDay').value = customer.day || 'Monday';
+  document.getElementById('ncHasPool').checked = customer.hasPool !== false;
+  document.getElementById('ncHasSpa').checked = !!customer.hasSpa;
+  document.getElementById('newCustomerHeading').textContent = 'Edit customer';
+  document.getElementById('btnSaveCustomer').textContent = 'Save changes';
+  switchView('customers');
+  showCustomerForm();
+}
+
+document.getElementById('btnExportBackup').addEventListener('click', async ()=>{
+  const backup = { exportedAt: new Date().toISOString(), customers: customers, readings: {}, spaReadings: {} };
+  for(const c of customers){
+    backup.readings[c.id] = await loadReadings(c.id, 'pool');
+    backup.spaReadings[c.id] = await loadReadings(c.id, 'spa');
+  }
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const dateStr = new Date().toISOString().slice(0,10);
+  a.download = `poollog-backup-${dateStr}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Backup downloaded');
+});
+
+document.getElementById('btnImportBackup').addEventListener('click', ()=>{
+  document.getElementById('importBackupInput').click();
+});
+
+document.getElementById('importBackupInput').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    if(!backup || !Array.isArray(backup.customers)){
+      showToast('That doesn\'t look like a valid backup file');
+      e.target.value = '';
+      return;
+    }
+    const confirmed = await confirmDialog('Restoring this backup will replace all customers and readings currently on this device. Continue?');
+    if(!confirmed){ e.target.value = ''; return; }
+
+    customers = backup.customers;
+    await saveCustomers();
+    readingsCache = {};
+    const readingsData = backup.readings || {};
+    for(const customerId of Object.keys(readingsData)){
+      await saveReadings(customerId, readingsData[customerId], 'pool');
+    }
+    const spaReadingsData = backup.spaReadings || {};
+    for(const customerId of Object.keys(spaReadingsData)){
+      await saveReadings(customerId, spaReadingsData[customerId], 'spa');
+    }
+
+    populateCustomerSelect(document.getElementById('customerSelect'));
+    populateCustomerSelect(document.getElementById('spaCustomerSelect'));
+    renderCustomerList();
+    renderHomeList();
+    showToast('Backup restored');
+  }catch(err){
+    showToast('Could not read that file — is it a PoolLog backup?');
+  }
+  e.target.value = '';
+});
+
+async function refreshReportSelectors(){
+  const type = document.getElementById('reportTypeSelect').value;
+  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
+  const custId = document.getElementById('reportCustomerSelect').value;
+  if(custId) await refreshReadingSelector(custId, type);
+}
+
+async function refreshReadingSelector(customerId, type='pool'){
+  const list = await loadReadings(customerId, type);
+  const sel = document.getElementById('reportReadingSelect');
+  sel.innerHTML = '';
+  if(list.length === 0){
+    const opt = document.createElement('option');
+    opt.textContent = 'No ' + (type === 'spa' ? 'spa' : 'pool') + ' readings yet';
+    opt.value = '';
+    sel.appendChild(opt);
+    document.getElementById('reportOutput').innerHTML = '';
+    document.getElementById('reportActions').style.display = 'none';
+    document.getElementById('btnDownloadPhoto').style.display = 'none';
+    document.getElementById('btnSharePhoto').style.display = 'none';
+    return;
+  }
+  list.forEach(r=>{
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = fmtDate(r.date);
+    sel.appendChild(opt);
+  });
+  renderReport(customerId, list[0].id, type);
+}
+
+document.getElementById('reportTypeSelect').addEventListener('change', ()=>{
+  refreshReportSelectors();
+});
+document.getElementById('reportCustomerSelect').addEventListener('change', (e)=>{
+  const type = document.getElementById('reportTypeSelect').value;
+  refreshReadingSelector(e.target.value, type);
+});
+document.getElementById('reportReadingSelect').addEventListener('change', (e)=>{
+  const custId = document.getElementById('reportCustomerSelect').value;
+  const type = document.getElementById('reportTypeSelect').value;
+  renderReport(custId, e.target.value, type);
+});
+
+let currentReportText = '';
+
+async function renderReport(customerId, readingId, type='pool'){
+  if(!customerId || !readingId) return;
+  const customer = customers.find(c=>c.id===customerId);
+  const list = await loadReadings(customerId, type);
+  const reading = list.find(r=>r.id===readingId);
+  if(!customer || !reading) return;
+
+  const chemList = type === 'spa' ? SPA_CHEMICALS : CHEMICALS;
+  const reportLabel = type === 'spa' ? 'Spa service report' : 'Pool service report';
+  const reportLabelUpper = type === 'spa' ? 'SPA SERVICE REPORT' : 'POOL SERVICE REPORT';
+
+  const out = document.getElementById('reportOutput');
+  let rowsHtml = '';
+  let rowsText = '';
+  chemList.forEach(chem=>{
+    const val = reading[chem.key];
+    const st = chem.noStatus ? null : statusOf(chem, val);
+    const display = val !== '' && val !== undefined ? val + (chem.unit ? ' '+chem.unit : '') : 'not tested';
+    rowsHtml += `<tr><td>${chem.full}</td><td>${display}${st ? `<span class="status-tag ${st}">${st.toUpperCase()}</span>` : ''}</td></tr>`;
+    rowsText += `${chem.full}: ${display}${st ? ' ['+st.toUpperCase()+']' : ''}\n`;
+  });
+
+  let productsHtml = '';
+  let productsText = '';
+  const usedProducts = PRODUCTS.filter(p => reading[p.key] !== '' && reading[p.key] !== undefined);
+  if(usedProducts.length){
+    let prows = '';
+    usedProducts.forEach(p=>{
+      const display = reading[p.key] + (p.unit ? ' '+p.unit : '');
+      prows += `<tr><td>${p.label}</td><td>${display}</td></tr>`;
+      productsText += `${p.label}: ${display}\n`;
+    });
+    productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Products added</h3><table class="report-table">${prows}</table>`;
+  }
+
+  const photoHtml = reading.photo
+    ? `<div style="margin-top:14px;"><img src="${reading.photo}" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo"></div>`
+    : '';
+
+  out.innerHTML = `
+    <div class="report-doc">
+      <div class="report-head">
+        <div>
+          <h2>${reportLabel}</h2>
+          <div class="rdate">${customer.name}${customer.address ? ' — '+customer.address : ''}</div>
+          <div class="rdate">${fmtDate(reading.date)}</div>
+        </div>
+        <div class="report-badge">Serviced</div>
+      </div>
+      <table class="report-table">${rowsHtml}</table>
+      ${productsHtml}
+      ${reading.notes ? `<div class="report-notes">${reading.notes}</div>` : ''}
+      ${photoHtml}
+    </div>
+  `;
+
+  currentReportText = `${reportLabelUpper}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(reading.date)}\n\n${rowsText}${productsText ? '\nPRODUCTS ADDED\n'+productsText : ''}${reading.notes ? '\nNotes: '+reading.notes : ''}${reading.photo ? '\n\n[A photo from this visit is available — use "Share report + photo" to send it together, or "Download photo" to attach it manually.]' : ''}`;
+
+  document.getElementById('reportActions').style.display = 'flex';
+  document.getElementById('reportActions').dataset.email = customer.email || '';
+  document.getElementById('reportActions').dataset.customerName = customer.name;
+  document.getElementById('reportActions').dataset.customerId = customerId;
+  document.getElementById('reportActions').dataset.readingId = readingId;
+  document.getElementById('reportActions').dataset.type = type;
+  document.getElementById('reportActions').dataset.photo = reading.photo || '';
+
+  const downloadPhotoBtn = document.getElementById('btnDownloadPhoto');
+  const sharePhotoBtn = document.getElementById('btnSharePhoto');
+  if(reading.photo){
+    downloadPhotoBtn.style.display = 'inline-flex';
+    downloadPhotoBtn.dataset.photo = reading.photo;
+    sharePhotoBtn.style.display = navigator.share ? 'inline-flex' : 'none';
+  } else {
+    downloadPhotoBtn.style.display = 'none';
+    downloadPhotoBtn.dataset.photo = '';
+    sharePhotoBtn.style.display = 'none';
+  }
+}
+
+document.getElementById('btnCopyReport').addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(currentReportText);
+    showToast('Report copied');
+  }catch(e){
+    showToast('Could not copy — select text manually');
+  }
+});
+
+async function attemptAutoSend(customerId, type){
+  const actions = document.getElementById('reportActions');
+  const email = actions.dataset.email;
+  const custName = actions.dataset.customerName;
+  const photo = actions.dataset.photo;
+
+  if(!email){
+    showToast('Saved — no email on file, so review and send manually');
+    return;
+  }
+
+  // Prefer native share (can actually attach the photo as a real file)
+  if(photo && navigator.share){
+    try{
+      const res = await fetch(photo);
+      const blob = await res.blob();
+      const file = new File([blob], 'visit-photo.jpg', {type: blob.type || 'image/jpeg'});
+      const canShareFile = !navigator.canShare || navigator.canShare({files:[file]});
+      if(canShareFile){
+        const shareText = 'To: ' + email + '\n\n' + currentReportText;
+        await navigator.share({
+          title: (type === 'spa' ? 'Spa' : 'Pool') + ' service report — ' + custName,
+          text: shareText,
+          files: [file]
+        });
+        showToast('Share sheet opened — pick an app and hit send');
+        return;
+      }
+    }catch(err){
+      if(err && err.name === 'AbortError'){
+        showToast('Send cancelled — report is ready below whenever you want it');
+        return;
+      }
+      // fall through to mailto below on other errors
+    }
+  }
+
+  // Fallback: open a pre-filled email draft (text only — mailto can't attach files)
+  const subject = encodeURIComponent((type === 'spa' ? 'Spa' : 'Pool') + ' service report — ' + custName);
+  let clipboardOk = false;
+  try{
+    await navigator.clipboard.writeText(currentReportText);
+    clipboardOk = true;
+  }catch(e){
+    clipboardOk = false;
+  }
+  const encodedBody = encodeURIComponent(currentReportText);
+  const MAX_BODY_LENGTH = 1500;
+  let body;
+  if(encodedBody.length > MAX_BODY_LENGTH){
+    const shortNote = clipboardOk
+      ? 'The full report is long, so it didn\'t fit in this draft. It has been copied to your clipboard — paste it here before sending.'
+      : 'The full report is long, so it didn\'t fit in this draft. Go back and tap "Copy report text", then paste it here before sending.';
+    body = encodeURIComponent(shortNote);
+  } else {
+    body = encodedBody;
+  }
+  const link = document.createElement('a');
+  link.href = `mailto:${email}?subject=${subject}&body=${body}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  if(photo){
+    showToast('Email opening — remember to attach the photo (see Download photo)');
+  } else if(encodedBody.length > MAX_BODY_LENGTH){
+    showToast(clipboardOk ? 'Report copied — paste it into the email' : 'Copy the report, then paste it into the email');
+  } else {
+    showToast('Email app opening — review and hit send');
+  }
+}
+
+document.getElementById('btnEmailReport').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+});
+
+document.getElementById('btnDownloadReport').addEventListener('click', ()=>{
+  const blob = new Blob([currentReportText], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pool-report.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('btnDownloadPhoto').addEventListener('click', (e)=>{
+  const photo = e.currentTarget.dataset.photo;
+  if(!photo) return;
+  const a = document.createElement('a');
+  a.href = photo;
+  a.download = 'visit-photo.jpg';
+  a.click();
+  showToast('Photo downloaded — attach it in your email');
+});
+
+document.getElementById('btnSharePhoto').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  if(!navigator.share){
+    showToast('Sharing isn\'t supported on this device — use Download photo instead');
+    return;
+  }
+  if(!actions.dataset.photo){
+    showToast('No photo on this reading');
+    return;
+  }
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+});
+
+document.getElementById('btnDeleteReport').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  const customerId = actions.dataset.customerId;
+  const readingId = actions.dataset.readingId;
+  const type = actions.dataset.type || 'pool';
+  if(!customerId || !readingId) return;
+  const confirmed = await confirmDialog('Delete this service report? This can\'t be undone.');
+  if(!confirmed) return;
+  const list = await loadReadings(customerId, type);
+  const updated = list.filter(r => r.id !== readingId);
+  await saveReadings(customerId, updated, type);
+  showToast('Reading deleted');
+  await refreshReadingSelector(customerId, type);
+});
+
+async function init(){
+  await loadCustomers();
+  populateCustomerSelect(document.getElementById('customerSelect'));
+  populateCustomerSelect(document.getElementById('spaCustomerSelect'));
+  renderStripPreview();
+  renderSpaStripPreview();
+  renderHomeList();
+}
+init();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
