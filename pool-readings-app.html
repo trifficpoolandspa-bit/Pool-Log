@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PoolLog — Chemical Readings & Reports</title>
 <link rel="manifest" href="./manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <meta name="theme-color" content="#114B4F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -1650,6 +1651,46 @@ document.getElementById('btnCopyReport').addEventListener('click', async ()=>{
   }
 });
 
+// Fill these in with your EmailJS values (see setup instructions), then true one-press sending
+// (no share sheet, no manual "To" field) will happen automatically instead of the fallbacks below.
+const EMAILJS_PUBLIC_KEY = 'bfwHISvPYiHm3NP4i';
+const EMAILJS_SERVICE_ID = 'service_6i1y90b';
+const EMAILJS_TEMPLATE_ID = 'su31npb';
+
+function emailjsIsConfigured(){
+  return EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY'
+    && EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID'
+    && EMAILJS_TEMPLATE_ID !== 'YOUR_TEMPLATE_ID'
+    && typeof emailjs !== 'undefined';
+}
+
+async function sendViaEmailJS(customerId, type){
+  const actions = document.getElementById('reportActions');
+  const email = actions.dataset.email;
+  const custName = actions.dataset.customerName;
+  const photo = actions.dataset.photo;
+
+  const templateParams = {
+    to_email: email,
+    subject: (type === 'spa' ? 'Spa' : 'Pool') + ' service report — ' + custName,
+    message: currentReportText
+  };
+  if(photo){
+    // Strip the "data:image/jpeg;base64," prefix — EmailJS wants the raw base64 content
+    templateParams.photo_attachment = photo.split(',')[1] || '';
+  }
+
+  try{
+    emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+    showToast('Report sent to ' + email);
+    return true;
+  }catch(err){
+    showToast('Automatic send failed — falling back to manual review');
+    return false;
+  }
+}
+
 async function attemptAutoSend(customerId, type){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
@@ -1659,6 +1700,13 @@ async function attemptAutoSend(customerId, type){
   if(!email){
     showToast('Saved — no email on file, so review and send manually');
     return;
+  }
+
+  // True one-press send, once EmailJS is configured — no share sheet, no manual "To" field
+  if(emailjsIsConfigured()){
+    const sent = await sendViaEmailJS(customerId, type);
+    if(sent) return;
+    // fall through to the manual fallbacks below if sending failed
   }
 
   // Prefer native share (can actually attach the photo as a real file)
