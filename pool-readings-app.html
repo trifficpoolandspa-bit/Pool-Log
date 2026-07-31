@@ -1619,7 +1619,7 @@ async function renderReport(customerId, readingId, type='pool'){
     </div>
   `;
 
-  currentReportText = `${reportLabelUpper}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(reading.date)}\n\n${rowsText}${productsText ? '\nPRODUCTS ADDED\n'+productsText : ''}${reading.notes ? '\nNotes: '+reading.notes : ''}${reading.photo ? '\n\n[A photo from this visit is available — use "Share report + photo" to send it together, or "Download photo" to attach it manually.]' : ''}`;
+  currentReportText = `${reportLabelUpper}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(reading.date)}\n\n${rowsText}${productsText ? '\nPRODUCTS ADDED\n'+productsText : ''}${reading.notes ? '\nNotes: '+reading.notes : ''}`;
 
   document.getElementById('reportActions').style.display = 'flex';
   document.getElementById('reportActions').dataset.email = customer.email || '';
