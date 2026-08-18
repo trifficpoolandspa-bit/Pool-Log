@@ -1,6 +1,8 @@
-const CACHE_NAME = 'poollog-cache-v1';
+const CACHE_NAME = 'poollog-cache-v4';
 const PRECACHE_URLS = [
-  './pool-readings-app.html',
+  './index.html',
+  './technician-app.html',
+  './admin-readings-app.html',
   './customer-intake.html',
   './manifest.json',
   './icon.svg'
@@ -37,6 +39,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cached);
 
+      // Serve from cache instantly if we have it, but still update the cache in the background
       return cached || fetchPromise;
     })
   );

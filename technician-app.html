@@ -1,0 +1,3585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PoolLog Technician — Chemical Readings & Reports</title>
+<link rel="manifest" href="./manifest.json">
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<meta name="theme-color" content="#114B4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F2E2E;
+  --surface:#EDF3F2;
+  --card:#FFFFFF;
+  --teal-deep:#114B4F;
+  --teal-mid:#1F8A8C;
+  --teal-pale:#E4F1EF;
+  --gold:#C68A17;
+  --green:#3E8F5F;
+  --rust:#B8492E;
+  --line:#DDE5E3;
+  --muted:#5E7371;
+  --shadow-sm:0 1px 2px rgba(15,46,46,0.04), 0 2px 8px rgba(15,46,46,0.05);
+  --shadow-md:0 2px 4px rgba(15,46,46,0.05), 0 8px 24px rgba(15,46,46,0.07);
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--surface);
+  color:var(--ink);
+  font-family:'Inter',system-ui,sans-serif;
+  padding-bottom:74px;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;}
+.mono{font-family:'JetBrains Mono',monospace;}
+
+header{
+  background:linear-gradient(168deg,#16585C 0%,var(--teal-deep) 55%,#0D3E42 100%);
+  color:#fff;
+  padding:20px 20px 16px;
+  position:sticky;
+  top:0;
+  z-index:10;
+  box-shadow:0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 20px rgba(15,46,46,0.18);
+}
+.brand{display:flex;align-items:center;gap:10px;}
+.brand-mark{
+  width:34px;height:34px;border-radius:8px;
+  background:var(--teal-mid);
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+  box-shadow:0 0 0 1px rgba(255,255,255,0.14), 0 2px 8px rgba(0,0,0,0.18);
+}
+.brand h1{font-size:19px;font-weight:700;letter-spacing:-0.015em;}
+.brand p{margin:1px 0 0;font-size:12px;color:#B9D9D6;font-weight:500;}
+
+nav{
+  display:flex;
+  gap:4px;
+  max-width:720px;
+  margin:0 auto;
+  padding:0 16px;
+}
+.tab{
+  flex:1;
+  text-align:center;
+  padding:11px 4px;
+  font-size:13px;
+  font-weight:600;
+  color:var(--muted);
+  background:none;
+  border:none;
+  border-bottom:3px solid transparent;
+  cursor:pointer;
+  letter-spacing:0.01em;
+  transition:color .15s ease, border-color .15s ease;
+}
+.tab.active{color:var(--teal-deep);border-bottom-color:var(--gold);}
+
+main{max-width:720px;margin:0 auto;padding:12px 14px 20px;}
+.view{display:none;}
+.view.active{display:block;}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:14px 16px;
+  margin-bottom:12px;
+  box-shadow:var(--shadow-sm);
+}
+.card h2{
+  font-size:18px;
+  letter-spacing:-0.015em;
+  margin-bottom:10px;
+}
+.field{margin-bottom:11px;}
+.field label{
+  display:block;
+  font-family:'JetBrains Mono',monospace;
+  font-size:15px;font-weight:600;color:var(--teal-mid);
+  margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;
+}
+input,select,textarea{
+  width:100%;
+  padding:9px 12px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  font-size:16px;
+  font-family:'Inter',sans-serif;
+  background:#fff;
+  color:var(--ink);
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+input.mono{font-family:'JetBrains Mono',monospace;font-weight:600;font-size:18px;}
+input:focus,select:focus,textarea:focus{
+  outline:none;
+  border-color:var(--teal-mid);
+  box-shadow:0 0 0 3px rgba(31,138,140,0.15);
+}
+input::placeholder{color:#A9BCB9;font-size:13px;}
+textarea{min-height:52px;resize:vertical;}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:10px 16px;border-radius:10px;border:none;
+  font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+  transition:transform .08s ease, background-color .15s ease, box-shadow .15s ease;
+}
+.btn:active{transform:scale(0.97);}
+.btn-primary{background:var(--teal-deep);color:#fff;width:100%;box-shadow:var(--shadow-sm);}
+.btn-primary:active{background:#0c3a3d;}
+.btn-secondary{background:var(--teal-pale);color:var(--teal-deep);}
+.btn-ghost{background:transparent;color:var(--teal-deep);border:1px solid var(--line);}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+/* Signature element: test-strip visual */
+.strip{
+  display:flex;
+  gap:4px;
+  margin-bottom:8px;
+  padding:5px;
+  background:linear-gradient(180deg,#F0F5F4,#E3ECEA);
+  border-radius:12px;
+  box-shadow:inset 0 1px 3px rgba(15,46,46,0.09);
+}
+.pad{
+  flex:1;
+  border-radius:7px;
+  padding:8px 4px 7px;
+  text-align:center;
+  border:1.5px dashed #C8D6D3;
+  background:#fbfdfc;
+  transition:background-color .2s ease, border-color .2s ease, transform .2s ease;
+}
+.pad.filled{
+  border-style:solid;
+  transform:translateY(-1px);
+  box-shadow:0 2px 6px rgba(15,46,46,0.09);
+}
+.pad.ideal{background:linear-gradient(180deg,#EFF8F2,#E2F1E8);border-color:var(--green);}
+.pad.low{background:linear-gradient(180deg,#FDF6E7,#F8EBD0);border-color:var(--gold);}
+.pad.high{background:linear-gradient(180deg,#FBEDE7,#F4DED5);border-color:var(--rust);}
+.pad .pad-label{
+  font-family:'JetBrains Mono',monospace;
+  font-size:12px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:0.03em;display:block;margin-bottom:3px;
+}
+.pad .pad-value{
+  font-family:'JetBrains Mono',monospace;font-weight:600;font-size:20px;
+  display:block;letter-spacing:-0.02em;
+}
+.pad.ideal .pad-value{color:#256B41;}
+.pad.low .pad-value{color:#8C620F;}
+.pad.high .pad-value{color:var(--rust);}
+.pad .pad-status{font-size:9.5px;font-weight:600;margin-top:3px;display:block;letter-spacing:0.03em;text-transform:uppercase;}
+.pad.ideal .pad-status{color:#256B41;}
+.pad.low .pad-status{color:#8C620F;}
+.pad.high .pad-status{color:var(--rust);}
+
+.legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin:0 0 16px;flex-wrap:wrap;}
+.legend span{display:inline-flex;align-items:center;gap:5px;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.dot.ideal{background:var(--green);}
+.dot.low{background:var(--gold);}
+.dot.high{background:var(--rust);}
+
+.voice-row{
+  display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;
+}
+
+.toggle-switch{
+  position:relative;display:inline-block;
+  width:50px;height:28px;flex-shrink:0;
+}
+.toggle-switch input{
+  opacity:0;width:0;height:0;
+}
+.toggle-slider{
+  position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
+  background-color:var(--line);
+  transition:background-color .2s;
+  border-radius:28px;
+}
+.toggle-slider:before{
+  position:absolute;content:"";
+  height:22px;width:22px;left:3px;bottom:3px;
+  background-color:#fff;
+  transition:transform .2s;
+  border-radius:50%;
+  box-shadow:0 1px 3px rgba(0,0,0,0.25);
+}
+.toggle-switch input:checked + .toggle-slider{
+  background-color:var(--teal-mid);
+}
+.toggle-switch input:checked + .toggle-slider:before{
+  transform:translateX(22px);
+}
+
+.btn-voice{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 14px;border-radius:9px;border:1px solid var(--line);
+  background:var(--teal-pale);color:var(--teal-deep);
+  font-size:13.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+}
+.btn-voice.listening{background:var(--rust);color:#fff;border-color:var(--rust);}
+.btn-voice .mic-dot{
+  width:8px;height:8px;border-radius:50%;background:currentColor;
+  animation:none;
+}
+.btn-voice.listening .mic-dot{animation:pulse 1s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+.voice-status{font-size:12px;color:var(--muted);}
+.voice-transcript{
+  display:none;background:#F7F5EF;border:1px solid var(--line);border-radius:9px;
+  padding:10px 12px;font-size:12.5px;color:var(--muted);margin-bottom:14px;min-height:20px;
+}
+.voice-hint{font-size:11.5px;color:var(--muted);margin:0 0 14px;}
+
+.empty{
+  text-align:center;padding:36px 20px;color:var(--muted);
+}
+.empty i{font-size:13px;}
+
+@keyframes briefIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
+.cust-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:15px 4px 15px 12px;border-bottom:1px solid var(--line);cursor:pointer;
+  position:relative;transition:background-color .15s ease;
+}
+.cust-row::before{
+  content:'';position:absolute;left:0;top:9px;bottom:9px;width:3px;
+  border-radius:3px;background:var(--teal-mid);opacity:0;transform:scaleY(.4);
+  transition:opacity .15s ease, transform .15s ease;
+}
+.cust-row:last-child{border-bottom:none;}
+.cust-row:active{background:var(--teal-pale);}
+.cust-row:active::before{opacity:1;transform:scaleY(1);}
+.cust-name{
+  font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:16.5px;
+  letter-spacing:-0.01em;
+}
+.cust-meta{font-size:12px;color:var(--muted);margin-top:3px;}
+.chev{color:var(--muted);font-size:18px;}
+
+.hist-row{
+  display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr 1fr 28px;
+  gap:6px;padding:9px 4px;border-bottom:1px solid var(--line);font-size:12.5px;
+  align-items:center;
+}
+.hist-row.head{font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:0.02em;}
+.hist-row:not(.head):hover{background:var(--teal-pale);}
+.hist-val{font-family:'JetBrains Mono',monospace;font-weight:600;text-align:center;}
+.hist-val.low{color:var(--gold);}
+.hist-val.high{color:var(--rust);}
+.hist-val.ideal{color:var(--green);}
+.hist-del{
+  background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;
+  width:26px;height:26px;border-radius:6px;line-height:1;padding:0;
+}
+.hist-del:hover{color:var(--rust);background:#F7E7E1;}
+
+.report-doc{
+  background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:26px 24px;
+}
+.report-head{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  border-bottom:2px solid var(--teal-deep);padding-bottom:14px;margin-bottom:16px;
+}
+.report-head h2{color:var(--teal-deep);font-size:18px;}
+.report-head .rdate{font-size:12.5px;color:var(--muted);margin-top:3px;}
+.report-badge{
+  background:var(--teal-deep);color:#fff;font-size:11px;font-weight:600;
+  padding:5px 10px;border-radius:7px;white-space:nowrap;
+}
+.report-table{width:100%;font-size:13.5px;border-collapse:collapse;margin-bottom:14px;}
+.report-table td{padding:9px 4px;border-bottom:1px solid var(--line);}
+.report-table td:first-child{color:var(--muted);}
+.report-table td:last-child{text-align:right;font-family:'JetBrains Mono',monospace;font-weight:600;}
+.report-notes{
+  background:var(--teal-pale);border-radius:9px;padding:12px 14px;font-size:13px;
+  color:var(--teal-deep);margin-top:8px;
+}
+.status-tag{font-size:10.5px;font-weight:700;margin-left:8px;letter-spacing:0.02em;}
+.status-tag.ideal{color:var(--green);}
+.status-tag.low{color:var(--gold);}
+.status-tag.high{color:var(--rust);}
+
+.bottombar{
+  position:fixed;bottom:0;left:0;right:0;
+  background:#fff;border-top:1px solid var(--line);
+  display:flex;max-width:720px;margin:0 auto;
+}
+.bottombar .tab{padding:12px 4px 10px;font-size:11.5px;}
+.bottombar .tab i{display:block;font-size:19px;margin-bottom:2px;}
+
+select#customerSelect{font-weight:600;}
+.toast{
+  position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+  background:var(--teal-deep);color:#fff;padding:10px 20px;border-radius:20px;
+  font-size:13px;font-weight:600;opacity:0;transition:opacity .25s;pointer-events:none;
+  z-index:50;
+}
+.toast.show{opacity:1;}
+
+.confirm-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(15,46,46,0.45);
+  display:flex;align-items:center;justify-content:center;
+  z-index:100;padding:20px;
+}
+.confirm-box{
+  background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%;
+}
+.confirm-box p{font-size:14.5px;margin:0 0 16px;color:var(--ink);line-height:1.5;}
+.confirm-box .btn-row{gap:8px;}
+.confirm-box .btn{flex:1;width:auto;}
+.day-tab{padding:7.2px 10.8px;font-size:11.25px;flex:1;min-width:0;}
+.day-tab.active{background:var(--teal-deep);color:#fff;border-color:var(--teal-deep);}
+@media (min-width:640px){
+  .bottombar{display:none;}
+  body{padding-bottom:0;}
+}
+@media (max-width:639px){
+  nav{display:none;}
+}
+</style>
+</head>
+<body>
+<div id="loginScreen" style="display:none;position:fixed;inset:0;z-index:200;background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
+    <h2 style="font-size:20px;margin:0 0 4px;">PoolLog</h2>
+    <p style="font-size:12.5px;color:#5E7371;margin:0 0 18px;">Sign in to see your route.</p>
+    <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="sam.rivera"></div>
+    <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
+    <p id="loginError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
+    <button class="btn btn-primary" id="btnLogin" style="width:100%;">Sign in</button>
+    <button class="btn btn-ghost" id="btnDevSkip" style="width:100%;margin-top:8px;font-size:12.5px;">Skip sign-in (dev)</button>
+  </div>
+</div>
+
+
+
+
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path d="M12 2C12 2 6 10 6 15C6 18.3 8.7 21 12 21C15.3 21 18 18.3 18 15C18 10 12 2 12 2Z" fill="#fff"/>
+      </svg>
+    </div>
+    <div>
+      <h1>PoolLog Technician</h1>
+      <p>Chemical readings & reports</p>
+    </div>
+  </div>
+  <nav>
+    <button class="tab active" data-view="home">Today</button>
+    <button class="tab" data-view="serviced">Serviced Pools</button>
+    <button class="tab" data-view="options">Settings</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- HOME VIEW -->
+  <div class="view active" id="view-home">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Today's customers</h2>
+        <span id="voiceModeIndicator" style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;">
+          <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
+          <span id="voiceModeText">Voice entry off</span>
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin:8px 0 12px;">
+        <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 16px;font-size:17px;line-height:1;">‹</button>
+        <span id="weekLabel" style="font-size:15px;color:var(--muted);font-weight:700;letter-spacing:0.03em;min-width:190px;text-align:center;"></span>
+        <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 16px;font-size:17px;line-height:1;">›</button>
+      </div>
+      <p id="homeDateInfo" style="font-size:19.7625px;color:var(--muted);margin:0 0 16px;text-align:center;font-weight:600;"></p>
+      <div class="btn-row" id="dayTabs" style="flex-wrap:nowrap;gap:4px;margin-bottom:14px;justify-content:center;"></div>
+      <div id="homeCustomerList"></div>
+    </div>
+  </div>
+
+  <!-- VISIT VIEW -->
+  <div class="view" id="view-visit">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">
+        <h2 id="visitCustomerName" style="margin:0;">Customer</h2>
+        <div class="btn-row" id="visitSectionButtons" style="flex-wrap:wrap;flex:1;justify-content:center;"></div>
+      </div>
+    </div>
+
+    <div id="visitVoiceCard" style="display:none;">
+      <span class="voice-status" id="visitVoiceStatus"></span>
+      <div class="voice-transcript" id="visitVoiceTranscript"></div>
+    </div>
+
+    <!-- POOL SECTION -->
+    <div class="card" id="visitEquipmentSection" style="display:none;">
+      <h2>Equipment</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Tap the camera icon next to any item to view or add its photos.</p>
+      <div id="icEquipmentList"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-primary" id="btnNewEquipmentType" type="button" style="width:auto;">+ Add new equipment</button>
+        <button class="btn btn-ghost" id="btnReorderEquipment" type="button" style="width:auto;">Manage Equipment</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="icEquipmentPhotoInput" style="display:none;">
+    </div>
+
+    <div class="card" id="visitPoolBeforePhotoSection" style="display:none;">
+      <h2>Before photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <div id="photoPreviewWrapBefore" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewBefore" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhotoBefore" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoBefore" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoBefore" style="display:none;">
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
+      </div>
+    </div>
+
+    <div class="card" id="visitPoolSection" style="display:none;">
+      <h2>Today's strip</h2>
+      <div id="poolChemFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
+    </div>
+
+    <div class="card" id="visitPoolProductsSection" style="display:none;">
+      <h2>Products added</h2>
+      <div id="poolDoseFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
+    </div>
+
+    <div class="card" id="visitPoolPhotoSection" style="display:none;">
+      <h2>After photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
+      <div id="photoPreviewWrap" style="display:none;margin-bottom:12px;">
+        <img id="photoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhoto" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhoto" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhoto" style="display:none;">
+    </div>
+
+    <div class="card" id="visitPoolSaveSection" style="display:none;">
+            <div class="field">
+        <label>Service notes (optional)</label>
+        <textarea id="inNotes" placeholder="Added 2 lbs shock, backwashed filter..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" id="btnSaveReading" style="flex:1;">Save pool reading</button>
+      </div>
+    </div>
+
+    <!-- SPA SECTION -->
+    <div class="card" id="visitSpaBeforePhotoSection" style="display:none;">
+      <h2>Before photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <div id="photoPreviewWrapBeforeSpa" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewBeforeSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhotoBeforeSpa" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoBeforeSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeSpa" style="display:none;">
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
+      </div>
+    </div>
+
+    <div class="card" id="visitSpaSection" style="display:none;">
+      <h2>Today's spa strip</h2>
+      <div id="spaChemFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
+    </div>
+
+    <div class="card" id="visitSpaProductsSection" style="display:none;">
+      <h2>Products added</h2>
+      <div id="spaDoseFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
+    </div>
+
+    <div class="card" id="visitSpaPhotoSection" style="display:none;">
+      <h2>After photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <div id="photoPreviewWrapSpa" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhotoSpa" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoSpa" style="display:none;">
+    </div>
+
+    <div class="card" id="visitSpaSaveSection" style="display:none;">
+            <div class="field">
+        <label>Service notes (optional)</label>
+        <textarea id="inSpaNotes" placeholder="Drained and refilled, cleaned filter..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" id="btnSaveSpaReading" style="flex:1;">Save spa reading</button>
+      </div>
+    </div>
+
+    <!-- FOUNTAIN SECTION -->
+    <div class="card" id="visitFountainBeforePhotoSection" style="display:none;">
+      <h2>Before photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <div id="photoPreviewWrapBeforeFountain" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewBeforeFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhotoBeforeFountain" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoBeforeFountain" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeFountain" style="display:none;">
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
+      </div>
+    </div>
+
+    <div class="card" id="visitFountainSection" style="display:none;">
+      <h2 id="visitFountainTitle">Fountain readings</h2>
+      <div id="fountainChemFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
+    </div>
+
+    <div class="card" id="visitFountainProductsSection" style="display:none;">
+      <h2>Products added</h2>
+      <div id="fountainDoseFields"></div>
+      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
+    </div>
+
+    <div class="card" id="visitFountainPhotoSection" style="display:none;">
+      <h2>After photos</h2>
+      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <div id="photoPreviewWrapFountain" style="display:none;margin-bottom:12px;">
+        <img id="photoPreviewFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
+      </div>
+      <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
+        <button class="btn btn-secondary" id="btnTakePhotoFountain" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-ghost" id="btnRemovePhotoFountain" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="inPhotoFountain" style="display:none;">
+    </div>
+
+    <div class="card" id="visitFountainSaveSection" style="display:none;">
+            <div class="field">
+        <label>Service notes (optional)</label>
+        <textarea id="inFountainNotes" placeholder="Cleaned basin, cleared debris from pump..."></textarea>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
+        <button class="btn btn-primary" id="btnSaveFountainReading" style="flex:1;">Save fountain reading</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- REPORT VIEW -->
+  <div class="view" id="view-report">
+    <div class="card">
+      <h2>Choose reading to send</h2>
+      <div class="field">
+        <label>Customer</label>
+        <select id="reportCustomerSelect"></select>
+      </div>
+      <div class="field">
+        <label>Reading date</label>
+        <select id="reportReadingSelect"></select>
+      </div>
+    </div>
+    <div id="reportOutput"></div>
+    <div class="btn-row" id="reportActions" style="display:none;">
+      <button class="btn btn-primary" id="btnSharePhoto" style="width:auto;display:none;">Share report + photo</button>
+      <button class="btn btn-secondary" id="btnCopyReport">Copy report text</button>
+      <button class="btn btn-secondary" id="btnEmailReport">Resend</button>
+      <button class="btn btn-ghost" id="btnDownloadReport">Download .txt</button>
+      <button class="btn btn-ghost" id="btnDownloadPhoto" style="display:none;">Download photo</button>
+      <button class="btn btn-ghost" id="btnDeleteReport" style="color:var(--rust);border-color:#EFC9BC;">Delete this report</button>
+    </div>
+  </div>
+
+  <!-- SERVICED POOLS VIEW -->
+  <div class="view" id="view-serviced">
+    <div class="card">
+      <h2>Serviced today</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Customers whose report has already gone out today. Use "Reservice" to send someone back to Today's list if you need to revisit them.</p>
+      <div id="servicedList"></div>
+    </div>
+  </div>
+
+  <!-- OPTIONS VIEW -->
+  <div class="view" id="view-options">
+    <div class="card">
+      <div class="section-head">
+        <div>
+          <h2 style="margin:0;">Signed in</h2>
+          <p id="signedInAs" style="font-size:12.5px;color:var(--muted);margin:4px 0 0;"></p>
+        </div>
+        <button class="btn btn-ghost" id="btnLogout" style="width:auto;">Sign out</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Voice entry mode</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingVoiceMode" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit gets a continuous voice-entry option and keeps the screen awake while you're using it. Turning this off removes the voice control from visits and stops the screen-awake behavior too.</p>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="bottombar">
+  <button class="tab active" data-view="home"><i>&#9679;</i>Today</button>
+  <button class="tab" data-view="serviced"><i>&#9679;</i>Serviced</button>
+  <button class="tab" data-view="options"><i>&#9679;</i>Settings</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DEFAULT_CHEM_CONFIG = {
+  pool: {
+    chemicals: [
+      {key:'chlorine', label:'Free chlorine', unit:'ppm'},
+      {key:'ph', label:'pH level', unit:''},
+      {key:'alkalinity', label:'Total alkalinity', unit:'ppm'},
+      {key:'cya', label:'Cyanuric acid', unit:'ppm'},
+      {key:'tds', label:'TDS', unit:'ppm'}
+    ],
+    dosages: [
+      {key:'tabs', label:'Chlorine tabs', unit:'count'},
+      {key:'acid', label:'Acid', unit:'gal'},
+      {key:'shock', label:'Shock', unit:'lbs'},
+      {key:'soda', label:'Sodium bicarbonate', unit:'lbs'},
+      {key:'algaecide', label:'Algaecide', unit:'oz'},
+      {key:'phosphate', label:'Phosphate remover', unit:'oz'}
+    ]
+  },
+  spa: {
+    chemicals: [
+      {key:'chlorine', label:'Free chlorine', unit:'ppm'},
+      {key:'ph', label:'pH level', unit:''},
+      {key:'alkalinity', label:'Total alkalinity', unit:'ppm'},
+      {key:'cya', label:'Cyanuric acid', unit:'ppm'},
+      {key:'tds', label:'TDS', unit:'ppm'}
+    ],
+    dosages: [
+      {key:'tabs', label:'Chlorine tabs', unit:'count'},
+      {key:'acid', label:'Acid', unit:'gal'},
+      {key:'shock', label:'Shock', unit:'lbs'},
+      {key:'soda', label:'Sodium bicarbonate', unit:'lbs'},
+      {key:'algaecide', label:'Algaecide', unit:'oz'},
+      {key:'phosphate', label:'Phosphate remover', unit:'oz'}
+    ]
+  },
+  fountain: {
+    chemicals: [
+      {key:'chlorine', label:'Free chlorine', unit:'ppm'},
+      {key:'ph', label:'pH level', unit:''},
+      {key:'alkalinity', label:'Total alkalinity', unit:'ppm'},
+      {key:'cya', label:'Cyanuric acid', unit:'ppm'},
+      {key:'tds', label:'TDS', unit:'ppm'}
+    ],
+    dosages: [
+      {key:'tabs', label:'Chlorine tabs', unit:'count'},
+      {key:'acid', label:'Acid', unit:'gal'},
+      {key:'shock', label:'Shock', unit:'lbs'},
+      {key:'soda', label:'Sodium bicarbonate', unit:'lbs'},
+      {key:'algaecide', label:'Algaecide', unit:'oz'},
+      {key:'phosphate', label:'Phosphate remover', unit:'oz'}
+    ]
+  }
+};
+
+const DEFAULT_BUTTON_SETS = {
+  chlorine: [0, 1, 3, 5, 7.5, 10],
+  ph: [6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0, 8.2],
+  alkalinity: [60, 70, 80, 90, 100, 110, 120, 130, 140],
+  cya: [0, 30, 50, 100, 200],
+  tds: [],
+  acid: [0.1, 0.2, 0.3, 0.4],
+  algaecide: [4, 8, 16, 24],
+  phosphate: [2, 4, 6, 8, 10],
+  tabs: [0.5, 1, 2, 3, 4],
+  shock: [0.5, 1, 2, 3, 4],
+  soda: [0.5, 1, 2, 3, 4]
+};
+
+function loadChemConfig(){
+  const stored = lsGet('chemConfig');
+  const cfg = !stored
+    ? JSON.parse(JSON.stringify(DEFAULT_CHEM_CONFIG))
+    : {
+        pool: stored.pool || JSON.parse(JSON.stringify(DEFAULT_CHEM_CONFIG.pool)),
+        spa: stored.spa || JSON.parse(JSON.stringify(DEFAULT_CHEM_CONFIG.spa)),
+        fountain: stored.fountain || JSON.parse(JSON.stringify(DEFAULT_CHEM_CONFIG.fountain))
+      };
+  let migrated = false;
+  ['pool','spa','fountain'].forEach(t=>{
+    (cfg[t].dosages || []).forEach(d=>{
+      if(d.key === 'acid' && d.unit === 'oz'){
+        d.unit = 'gal';
+        migrated = true;
+      }
+    });
+    ['chemicals','dosages'].forEach(listKey=>{
+      (cfg[t][listKey] || []).forEach(item=>{
+        if(!Array.isArray(item.buttons)){
+          item.buttons = (DEFAULT_BUTTON_SETS[item.key] || []).slice();
+          migrated = true;
+        }
+      });
+    });
+  });
+  if(migrated) lsSet('chemConfig', cfg);
+  return cfg;
+}
+
+let chemConfig = loadChemConfig();
+
+function fieldId(type, kind, key){
+  return type + '_' + kind + '_' + key;
+}
+
+function renderConfigFields(containerId, list, type, kind, onInput){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  container.innerHTML = '';
+  list.forEach(item=>{
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    const label = document.createElement('label');
+    label.textContent = item.label + (item.unit ? ' (' + item.unit + ')' : '');
+    const input = document.createElement('input');
+    input.className = 'mono';
+    input.type = 'number';
+    input.step = 'any';
+    input.id = fieldId(type, kind, item.key);
+    input.placeholder = 'Tap a button or type any amount';
+    const configuredButtons = Array.isArray(item.buttons) ? item.buttons : null;
+    const showSuggestions = appSettings.showDosageSuggestions !== false
+      && configuredButtons && configuredButtons.length > 0;
+    if(onInput) input.addEventListener('input', onInput);
+    wrap.appendChild(label);
+
+    const inputRow = document.createElement('div');
+    inputRow.style.display = 'flex';
+    inputRow.style.alignItems = 'center';
+    inputRow.style.gap = '8px';
+    input.style.flex = '1';
+    input.style.minWidth = '0';
+    inputRow.appendChild(input);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.textContent = '×';
+    clearBtn.setAttribute('aria-label', 'Clear ' + item.label);
+    clearBtn.style.setProperty('width', '34px', 'important');
+    clearBtn.style.setProperty('min-width', '34px', 'important');
+    clearBtn.style.setProperty('height', '36px', 'important');
+    clearBtn.style.setProperty('flex', '0 0 34px', 'important');
+    clearBtn.style.display = 'flex';
+    clearBtn.style.alignItems = 'center';
+    clearBtn.style.justifyContent = 'center';
+    clearBtn.style.padding = '0';
+    clearBtn.style.fontSize = '16px';
+    clearBtn.style.lineHeight = '1';
+    clearBtn.style.color = 'var(--rust)';
+    clearBtn.style.background = 'transparent';
+    clearBtn.style.border = '1px solid #EFC9BC';
+    clearBtn.style.borderRadius = '9px';
+    clearBtn.style.cursor = 'pointer';
+    clearBtn.style.fontFamily = "'Inter',sans-serif";
+    clearBtn.addEventListener('click', ()=>{
+      input.value = '';
+      input.dispatchEvent(new Event('input', {bubbles:true}));
+    });
+    inputRow.appendChild(clearBtn);
+
+    wrap.appendChild(inputRow);
+
+    if(showSuggestions){
+      const suggestRow = document.createElement('div');
+      suggestRow.className = 'btn-row';
+      suggestRow.style.gap = '5px';
+      suggestRow.style.marginTop = '5px';
+      suggestRow.style.flexWrap = 'wrap';
+      const suggestedAmounts = configuredButtons;
+      suggestedAmounts.forEach(amt=>{
+        const sBtn = document.createElement('button');
+        sBtn.type = 'button';
+        sBtn.className = 'btn btn-secondary';
+        sBtn.style.width = 'auto';
+        sBtn.style.padding = '7px 11px';
+        sBtn.style.fontSize = '14px';
+        sBtn.textContent = amt;
+        sBtn.addEventListener('click', ()=>{
+          input.value = amt;
+          input.dispatchEvent(new Event('input', {bubbles:true}));
+        });
+        suggestRow.appendChild(sBtn);
+      });
+      wrap.appendChild(suggestRow);
+    }
+
+    container.appendChild(wrap);
+  });
+}
+
+
+// A customer's body of water can override the standard lists
+function listsForBody(customerId, bodyKey, fallbackType){
+  const custom = lsGet('customChemConfig') || {};
+  const forCust = custom[customerId];
+  if(forCust && forCust[bodyKey]) return forCust[bodyKey];
+  return chemConfig[fallbackType];
+}
+
+function renderAllConfigFields(){
+  const cid = currentVisitCustomerId;
+  const poolL = cid ? listsForBody(cid, 'pool', 'pool') : chemConfig.pool;
+  const spaL = cid ? listsForBody(cid, 'spa', 'spa') : chemConfig.spa;
+  const fKey = currentVisitFountainId || 'fountain';
+  const fountL = cid ? listsForBody(cid, fKey, 'fountain') : chemConfig.fountain;
+
+  renderConfigFields('poolChemFields', poolL.chemicals, 'pool', 'chem', renderStripPreview);
+  renderConfigFields('poolDoseFields', poolL.dosages, 'pool', 'dose');
+  renderConfigFields('spaChemFields', spaL.chemicals, 'spa', 'chem', renderSpaStripPreview);
+  renderConfigFields('spaDoseFields', spaL.dosages, 'spa', 'dose');
+  renderConfigFields('fountainChemFields', fountL.chemicals, 'fountain', 'chem');
+  renderConfigFields('fountainDoseFields', fountL.dosages, 'fountain', 'dose');
+  // Draw the strips straight away so every chemical pad is visible before any reading is entered
+  renderStripPreview();
+  renderSpaStripPreview();
+}
+
+let customers = [];
+let readingsCache = {};
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+function confirmDialog(message, confirmLabel){
+  confirmLabel = confirmLabel || 'Delete';
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <p>${message}</p>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+          <button class="btn btn-primary" id="confirmOk" style="background:var(--rust);">${confirmLabel}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const cleanup = (result)=>{
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
+    overlay.querySelector('#confirmCancel').addEventListener('click', ()=>cleanup(false));
+    overlay.querySelector('#confirmOk').addEventListener('click', ()=>cleanup(true));
+    overlay.addEventListener('click', (e)=>{
+      if(e.target === overlay) cleanup(false);
+    });
+  });
+}
+
+function switchView(view, opts){
+  opts = opts || {};
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+view).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.classList.toggle('active', t.dataset.view === view);
+  });
+  if(view !== 'visit'){
+    visitVoiceController.stopListening();
+    releaseVisitWakeLock();
+  }
+  if(view === 'report' && !opts.skipRefresh) refreshReportSelectors();
+  if(view === 'home') renderHomeList();
+  if(view === 'serviced') renderServicedList();
+}
+
+document.querySelectorAll('.tab').forEach(t=>{
+  t.addEventListener('click', ()=>switchView(t.dataset.view));
+});
+
+const STORAGE_PREFIX = 'poollog:';
+
+function lsGet(key){
+  try{
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    return raw !== null ? JSON.parse(raw) : null;
+  }catch(e){
+    return null;
+  }
+}
+
+function lsSet(key, value){
+  try{
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+
+function lsListKeys(prefix){
+  const keys = [];
+  const fullPrefix = STORAGE_PREFIX + prefix;
+  for(let i = 0; i < localStorage.length; i++){
+    const key = localStorage.key(i);
+    if(key && key.indexOf(fullPrefix) === 0){
+      keys.push(key.slice(STORAGE_PREFIX.length));
+    }
+  }
+  return keys;
+}
+
+async function loadCustomers(){
+  const stored = lsGet('customers');
+  customers = stored || [];
+}
+
+async function saveCustomers(){
+  const ok = lsSet('customers', customers);
+  if(!ok){
+    showToast('Could not save — your browser storage may be full');
+  }
+}
+
+function readingsStorageKey(customerId, type){
+  return (type === 'spa' ? 'spaReadings:' : 'readings:') + customerId;
+}
+function readingsCacheKey(customerId, type){
+  return (type === 'spa' ? 'spa:' : 'pool:') + customerId;
+}
+
+async function loadReadings(customerId, type='pool'){
+  const cacheKey = readingsCacheKey(customerId, type);
+  if(readingsCache[cacheKey]) return readingsCache[cacheKey];
+  const stored = lsGet(readingsStorageKey(customerId, type));
+  const list = stored || [];
+  readingsCache[cacheKey] = list;
+  return list;
+}
+
+async function saveReadings(customerId, list, type='pool'){
+  const cacheKey = readingsCacheKey(customerId, type);
+  readingsCache[cacheKey] = list;
+  const ok = lsSet(readingsStorageKey(customerId, type), list);
+  if(!ok){
+    showToast('Could not save reading — your browser storage may be full');
+  }
+}
+
+function skippedVisitsStorageKey(customerId){
+  return 'skippedVisits:' + customerId;
+}
+
+async function loadSkippedVisits(customerId){
+  return lsGet(skippedVisitsStorageKey(customerId)) || [];
+}
+
+async function saveSkippedVisits(customerId, list){
+  const ok = lsSet(skippedVisitsStorageKey(customerId), list);
+  if(!ok){
+    showToast('Could not save — your browser storage may be full');
+  }
+}
+
+function fountainReadingsStorageKey(customerId, fountainId){
+  return 'fountainReadings:' + customerId + ':' + fountainId;
+}
+function fountainReadingsCacheKey(customerId, fountainId){
+  return 'fountain:' + customerId + ':' + fountainId;
+}
+
+async function loadFountainReadings(customerId, fountainId){
+  const cacheKey = fountainReadingsCacheKey(customerId, fountainId);
+  if(readingsCache[cacheKey]) return readingsCache[cacheKey];
+  const stored = lsGet(fountainReadingsStorageKey(customerId, fountainId));
+  const list = stored || [];
+  readingsCache[cacheKey] = list;
+  return list;
+}
+
+async function saveFountainReadings(customerId, fountainId, list){
+  const cacheKey = fountainReadingsCacheKey(customerId, fountainId);
+  readingsCache[cacheKey] = list;
+  const ok = lsSet(fountainReadingsStorageKey(customerId, fountainId), list);
+  if(!ok){
+    showToast('Could not save reading — your browser storage may be full');
+  }
+}
+
+function populateCustomerSelect(selectEl, placeholder, filterFn){
+  selectEl.innerHTML = '';
+  const list = customers.filter(c => c.active !== false && (!filterFn || filterFn(c)));
+  if(list.length === 0){
+    const opt = document.createElement('option');
+    opt.textContent = placeholder || 'No customers yet';
+    opt.value = '';
+    selectEl.appendChild(opt);
+    return;
+  }
+  list.forEach(c=>{
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    selectEl.appendChild(opt);
+  });
+}
+
+
+function renderStripGeneric(chemList, type, containerId){
+  const strip = document.getElementById(containerId);
+  if(!strip) return;
+  strip.innerHTML = '';
+  chemList.forEach(chem=>{
+    const el = document.getElementById(fieldId(type, 'chem', chem.key));
+    const val = el ? el.value : '';
+    const hasValue = val !== '' && val !== undefined;
+    const pad = document.createElement('div');
+    pad.className = 'pad' + (hasValue ? ' filled' : '');
+    pad.innerHTML = `<span class="pad-label">${chem.label}</span>
+      <span class="pad-value">${hasValue ? val : '—'}</span>`;
+    strip.appendChild(pad);
+  });
+}
+
+function renderStripPreview(){
+  renderStripGeneric(chemConfig.pool.chemicals, 'pool', 'stripPreview');
+}
+
+function renderSpaStripPreview(){
+  renderStripGeneric(chemConfig.spa.chemicals, 'spa', 'spaStripPreview');
+}
+
+let dynamicFieldLabels = {};
+
+function buildVoiceFieldsForType(type){
+  const fields = [];
+  chemConfig[type].chemicals.forEach(item=>{
+    const fid = fieldId(type, 'chem', item.key);
+    if(item.label) fields.push({phrases: [item.label.toLowerCase()], field: fid});
+    dynamicFieldLabels[fid] = item.label || item.key;
+  });
+  chemConfig[type].dosages.forEach(item=>{
+    const fid = fieldId(type, 'dose', item.key);
+    if(item.label) fields.push({phrases: [item.label.toLowerCase()], field: fid});
+    dynamicFieldLabels[fid] = item.label || item.key;
+  });
+  return fields;
+}
+
+function refreshDynamicFieldLabels(){
+  dynamicFieldLabels = {};
+  buildVoiceFieldsForType('pool');
+  buildVoiceFieldsForType('spa');
+  buildVoiceFieldsForType('fountain');
+}
+
+const NUMBER_WORDS = {
+  'zero':0, 'a':1, 'an':1, 'one':1, 'two':2, 'three':3, 'four':4, 'five':5,
+  'six':6, 'seven':7, 'eight':8, 'nine':9, 'ten':10, 'eleven':11, 'twelve':12
+};
+const NUMBER_WORD_ALT = Object.keys(NUMBER_WORDS).sort((a,b)=>b.length-a.length).join('|');
+const NUMBER_TOKEN = '\\b(?:\\d+(?:\\.\\d+)?|' + NUMBER_WORD_ALT + ')\\b';
+
+function wordToNumber(token){
+  if(/^\d+(?:\.\d+)?$/.test(token)) return parseFloat(token);
+  const lower = token.toLowerCase();
+  return NUMBER_WORDS.hasOwnProperty(lower) ? NUMBER_WORDS[lower] : null;
+}
+
+function parseVoiceText(text, fieldSet){
+  let workingText = ' ' + text.toLowerCase() + ' ';
+  const updates = {};
+  fieldSet.forEach(entry=>{
+    const escaped = entry.phrases.map(p=>p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+    const phraseAlt = escaped.join('|');
+    // Matches "2 pounds of shock" / "two tabs" (number first) OR "chlorine 2.5" / "ph is 7.4" (number after)
+    const pattern = new RegExp(
+      '(?:(?<num1>'+NUMBER_TOKEN+')\\s*(?:pounds?|lbs?|ounces?|oz|tabs?|of)*\\s*(?:'+phraseAlt+')\\b)' +
+      '|' +
+      '(?:\\b(?:'+phraseAlt+')\\b\\s*(?:is|of|at|to|reads?)?\\s*(?<num2>'+NUMBER_TOKEN+'))',
+      'gi'
+    );
+    let match; let lastMatch = null;
+    while((match = pattern.exec(workingText)) !== null){
+      lastMatch = match;
+      if(pattern.lastIndex === match.index) pattern.lastIndex++;
+    }
+    if(lastMatch){
+      const raw = lastMatch.groups.num1 || lastMatch.groups.num2;
+      const value = wordToNumber(raw);
+      if(value !== null){
+        updates[entry.field] = value;
+        const start = lastMatch.index;
+        const len = lastMatch[0].length;
+        workingText = workingText.slice(0,start) + ' '.repeat(len) + workingText.slice(start+len);
+      }
+    }
+  });
+  return updates;
+}
+
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function makeVisitVoiceController(){
+  let recognition = null;
+  let listening = false;
+  let finalTranscript = '';
+  let activeFieldSet = [];
+  let activeOnUpdate = function(){};
+  let restartTimestamps = [];
+
+  function setTarget(fieldSet, onUpdate){
+    activeFieldSet = fieldSet;
+    activeOnUpdate = onUpdate || function(){};
+  }
+
+  function setStatus(text){
+    const el = document.getElementById('visitVoiceStatus');
+    if(el) el.textContent = text;
+  }
+
+  function setTranscript(text){
+    const el = document.getElementById('visitVoiceTranscript');
+    if(el) el.textContent = text;
+  }
+
+  function applyUpdates(updates){
+    const labels = [];
+    Object.keys(updates).forEach(fieldId=>{
+      const el = document.getElementById(fieldId);
+      if(el){
+        el.value = updates[fieldId];
+        labels.push(dynamicFieldLabels[fieldId] || fieldId);
+      }
+    });
+    if(labels.length){
+      activeOnUpdate();
+      showToast('Updated: ' + labels.join(', '));
+    }
+  }
+
+  function tooManyRestarts(){
+    const now = Date.now();
+    restartTimestamps.push(now);
+    restartTimestamps = restartTimestamps.filter(t => now - t < 5000);
+    return restartTimestamps.length > 4;
+  }
+
+  function startListening(){
+    if(!SpeechRecognitionCtor){
+      setStatus('Voice entry isn\'t supported in this browser — try Chrome or Safari.');
+      return;
+    }
+    if(!recognition){
+      recognition = new SpeechRecognitionCtor();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event)=>{
+        let interim = '';
+        for(let i = event.resultIndex; i < event.results.length; i++){
+          const transcriptPiece = event.results[i][0].transcript;
+          if(event.results[i].isFinal){
+            finalTranscript += transcriptPiece + ' ';
+            const updates = parseVoiceText(transcriptPiece, activeFieldSet);
+            applyUpdates(updates);
+          } else {
+            interim += transcriptPiece;
+          }
+        }
+        setTranscript((finalTranscript + interim).trim() || 'Listening...');
+      };
+
+      recognition.onerror = (event)=>{
+        if(event.error === 'no-speech' || event.error === 'aborted'){
+          // Brief pause or an intentional stop — let it keep running for the whole visit.
+          return;
+        }
+        if(event.error === 'not-allowed' || event.error === 'service-not-allowed'){
+          setStatus('Microphone access was blocked. Allow it in your browser\'s site settings to use voice entry.');
+        } else if(event.error === 'audio-capture'){
+          setStatus('No microphone was found. Voice entry has been turned off for this visit.');
+        } else {
+          setStatus('Voice entry stopped due to an error (' + event.error + ').');
+        }
+        listening = false;
+      };
+
+      recognition.onend = ()=>{
+        if(listening){
+          if(tooManyRestarts()){
+            listening = false;
+            setStatus('Voice entry kept failing to restart, so it has been turned off for this visit.');
+            return;
+          }
+          try{ recognition.start(); }catch(e){ listening = false; }
+        }
+      };
+    }
+
+    try{
+      finalTranscript = '';
+      restartTimestamps = [];
+      setTranscript('Listening...');
+      setStatus('Listening for this whole visit — say readings as you go.');
+      recognition.start();
+      listening = true;
+    }catch(e){
+      setStatus('Could not start listening.');
+      listening = false;
+    }
+  }
+
+  function stopListening(){
+    if(listening){
+      listening = false;
+      recognition && recognition.stop();
+      setStatus('');
+    }
+  }
+
+  return {setTarget, startListening, stopListening, isListening: ()=>listening};
+}
+
+const visitVoiceController = makeVisitVoiceController();
+
+function resizeImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not load image'));
+      img.onload = () => {
+        let { width, height } = img;
+        if(width > maxDim || height > maxDim){
+          if(width > height){
+            height = Math.round(height * (maxDim / width));
+            width = maxDim;
+          } else {
+            width = Math.round(width * (maxDim / height));
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function makePhotoController(ids){
+  let currentDataUrl = null;
+  const takeBtn = document.getElementById(ids.takeBtn);
+  const fileInput = document.getElementById(ids.fileInput);
+  const previewWrap = document.getElementById(ids.previewWrap);
+  const previewImg = document.getElementById(ids.previewImg);
+  const removeBtn = document.getElementById(ids.removeBtn);
+
+  function showPreview(dataUrl){
+    currentDataUrl = dataUrl;
+    previewImg.src = dataUrl;
+    previewWrap.style.display = 'block';
+    removeBtn.style.display = 'inline-flex';
+  }
+
+  function clear(){
+    currentDataUrl = null;
+    previewImg.src = '';
+    previewWrap.style.display = 'none';
+    removeBtn.style.display = 'none';
+    fileInput.value = '';
+  }
+
+  takeBtn.addEventListener('click', ()=>{ fileInput.click(); });
+
+  fileInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await resizeImageFile(file, 1200, 0.7);
+      showPreview(dataUrl);
+    }catch(err){
+      showToast('Could not load that photo — try again');
+    }
+  });
+
+  removeBtn.addEventListener('click', clear);
+
+  return {
+    getData: ()=> currentDataUrl,
+    setData: (dataUrl)=>{ if(dataUrl) showPreview(dataUrl); else clear(); },
+    clear
+  };
+}
+
+const poolPhotoController = makePhotoController({
+  takeBtn: 'btnTakePhoto', fileInput: 'inPhoto',
+  previewWrap: 'photoPreviewWrap', previewImg: 'photoPreview', removeBtn: 'btnRemovePhoto'
+});
+
+const spaPhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoSpa', fileInput: 'inPhotoSpa',
+  previewWrap: 'photoPreviewWrapSpa', previewImg: 'photoPreviewSpa', removeBtn: 'btnRemovePhotoSpa'
+});
+
+const fountainPhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoFountain', fileInput: 'inPhotoFountain',
+  previewWrap: 'photoPreviewWrapFountain', previewImg: 'photoPreviewFountain', removeBtn: 'btnRemovePhotoFountain'
+});
+
+const poolBeforePhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoBefore', fileInput: 'inPhotoBefore',
+  previewWrap: 'photoPreviewWrapBefore', previewImg: 'photoPreviewBefore', removeBtn: 'btnRemovePhotoBefore'
+});
+
+const spaBeforePhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoBeforeSpa', fileInput: 'inPhotoBeforeSpa',
+  previewWrap: 'photoPreviewWrapBeforeSpa', previewImg: 'photoPreviewBeforeSpa', removeBtn: 'btnRemovePhotoBeforeSpa'
+});
+
+const fountainBeforePhotoController = makePhotoController({
+  takeBtn: 'btnTakePhotoBeforeFountain', fileInput: 'inPhotoBeforeFountain',
+  previewWrap: 'photoPreviewWrapBeforeFountain', previewImg: 'photoPreviewBeforeFountain', removeBtn: 'btnRemovePhotoBeforeFountain'
+});
+
+function beforeControllerFor(type){
+  return type === 'pool' ? poolBeforePhotoController
+    : type === 'spa' ? spaBeforePhotoController
+    : fountainBeforePhotoController;
+}
+
+document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
+  const customerId = currentVisitCustomerId;
+  if(!customerId){ showToast('Open a customer from Today first'); return; }
+  const reading = {
+    id: 'read_' + Date.now(),
+    date: new Date().toISOString(),
+    notes: document.getElementById('inNotes').value.trim(),
+    photo: poolPhotoController.getData() || null,
+    beforePhoto: beforeControllerFor('pool').getData() || null,
+    isFilterClean: isFilterCleanVisit,
+    filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
+    saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
+  };
+  chemConfig.pool.chemicals.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('pool','chem',item.key)).value;
+  });
+  chemConfig.pool.dosages.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('pool','dose',item.key)).value;
+  });
+  const anyValue = isFilterCleanVisit
+    ? (reading.photo || reading.beforePhoto || reading.notes)
+    : (chemConfig.pool.chemicals.some(c => reading[c.key] !== '')
+      || chemConfig.pool.dosages.some(p => reading[p.key] !== '') || reading.photo);
+  if(!anyValue){ showToast('Enter at least one reading or product'); return; }
+  const list = await loadReadings(customerId);
+  list.unshift(reading);
+  await saveReadings(customerId, list);
+  chemConfig.pool.chemicals.forEach(item=>{ document.getElementById(fieldId('pool','chem',item.key)).value=''; });
+  chemConfig.pool.dosages.forEach(item=>{ document.getElementById(fieldId('pool','dose',item.key)).value=''; });
+  document.getElementById('inNotes').value = '';
+  poolPhotoController.clear();
+  beforeControllerFor('pool').clear();
+  ['chkBackwashed','chkSaltCell'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el){
+      el.dataset.on = 'false';
+      el.style.background = '#fff';
+      el.style.color = 'var(--teal-deep)';
+      el.style.borderColor = 'var(--teal-mid)';
+    }
+  });
+  renderStripPreview();
+
+  markSectionDone('pool', reading.id);
+  showToast('Pool reading saved');
+});
+
+document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=>{
+  const customerId = currentVisitCustomerId;
+  if(!customerId){ showToast('Open a customer from Today first'); return; }
+  const reading = {
+    id: 'spa_' + Date.now(),
+    date: new Date().toISOString(),
+    notes: document.getElementById('inSpaNotes').value.trim(),
+    photo: spaPhotoController.getData() || null,
+    beforePhoto: beforeControllerFor('spa').getData() || null
+  };
+  chemConfig.spa.chemicals.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('spa','chem',item.key)).value;
+  });
+  chemConfig.spa.dosages.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('spa','dose',item.key)).value;
+  });
+  const anyValue = chemConfig.spa.chemicals.some(c => reading[c.key] !== '')
+    || chemConfig.spa.dosages.some(p => reading[p.key] !== '') || reading.photo;
+  if(!anyValue){ showToast('Enter at least one reading or product'); return; }
+  const list = await loadReadings(customerId, 'spa');
+  list.unshift(reading);
+  await saveReadings(customerId, list, 'spa');
+  chemConfig.spa.chemicals.forEach(item=>{ document.getElementById(fieldId('spa','chem',item.key)).value=''; });
+  chemConfig.spa.dosages.forEach(item=>{ document.getElementById(fieldId('spa','dose',item.key)).value=''; });
+  document.getElementById('inSpaNotes').value = '';
+  spaPhotoController.clear();
+  beforeControllerFor('spa').clear();
+  renderSpaStripPreview();
+
+  markSectionDone('spa', reading.id);
+  showToast('Spa reading saved');
+});
+
+document.getElementById('btnSaveFountainReading').addEventListener('click', async ()=>{
+  const customerId = currentVisitCustomerId;
+  if(!customerId){ showToast('Open a customer from Today first'); return; }
+  const fountainId = currentVisitFountainId;
+  if(!fountainId){ showToast('Select which fountain this reading is for'); return; }
+  const reading = {
+    id: 'fountain_' + Date.now(),
+    date: new Date().toISOString(),
+    notes: document.getElementById('inFountainNotes').value.trim(),
+    photo: fountainPhotoController.getData() || null,
+    beforePhoto: beforeControllerFor('fountain').getData() || null
+  };
+  chemConfig.fountain.chemicals.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('fountain','chem',item.key)).value;
+  });
+  chemConfig.fountain.dosages.forEach(item=>{
+    reading[item.key] = document.getElementById(fieldId('fountain','dose',item.key)).value;
+  });
+  const anyValue = chemConfig.fountain.chemicals.some(c => reading[c.key] !== '')
+    || chemConfig.fountain.dosages.some(p => reading[p.key] !== '') || reading.photo;
+  if(!anyValue){ showToast('Enter at least one reading or product'); return; }
+  const list = await loadFountainReadings(customerId, fountainId);
+  list.unshift(reading);
+  await saveFountainReadings(customerId, fountainId, list);
+  chemConfig.fountain.chemicals.forEach(item=>{ document.getElementById(fieldId('fountain','chem',item.key)).value=''; });
+  chemConfig.fountain.dosages.forEach(item=>{ document.getElementById(fieldId('fountain','dose',item.key)).value=''; });
+  document.getElementById('inFountainNotes').value = '';
+  fountainPhotoController.clear();
+  beforeControllerFor('fountain').clear();
+  if(currentVisitFountainId){
+    delete fountainDraftValues[currentVisitFountainId];
+    delete visitStepBySection[currentVisitFountainId];
+  }
+
+  markSectionDone(fountainId, reading.id);
+  showToast('Fountain reading saved');
+});
+
+function fmtDate(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+}
+
+const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const HOME_TABS = DAYS_OF_WEEK;
+let selectedHomeDay = DAYS_OF_WEEK[new Date().getDay()];
+let weekOffset = 0;
+
+function renderDayTabs(){
+  const container = document.getElementById('dayTabs');
+  container.innerHTML = '';
+  HOME_TABS.forEach(day=>{
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost day-tab' + (day === selectedHomeDay ? ' active' : '');
+    btn.textContent = day.slice(0,3);
+    btn.addEventListener('click', ()=>{
+      selectedHomeDay = day;
+      renderHomeList();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function poolSpaBadgeText(c){
+  const hasPool = c.hasPool !== false;
+  const hasSpa = !!c.hasSpa;
+  const parts = [];
+  if(hasPool) parts.push('Pool');
+  if(hasSpa) parts.push('Spa');
+  return parts.length ? parts.join(' + ') : 'No pool/spa set';
+}
+
+function dateForWeekday(dayName){
+  const dayIndex = DAYS_OF_WEEK.indexOf(dayName);
+  if(dayIndex === -1) return null;
+  const today = new Date();
+  const diff = dayIndex - today.getDay() + (weekOffset * 7);
+  const result = new Date(today);
+  result.setDate(today.getDate() + diff);
+  return result;
+}
+
+function weekRangeStr(){
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(today.getDate() - today.getDay() + (weekOffset * 7));
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  const startMonth = start.toLocaleDateString(undefined, {month:'short'});
+  const endMonth = end.toLocaleDateString(undefined, {month:'short'});
+  if(startMonth === endMonth){
+    return `${startMonth} ${start.getDate()}–${end.getDate()}`;
+  }
+  return `${startMonth} ${start.getDate()} – ${endMonth} ${end.getDate()}`;
+}
+
+function renderWeekLabel(){
+  const label = document.getElementById('weekLabel');
+  let prefix;
+  if(weekOffset === 0){
+    prefix = 'This week';
+  } else if(weekOffset === 1){
+    prefix = 'Next week';
+  } else if(weekOffset === -1){
+    prefix = 'Last week';
+  } else if(weekOffset > 1){
+    prefix = weekOffset + ' weeks ahead';
+  } else {
+    prefix = Math.abs(weekOffset) + ' weeks ago';
+  }
+  label.textContent = prefix + ' (' + weekRangeStr() + ')';
+}
+
+document.getElementById('prevWeekBtn').addEventListener('click', ()=>{
+  weekOffset -= 1;
+  renderHomeList();
+});
+document.getElementById('nextWeekBtn').addEventListener('click', ()=>{
+  weekOffset += 1;
+  renderHomeList();
+});
+
+function todayDateStr(){
+  return new Date().toISOString().slice(0,10);
+}
+
+let fieldRouteOrder = lsGet('fieldRouteOrder') || {};
+let draggedRouteCustomerId = null;
+
+function saveFieldRouteOrder(){
+  lsSet('fieldRouteOrder', fieldRouteOrder);
+}
+
+function orderCustomersForDay(day, list){
+  const ids = list.map(c => c.id);
+  let order = (fieldRouteOrder[day] || []).filter(id => ids.includes(id));
+  ids.forEach(id => { if(!order.includes(id)) order.push(id); });
+  return order.map(id => list.find(c => c.id === id)).filter(Boolean);
+}
+
+function moveRouteCustomer(day, draggedId, targetId, visibleList){
+  const ordered = orderCustomersForDay(day, visibleList).map(c => c.id);
+  const from = ordered.indexOf(draggedId);
+  const to = ordered.indexOf(targetId);
+  if(from === -1 || to === -1 || from === to) return;
+  ordered.splice(from, 1);
+  ordered.splice(to, 0, draggedId);
+  fieldRouteOrder[day] = ordered;
+  saveFieldRouteOrder();
+  renderHomeList();
+}
+
+function renderHomeList(){
+  renderDayTabs();
+  renderWeekLabel();
+  const container = document.getElementById('homeCustomerList');
+  const today = todayDateStr();
+  const selDate = dateForWeekday(selectedHomeDay);
+  const selectedDayISO = selDate
+    ? new Date(selDate.getTime() - selDate.getTimezoneOffset() * 60000).toISOString().slice(0,10)
+    : '';
+  // Regular route: customers whose service day matches
+  const routeCustomers = customers
+    .filter(c => c.day === selectedHomeDay && c.active !== false)
+    // Only customers assigned to the signed-in technician appear on their route
+    .filter(c => currentUser ? c.technicianId === currentUser.id : false)
+    .filter(c => weekOffset !== 0 || c.lastServicedDate !== today);
+
+  // Scheduled filter cleans land on their specific date, for the assigned tech
+  const filterCleanIds = new Set();
+  (lsGet('scheduledFilterCleans') || [])
+    .filter(s => s.status === 'scheduled')
+    .filter(s => s.date === selectedDayISO)
+    .filter(s => currentUser && s.technicianId === currentUser.id)
+    .forEach(s => filterCleanIds.add(s.customerId));
+
+  // Finalized work orders land on their scheduled dates too
+  const workOrderJobs = (lsGet('scheduledWorkOrders') || [])
+    .filter(j => j.status === 'scheduled')
+    .filter(j => j.date === selectedDayISO)
+    .filter(j => currentUser && j.technicianId === currentUser.id);
+  const workOrderTitles = {};
+  workOrderJobs.forEach(j => { workOrderTitles[j.customerId] = j.title; });
+  const workOrderIds = new Set(workOrderJobs.map(j => j.customerId));
+
+  const extraFilterCustomers = customers.filter(c =>
+    (filterCleanIds.has(c.id) || workOrderIds.has(c.id)) &&
+    c.active !== false &&
+    !routeCustomers.some(r => r.id === c.id));
+
+  const todaysCustomers = orderCustomersForDay(selectedHomeDay,
+    routeCustomers.concat(extraFilterCustomers));
+
+  const dateInfo = document.getElementById('homeDateInfo');
+  const stopText = todaysCustomers.length === 1 ? '1 route stop' : todaysCustomers.length + ' route stops';
+  const d = dateForWeekday(selectedHomeDay);
+  const dateStr = d ? d.toLocaleDateString(undefined, {month:'long', day:'numeric', year:'numeric'}) : selectedHomeDay;
+  dateInfo.textContent = dateStr + ' · ' + stopText;
+
+  if(todaysCustomers.length === 0){
+    container.innerHTML = `<div class="empty">No customers assigned to you for ${selectedHomeDay}. Your admin assigns customers to your route.</div>`;
+    return;
+  }
+  container.innerHTML = '';
+  const canReorder = appSettings.allowRouteReorder !== false;
+  todaysCustomers.forEach((c, idx)=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    row.innerHTML = `<div style="display:flex;align-items:center;gap:10px;min-width:0;">
+        ${canReorder ? '<span class="route-handle" style="color:var(--muted);font-size:17px;cursor:grab;flex-shrink:0;user-select:none;touch-action:none;">⠿</span>' : ''}
+        <span class="mono" style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--teal-mid);min-width:18px;">${idx + 1}</span>
+        <div style="min-width:0;"><div class="cust-name">${c.name}${filterCleanIds.has(c.id) ? ' <span style="background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;vertical-align:middle;margin-left:6px;">FILTER CLEAN</span>' : ''}${workOrderIds.has(c.id) ? ' <span style="background:var(--teal-mid);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;vertical-align:middle;margin-left:6px;">' + workOrderTitles[c.id].toUpperCase() + '</span>' : ''}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>
+      </div>`;
+
+    if(canReorder){
+      row.draggable = true;
+      row.addEventListener('dragstart', ()=>{
+        draggedRouteCustomerId = c.id;
+        row.style.opacity = '0.4';
+      });
+      row.addEventListener('dragend', ()=>{
+        row.style.opacity = '1';
+        draggedRouteCustomerId = null;
+        container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
+      });
+      row.addEventListener('dragover', (e)=>{
+        e.preventDefault();
+        if(draggedRouteCustomerId && draggedRouteCustomerId !== c.id){
+          row.style.borderTop = '2px solid var(--gold)';
+        }
+      });
+      row.addEventListener('dragleave', ()=>{ row.style.borderTop = ''; });
+      row.addEventListener('drop', (e)=>{
+        e.preventDefault();
+        row.style.borderTop = '';
+        if(draggedRouteCustomerId && draggedRouteCustomerId !== c.id){
+          moveRouteCustomer(selectedHomeDay, draggedRouteCustomerId, c.id, todaysCustomers);
+        }
+      });
+    }
+    const rightWrap = document.createElement('div');
+    rightWrap.style.display = 'flex';
+    rightWrap.style.alignItems = 'center';
+    rightWrap.style.gap = '10px';
+    // Directions and Skip Service now live inside the drop-down panel
+    const onWayBtn = document.createElement('button');
+    onWayBtn.className = 'btn btn-secondary';
+    onWayBtn.style.width = 'auto';
+    onWayBtn.style.padding = '7px 12px';
+    onWayBtn.style.fontSize = '12px';
+    onWayBtn.style.marginLeft = 'auto';
+    onWayBtn.textContent = 'On my way';
+    onWayBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      sendOnMyWay(c);
+    });
+    rightWrap.appendChild(onWayBtn);
+    const chev = document.createElement('div');
+    chev.className = 'chev';
+    chev.textContent = '›';
+    rightWrap.appendChild(chev);
+    row.appendChild(rightWrap);
+    row.addEventListener('click', ()=>{
+      // Slide open a briefing panel first, rather than jumping straight in
+      const existing = container.querySelector('.route-brief[data-for="' + c.id + '"]');
+      container.querySelectorAll('.route-brief').forEach(p => p.remove());
+      container.querySelectorAll('.chev').forEach(x => x.textContent = '\u203A');
+      if(existing){ return; }
+      chev.textContent = '\u2039';
+
+      const panel = document.createElement('div');
+      panel.className = 'route-brief';
+      panel.dataset.for = c.id;
+      panel.style.cssText = 'background:var(--surface-alt);border-radius:10px;padding:12px 14px;margin:0 0 10px;font-size:13.5px;line-height:1.6;animation:briefIn .16s ease;';
+
+      const bits = [];
+      if(c.gateCode) bits.push(['\ud83d\udd11 Gate code', c.gateCode]);
+      const dogNames = (c.dogs || []).map(d => d.name).filter(Boolean);
+      if(dogNames.length) bits.push([dogNames.length === 1 ? '\ud83d\udc15 Dog' : '\ud83d\udc15 Dogs', dogNames.join(', ')]);
+
+      bits.forEach(([lbl, val])=>{
+        const line = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = lbl + ': ';
+        line.appendChild(strong);
+        line.appendChild(document.createTextNode(val));
+        panel.appendChild(line);
+      });
+
+      const btnRow = document.createElement('div');
+      btnRow.className = 'btn-row';
+      btnRow.style.marginTop = bits.length ? '12px' : '0';
+      btnRow.style.flexWrap = 'wrap';
+
+      const dirBtn = document.createElement('button');
+      dirBtn.className = 'btn btn-ghost';
+      dirBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
+      dirBtn.textContent = 'Directions';
+      dirBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        openDirections(c);
+      });
+      btnRow.appendChild(dirBtn);
+
+      const skipBtn2 = document.createElement('button');
+      skipBtn2.className = 'btn btn-ghost';
+      skipBtn2.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;color:var(--rust);border-color:#EFC9BC;';
+      skipBtn2.textContent = 'Skip Service';
+      skipBtn2.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        skipService(c);
+      });
+      btnRow.appendChild(skipBtn2);
+
+      if(c.accessNotes){
+        const notesBtn = document.createElement('button');
+        notesBtn.className = 'btn btn-ghost';
+        notesBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
+        notesBtn.textContent = 'Access notes';
+        notesBtn.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          const overlay = document.createElement('div');
+          overlay.className = 'confirm-overlay';
+          overlay.innerHTML = `
+            <div class="confirm-box" style="max-width:420px;">
+              <h3 style="font-size:15px;margin:0 0 10px;">${c.name} — access notes</h3>
+              <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;margin-bottom:14px;">${c.accessNotes}</div>
+              <div class="btn-row"><button class="btn btn-primary" id="anClose" style="flex:1;">Close</button></div>
+            </div>`;
+          document.body.appendChild(overlay);
+          const done = ()=> document.body.removeChild(overlay);
+          overlay.querySelector('#anClose').addEventListener('click', done);
+          overlay.addEventListener('click', (ev)=>{ if(ev.target === overlay) done(); });
+        });
+        btnRow.appendChild(notesBtn);
+      }
+
+      const startBtn = document.createElement('button');
+      startBtn.className = 'btn btn-primary';
+      startBtn.style.cssText = 'flex:1;padding:10px 14px;font-size:14px;';
+      startBtn.textContent = 'Start visit \u2192';
+      startBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        openVisit(c.id);
+      });
+      btnRow.appendChild(startBtn);
+      panel.appendChild(btnRow);
+
+      row.after(panel);
+    });
+    container.appendChild(row);
+  });
+}
+
+function renderServicedList(){
+  const container = document.getElementById('servicedList');
+  if(!container) return;
+  const today = todayDateStr();
+  const servicedCustomers = customers.filter(c => c.lastServicedDate === today && c.active !== false);
+  if(servicedCustomers.length === 0){
+    container.innerHTML = '<div class="empty">No one\'s been serviced yet today.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  servicedCustomers.forEach(c=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    const durationBadge = c.lastServiceDurationMs
+      ? `<span class="mono" style="background:var(--teal-pale);color:var(--teal-deep);font-weight:700;font-size:11px;padding:3px 8px;border-radius:20px;margin-left:8px;">${formatDuration(c.lastServiceDurationMs)}</span>`
+      : '';
+    row.innerHTML = `<div><div class="cust-name">${c.name}${durationBadge}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>`;
+    const reserviceBtn = document.createElement('button');
+    reserviceBtn.className = 'btn btn-secondary';
+    reserviceBtn.style.width = 'auto';
+    reserviceBtn.style.padding = '7px 12px';
+    reserviceBtn.style.fontSize = '12px';
+    reserviceBtn.textContent = 'Reservice';
+    reserviceBtn.addEventListener('click', ()=> reserviceCustomer(c));
+    row.appendChild(reserviceBtn);
+    container.appendChild(row);
+  });
+}
+
+async function reserviceCustomer(customer){
+  customer.lastServicedDate = null;
+  delete customer.lastServiceDurationMs;
+  await saveCustomers();
+
+  const today = todayDateStr();
+  const skipList = await loadSkippedVisits(customer.id);
+  const filtered = skipList.filter(s => s.date !== today);
+  if(filtered.length !== skipList.length){
+    await saveSkippedVisits(customer.id, filtered);
+  }
+
+  showToast(customer.name + ' moved back to Today\'s list');
+  renderServicedList();
+  renderHomeList();
+}
+
+async function skipService(customer){
+  const confirmed = await confirmDialog('Are you sure you want to skip service for ' + customer.name + ' today?', 'Yes');
+  if(!confirmed) return;
+  if(pendingVisit && pendingVisit.customerId === customer.id){
+    pendingVisit = null;
+    stopVisitTimer();
+  }
+  const today = todayDateStr();
+  customer.lastServicedDate = today;
+  await saveCustomers();
+
+  const skipList = await loadSkippedVisits(customer.id);
+  const filtered = skipList.filter(s => s.date !== today);
+  filtered.unshift({id: 'skip_' + Date.now(), date: today, timestamp: new Date().toISOString()});
+  await saveSkippedVisits(customer.id, filtered);
+
+  showToast(customer.name + ' skipped for today');
+  renderHomeList();
+  renderServicedList();
+
+  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
+  document.getElementById('reportCustomerSelect').value = customer.id;
+  await refreshDateSelector(customer.id);
+  switchView('report', {skipRefresh: true});
+}
+
+function openDirections(customer){
+  if(!customer.address || !customer.address.trim()){
+    showToast('No address on file for ' + customer.name);
+    return;
+  }
+  const destination = encodeURIComponent(customer.address.trim());
+  const url = 'https://www.google.com/maps/dir/?api=1&destination=' + destination + '&travelmode=driving';
+  window.open(url, '_blank');
+}
+
+function sendOnMyWay(customer){
+  const smsText = `Hi ${customer.name}, this is your pool tech — just a heads up that I'll be at your house soon to service your pool${customer.hasSpa ? ' and spa' : ''}. See you shortly!`;
+
+  if(customer.phone){
+    const digits = customer.phone.replace(/[^\d+]/g, '');
+    const encodedText = encodeURIComponent(smsText);
+    const link = document.createElement('a');
+    link.href = `sms:${digits}?body=${encodedText}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Text message opening — review and hit send');
+    return;
+  }
+
+  if(customer.email){
+    const subject = encodeURIComponent('On my way!');
+    const bodyText = `Hi ${customer.name},\n\nJust letting you know I'm on my way to service your pool${customer.hasSpa ? ' and spa' : ''} today.\n\nSee you soon!`;
+    const encodedBody = encodeURIComponent(bodyText);
+    const link = document.createElement('a');
+    link.href = `mailto:${customer.email}?subject=${subject}&body=${encodedBody}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('No phone on file — opening email instead');
+    return;
+  }
+
+  showToast('No phone or email on file for ' + customer.name);
+}
+
+async function getCustomerServiceDates(customerId){
+  const customer = customers.find(c => c.id === customerId);
+  if(!customer) return [];
+  const dateMap = new Map();
+
+  const poolList = await loadReadings(customerId, 'pool');
+  poolList.forEach(r=>{
+    const d = r.date.slice(0,10);
+    if(!dateMap.has(d)) dateMap.set(d, r.date);
+  });
+
+  const spaList = await loadReadings(customerId, 'spa');
+  spaList.forEach(r=>{
+    const d = r.date.slice(0,10);
+    if(!dateMap.has(d)) dateMap.set(d, r.date);
+  });
+
+  for(const f of getValidFountains(customer)){
+    const fList = await loadFountainReadings(customerId, f.id);
+    fList.forEach(r=>{
+      const d = r.date.slice(0,10);
+      if(!dateMap.has(d)) dateMap.set(d, r.date);
+    });
+  }
+
+  const skipList = await loadSkippedVisits(customerId);
+  skipList.forEach(r=>{
+    if(!dateMap.has(r.date)) dateMap.set(r.date, r.timestamp || r.date);
+  });
+
+  return Array.from(dateMap.entries())
+    .map(([dateStr, ts]) => ({dateStr, ts}))
+    .sort((a,b) => b.ts.localeCompare(a.ts));
+}
+
+async function renderDateReport(customerId, dateStr){
+  if(!customerId || !dateStr) return;
+  const skipList = await loadSkippedVisits(customerId);
+  const skipRecord = skipList.find(r => r.date === dateStr);
+  if(skipRecord){
+    await renderReport(customerId, skipRecord.id);
+    return;
+  }
+
+  const customer = customers.find(c => c.id === customerId);
+  if(!customer) return;
+
+  const poolList = await loadReadings(customerId, 'pool');
+  const poolReading = poolList.find(r => r.date.slice(0,10) === dateStr);
+  const spaList = await loadReadings(customerId, 'spa');
+  const spaReading = spaList.find(r => r.date.slice(0,10) === dateStr);
+  const fountainRefs = [];
+  for(const f of getValidFountains(customer)){
+    const fList = await loadFountainReadings(customerId, f.id);
+    const match = fList.find(r => r.date.slice(0,10) === dateStr);
+    if(match) fountainRefs.push({fountainId: f.id, readingId: match.id});
+  }
+
+  if(!poolReading && !spaReading && fountainRefs.length === 0){
+    document.getElementById('reportOutput').innerHTML = '<div class="empty">No report found for this date.</div>';
+    document.getElementById('reportActions').style.display = 'none';
+    document.getElementById('btnDownloadPhoto').style.display = 'none';
+    document.getElementById('btnSharePhoto').style.display = 'none';
+    return;
+  }
+
+  await renderFullCombinedReport(customerId, poolReading ? poolReading.id : null, spaReading ? spaReading.id : null, fountainRefs);
+}
+
+async function refreshDateSelector(customerId){
+  const dates = await getCustomerServiceDates(customerId);
+  const sel = document.getElementById('reportReadingSelect');
+  sel.innerHTML = '';
+  if(dates.length === 0){
+    const opt = document.createElement('option');
+    opt.textContent = 'No reports yet';
+    opt.value = '';
+    sel.appendChild(opt);
+    document.getElementById('reportOutput').innerHTML = '';
+    document.getElementById('reportActions').style.display = 'none';
+    document.getElementById('btnDownloadPhoto').style.display = 'none';
+    document.getElementById('btnSharePhoto').style.display = 'none';
+    return;
+  }
+  dates.forEach(d=>{
+    const opt = document.createElement('option');
+    opt.value = d.dateStr;
+    opt.textContent = fmtDate(d.ts);
+    sel.appendChild(opt);
+  });
+  await renderDateReport(customerId, dates[0].dateStr);
+}
+
+async function refreshReportSelectors(){
+  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
+  const custId = document.getElementById('reportCustomerSelect').value;
+  if(custId) await refreshDateSelector(custId);
+}
+
+document.getElementById('reportCustomerSelect').addEventListener('change', (e)=>{
+  refreshDateSelector(e.target.value);
+});
+document.getElementById('reportReadingSelect').addEventListener('change', (e)=>{
+  const custId = document.getElementById('reportCustomerSelect').value;
+  renderDateReport(custId, e.target.value);
+});
+
+let currentReportText = '';
+let currentVisitCustomerId = null;
+
+let visitTimerStart = null;
+let visitTimerRunning = false;
+
+function formatDuration(ms){
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if(h > 0) return h + 'h ' + m + 'm';
+  if(m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function startVisitTimer(){
+  visitTimerStart = Date.now();
+  visitTimerRunning = true;
+}
+
+function stopVisitTimer(){
+  const elapsed = visitTimerStart ? Date.now() - visitTimerStart : null;
+  visitTimerStart = null;
+  visitTimerRunning = false;
+  return elapsed;
+}
+let currentVisitFountainId = null;
+let pendingVisit = null;
+// pendingVisit shape: { customerId, neededSections: [ids], doneSections: { sectionId: readingId } }
+// sectionId is 'pool', 'spa', or a fountain's id
+
+// Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
+const DEFAULT_SETTINGS = { voiceModeEnabled: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true };
+let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
+
+function saveSettings(){
+  lsSet('settings', appSettings);
+}
+
+function updateVoiceModeIndicator(){
+  const enabled = appSettings.voiceModeEnabled;
+  const dot = document.getElementById('voiceModeDot');
+  const text = document.getElementById('voiceModeText');
+  if(dot) dot.style.background = enabled ? 'var(--green)' : 'var(--rust)';
+  if(text) text.textContent = enabled ? 'Voice entry on' : 'Voice entry off';
+}
+
+function applyVoiceModeSetting(){
+  const enabled = appSettings.voiceModeEnabled;
+  updateVoiceModeIndicator();
+  if(!enabled){
+    visitVoiceController.stopListening();
+    releaseVisitWakeLock();
+  }
+}
+
+document.getElementById('settingVoiceMode').addEventListener('change', (e)=>{
+  appSettings.voiceModeEnabled = e.target.checked;
+  saveSettings();
+  applyVoiceModeSetting();
+  showToast(appSettings.voiceModeEnabled ? 'Voice entry mode turned on' : 'Voice entry mode turned off');
+});
+
+function normalizeFountain(f, index){
+  if(f && typeof f === 'object' && f.id){
+    const name = (f.name && String(f.name).trim()) || ('Fountain ' + (index + 1));
+    return { id: f.id, name };
+  }
+  if(typeof f === 'string' && f.trim()){
+    return { id: f.trim(), name: f.trim() };
+  }
+  return null;
+}
+
+function getValidFountains(customer){
+  return (customer.fountains || []).map((f, i) => normalizeFountain(f, i)).filter(Boolean);
+}
+
+let isFilterCleanVisit = false;
+
+// A visit is a filter clean if this customer has one scheduled for the day being viewed
+function detectFilterCleanVisit(customerId){
+  const selDate = dateForWeekday(selectedHomeDay);
+  const iso = selDate
+    ? new Date(selDate.getTime() - selDate.getTimezoneOffset() * 60000).toISOString().slice(0,10)
+    : '';
+  return (lsGet('scheduledFilterCleans') || [])
+    .some(s => s.status === 'scheduled' && s.customerId === customerId && s.date === iso);
+}
+
+function computeNeededSections(customer){
+  // Filter cleans are a single simple pass — no chemistry
+  if(isFilterCleanVisit) return ['pool'];
+
+  const sections = [];
+  if(customer.hasPool !== false) sections.push('pool');
+  if(customer.hasSpa) sections.push('spa');
+  getValidFountains(customer).forEach(f => sections.push(f.id));
+  return sections;
+}
+
+function sectionLabel(customer, sectionId){
+  if(isFilterCleanVisit && sectionId === 'pool') return 'Filter clean';
+  if(sectionId === 'pool') return 'Pool';
+  if(sectionId === 'spa') return 'Spa';
+  const fountain = getValidFountains(customer).find(f => f.id === sectionId);
+  return fountain ? fountain.name : 'Fountain';
+}
+
+
+// Equipment-specific service toggles on the pool's After photos step.
+// Backwash only shows for sand filters; salt cell cleaning only for salt cells.
+async function renderPoolServiceChecks(customer){
+  const box = document.getElementById('poolServiceChecks');
+  if(!box) return;
+  box.innerHTML = '';
+
+  const equipment = (customer && customer.equipment) || [];
+  const filterItem = equipment.find(i => i.type === 'Filter');
+  const chlorItem = equipment.find(i => i.type === 'Chlorination');
+
+  const checks = [];
+  if(filterItem && (filterItem.filterTypeChoice === 'Sand' || filterItem.filterTypeChoice === 'DE')){
+    checks.push({id:'chkBackwashed', label:'Filter backwashed', field:'filterBackwashed'});
+  }
+  if(chlorItem && chlorItem.chlorinationChoice === 'Salt Cell'){
+    checks.push({id:'chkSaltCell', label:'Salt cell cleaned', field:'saltCellCleaned'});
+  }
+
+  if(checks.length === 0){
+    box.style.display = 'none';
+    return;
+  }
+
+  // Find when each was last done, from past pool readings
+  let history = [];
+  try { history = await loadReadings(customer.id, 'pool'); } catch(e){ history = []; }
+
+  function lastDoneText(field){
+    const hit = history.find(r => r[field]);
+    if(!hit) return 'Not logged yet';
+    const d = new Date(hit.date);
+    const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+    const when = d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+    if(days <= 0) return 'Last done today';
+    if(days === 1) return 'Last done yesterday';
+    return 'Last done ' + when + ' · ' + days + ' days ago';
+  }
+
+  const eyebrow = document.createElement('div');
+  eyebrow.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;";
+  eyebrow.textContent = 'Service performed';
+  box.appendChild(eyebrow);
+
+  checks.forEach(ch=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = ch.id;
+    btn.dataset.on = 'false';
+    btn.textContent = ch.label;
+    const off = 'background:#fff;color:var(--teal-deep);border:1.5px solid var(--teal-mid);';
+    const on  = 'background:var(--teal-deep);color:#fff;border:1.5px solid var(--teal-deep);';
+    const base = 'padding:11px 18px;border-radius:10px;font-size:15px;font-weight:600;'
+      + "font-family:'Inter',sans-serif;cursor:pointer;flex-shrink:0;transition:background-color .15s ease,color .15s ease;";
+    btn.style.cssText = base + off;
+    btn.addEventListener('click', ()=>{
+      const nowOn = btn.dataset.on !== 'true';
+      btn.dataset.on = nowOn ? 'true' : 'false';
+      btn.style.cssText = base + (nowOn ? on : off);
+    });
+    row.appendChild(btn);
+
+    const last = document.createElement('span');
+    last.style.cssText = 'font-size:12px;color:var(--muted);';
+    last.textContent = lastDoneText(ch.field);
+    row.appendChild(last);
+
+    box.appendChild(row);
+  });
+
+  box.style.display = 'block';
+}
+
+function renderVisitSectionButtons(){
+  const customer = customers.find(c => c.id === currentVisitCustomerId);
+  if(!customer) return;
+  const container = document.getElementById('visitSectionButtons');
+  container.innerHTML = '';
+  pendingVisit.neededSections.forEach(sectionId=>{
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-ghost';
+    btn.style.width = 'auto';
+    btn.style.fontWeight = '700';
+    const done = pendingVisit.doneSections[sectionId] !== undefined;
+    btn.textContent = (done ? '✓ ' : '') + sectionLabel(customer, sectionId);
+
+    // Section colour coding: pool = ocean blue, spa = fire red, fountain = green
+    const SECTION_COLOURS = {
+      pool:     {text:'#0B6FA4', border:'#A9D4EA', bg:'#EAF4FA'},
+      spa:      {text:'#C0341B', border:'#EFC0B4', bg:'#FCEEEA'},
+      fountain: {text:'#2E7D4F', border:'#B9DFC4', bg:'#EAF6EE'}
+    };
+    const kind = sectionId === 'pool' ? 'pool' : (sectionId === 'spa' ? 'spa' : 'fountain');
+    const colour = SECTION_COLOURS[kind];
+    const isSelected = currentVisibleSection === kind
+      && (kind !== 'fountain' || currentVisitFountainId === sectionId);
+
+    if(isSelected){
+      // Selected: solid fill in its own colour, white text
+      btn.style.background = colour.text;
+      btn.style.color = '#fff';
+      btn.style.borderColor = colour.text;
+      btn.style.boxShadow = 'var(--shadow-sm)';
+    } else {
+      btn.style.background = done ? colour.bg : 'transparent';
+      btn.style.color = colour.text;
+      btn.style.borderColor = colour.border;
+      btn.style.boxShadow = 'none';
+    }
+
+    btn.addEventListener('click', ()=> showVisitSection(sectionId));
+    container.appendChild(btn);
+  });
+
+  // Equipment tab appears only for technicians granted photo access
+  if(currentUser && currentUser.canPhotoEquipment){
+    const equipBtn = document.createElement('button');
+    equipBtn.className = 'btn btn-ghost';
+    equipBtn.style.width = 'auto';
+    equipBtn.style.fontWeight = '700';
+    equipBtn.style.marginLeft = 'auto';
+    equipBtn.textContent = 'Equipment';
+    if(currentVisibleSection === 'equipment'){
+      equipBtn.style.background = 'var(--teal-deep)';
+      equipBtn.style.color = '#fff';
+      equipBtn.style.borderColor = 'var(--teal-deep)';
+      equipBtn.style.boxShadow = 'var(--shadow-sm)';
+    } else {
+      equipBtn.style.background = 'transparent';
+      equipBtn.style.color = 'var(--teal-deep)';
+      equipBtn.style.borderColor = 'var(--line)';
+    }
+    equipBtn.addEventListener('click', ()=> showVisitSection('equipment'));
+    container.appendChild(equipBtn);
+  }
+  if(pendingVisit.neededSections.length === 0){
+    container.innerHTML = '<p style="font-size:12.5px;color:var(--muted);">This customer has no pool, spa, or fountains on file yet — add those from the Customer tab.</p>';
+  }
+}
+
+function hideAllVisitSections(){
+  ['visitEquipmentSection','visitPoolBeforePhotoSection','visitPoolSection','visitPoolProductsSection','visitPoolPhotoSection','visitPoolSaveSection',
+   'visitSpaBeforePhotoSection','visitSpaSection','visitSpaProductsSection','visitSpaPhotoSection','visitSpaSaveSection',
+   'visitFountainBeforePhotoSection','visitFountainSection','visitFountainProductsSection','visitFountainPhotoSection','visitFountainSaveSection'
+  ].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = 'none'; });
+}
+
+let currentVisibleSection = null;
+
+let draggedButtonCtx = null;
+
+function emptyState(message){
+  return `<div class="empty">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M12 3C12 3 5 12 5 17C5 20.9 8.1 24 12 24C15.9 24 19 20.9 19 17C19 12 12 3 12 3Z" stroke="#5B7370" stroke-width="1.6"/></svg>
+    <p>${message}</p>
+  </div>`;
+}
+
+function promptDialog(message, placeholder){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box">
+        <p>${message}</p>
+        <input id="promptInput" placeholder="${placeholder || ''}" style="margin-bottom:14px;">
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="promptCancel">Cancel</button>
+          <button class="btn btn-primary" id="promptOk">Add</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#promptInput');
+    const cleanup = (result)=>{
+      document.body.removeChild(overlay);
+      resolve(result);
+    };
+    overlay.querySelector('#promptCancel').addEventListener('click', ()=>cleanup(null));
+    overlay.querySelector('#promptOk').addEventListener('click', ()=>cleanup(input.value.trim() || null));
+    input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter') cleanup(input.value.trim() || null);
+      if(e.key === 'Escape') cleanup(null);
+    });
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(null); });
+    setTimeout(()=> input.focus(), 50);
+  });
+}
+
+const DEFAULT_EQUIPMENT_TYPES = ['Filter', 'Pump', 'Cleaning System', 'Chlorination', 'Heater'];
+
+let currentEquipmentTypeOptions = [...DEFAULT_EQUIPMENT_TYPES];
+
+function ensureEquipmentItem(type){
+  let it = currentEquipmentItems.find(i => i.type === type);
+  if(!it){
+    it = {id: 'equip_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), type, photos: []};
+    currentEquipmentItems.push(it);
+    persistCurrentEquipmentItems();
+  }
+  return it;
+}
+
+function renderEquipmentTypeList(){
+  const container = document.getElementById('icEquipmentList');
+  container.innerHTML = '';
+  currentEquipmentTypeOptions.forEach(type=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    row.style.gap = '12px';
+
+    const existingItem = currentEquipmentItems.find(i => i.type === type);
+
+    const label = document.createElement('div');
+    label.style.fontSize = '16px';
+    label.style.fontWeight = '600';
+    label.style.flex = '1';
+    label.style.minWidth = '0';
+    label.textContent = type;
+    row.appendChild(label);
+
+    const notesBtn = document.createElement('button');
+    notesBtn.type = 'button';
+    notesBtn.className = 'btn btn-ghost';
+    notesBtn.style.width = 'auto';
+    notesBtn.style.padding = '6px 10px';
+    notesBtn.style.fontSize = '12px';
+    notesBtn.style.flexShrink = '0';
+    notesBtn.textContent = 'Notes' + (existingItem && existingItem.notes ? ' •' : '');
+    notesBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openEquipmentNotesModal(ensureEquipmentItem(type));
+    });
+    row.appendChild(notesBtn);
+
+    const photoBtn = document.createElement('button');
+    photoBtn.type = 'button';
+    photoBtn.style.background = 'none';
+    photoBtn.style.border = 'none';
+    photoBtn.style.cursor = 'pointer';
+    photoBtn.style.fontSize = '17px';
+    photoBtn.style.flexShrink = '0';
+    photoBtn.style.display = 'flex';
+    photoBtn.style.alignItems = 'center';
+    photoBtn.style.gap = '4px';
+    const photoCount = existingItem ? existingItem.photos.length : 0;
+    photoBtn.title = 'View or add photos';
+    photoBtn.innerHTML = '📷' + (photoCount ? `<span style="font-size:11px;color:var(--muted);font-weight:600;">${photoCount}</span>` : '');
+    photoBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openEquipmentPhotoModal(ensureEquipmentItem(type));
+    });
+    row.appendChild(photoBtn);
+
+    container.appendChild(row);
+  });
+  renderEquipmentTypeOrderList();
+}
+
+function openReorderEquipmentModal(){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box">
+      <h3 style="font-size:15px;margin:0 0 4px;">Reorder Equipment</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">Drag to change the order equipment appears in the list, or delete a type entirely.</p>
+      <div id="icEquipmentTypeOrderList"></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-primary" id="reorderEquipmentDone">Done</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  renderEquipmentTypeOrderList();
+  const cleanup = ()=>{
+    document.body.removeChild(overlay);
+    renderEquipmentTypeList();
+  };
+  overlay.querySelector('#reorderEquipmentDone').addEventListener('click', cleanup);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+}
+
+document.getElementById('btnReorderEquipment').addEventListener('click', openReorderEquipmentModal);
+
+let draggedEquipmentType = null;
+
+function reorderEquipmentType(draggedType, targetType){
+  const fromIndex = currentEquipmentTypeOptions.indexOf(draggedType);
+  const toIndex = currentEquipmentTypeOptions.indexOf(targetType);
+  if(fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+  currentEquipmentTypeOptions.splice(fromIndex, 1);
+  currentEquipmentTypeOptions.splice(toIndex, 0, draggedType);
+  renderEquipmentTypeList();
+  persistCurrentEquipmentTypeOptions();
+}
+
+function renderEquipmentTypeOrderList(){
+  const container = document.getElementById('icEquipmentTypeOrderList');
+  if(!container) return;
+  container.innerHTML = '';
+  if(currentEquipmentTypeOptions.length === 0){
+    container.innerHTML = emptyState('No equipment types yet.');
+    return;
+  }
+  currentEquipmentTypeOptions.forEach(type=>{
+    const row = document.createElement('div');
+    row.className = 'cust-row';
+    row.style.gap = '8px';
+    row.style.cursor = 'grab';
+    row.draggable = true;
+
+    const handle = document.createElement('div');
+    handle.textContent = '⠿';
+    handle.style.color = 'var(--muted)';
+    handle.style.fontSize = '16px';
+    handle.style.flexShrink = '0';
+    handle.style.userSelect = 'none';
+
+    const label = document.createElement('div');
+    label.style.flex = '1';
+    label.style.fontSize = '13.5px';
+    label.style.fontWeight = '600';
+    label.textContent = type;
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'btn btn-ghost fountain-remove';
+    deleteBtn.style.setProperty('width', '34.2px', 'important');
+    deleteBtn.style.setProperty('min-width', '34.2px', 'important');
+    deleteBtn.style.setProperty('max-width', '34.2px', 'important');
+    deleteBtn.style.setProperty('height', '34.2px', 'important');
+    deleteBtn.style.setProperty('min-height', '34.2px', 'important');
+    deleteBtn.style.setProperty('max-height', '34.2px', 'important');
+    deleteBtn.style.setProperty('flex', '0 0 34.2px', 'important');
+    deleteBtn.style.setProperty('box-sizing', 'border-box', 'important');
+    deleteBtn.style.marginLeft = 'auto';
+    deleteBtn.style.fontSize = '16px';
+    deleteBtn.style.color = 'var(--rust)';
+    deleteBtn.style.borderColor = '#EFC9BC';
+    deleteBtn.textContent = '×';
+    deleteBtn.setAttribute('aria-label', 'Remove ' + type);
+    deleteBtn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const confirmed = await confirmDialog('Permanently remove "' + type + '" from this customer\'s equipment list? This can\'t be undone.');
+      if(!confirmed) return;
+      currentEquipmentTypeOptions = currentEquipmentTypeOptions.filter(t => t !== type);
+      renderEquipmentTypeList();
+      persistCurrentEquipmentTypeOptions();
+      showToast('"' + type + '" removed from this customer\'s equipment list');
+    });
+
+    row.appendChild(handle);
+    row.appendChild(label);
+    row.appendChild(deleteBtn);
+
+    row.addEventListener('dragstart', ()=>{
+      draggedEquipmentType = type;
+      row.style.opacity = '0.4';
+    });
+    row.addEventListener('dragend', ()=>{
+      row.style.opacity = '1';
+      draggedEquipmentType = null;
+      container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
+    });
+    row.addEventListener('dragover', (e)=>{
+      e.preventDefault();
+      if(draggedEquipmentType && draggedEquipmentType !== type){
+        row.style.borderTop = '2px solid var(--gold)';
+      }
+    });
+    row.addEventListener('dragleave', ()=>{
+      row.style.borderTop = '';
+    });
+    row.addEventListener('drop', (e)=>{
+      e.preventDefault();
+      row.style.borderTop = '';
+      if(draggedEquipmentType && draggedEquipmentType !== type){
+        reorderEquipmentType(draggedEquipmentType, type);
+      }
+    });
+
+    container.appendChild(row);
+  });
+}
+
+let currentEquipmentItems = [];
+
+function persistCurrentEquipmentTypeOptions(){
+  if(!currentVisitCustomerId) return;
+  const existing = customers.find(c => c.id === currentVisitCustomerId);
+  if(existing){
+    existing.equipmentTypeOptions = currentEquipmentTypeOptions;
+    saveCustomers();
+  }
+}
+
+function persistCurrentEquipmentItems(){
+  if(!currentVisitCustomerId) return;
+  const existing = customers.find(c => c.id === currentVisitCustomerId);
+  if(existing){
+    existing.equipment = currentEquipmentItems;
+    saveCustomers();
+  }
+}
+
+document.getElementById('btnNewEquipmentType').addEventListener('click', async ()=>{
+  const name = await promptDialog('Name this new equipment', 'e.g. Salt System');
+  if(!name) return;
+  const trimmed = name.trim();
+  if(!currentEquipmentTypeOptions.includes(trimmed)){
+    currentEquipmentTypeOptions.push(trimmed);
+  }
+  renderEquipmentTypeList();
+  persistCurrentEquipmentTypeOptions();
+});
+
+let activeEquipmentPhotoItemId = null;
+
+function openEquipmentNotesModal(item){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;">
+      <h3 style="font-size:15px;margin:0 0 12px;">${item.type} notes</h3>
+      <textarea id="equipmentNotesTextarea" rows="5" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-family:'Inter',sans-serif;font-size:14px;resize:vertical;"></textarea>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-primary" id="equipmentNotesSave">Save</button>
+        <button class="btn btn-ghost" id="equipmentNotesCancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const textarea = overlay.querySelector('#equipmentNotesTextarea');
+  textarea.value = item.notes || '';
+  textarea.focus();
+
+  const cleanup = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#equipmentNotesSave').addEventListener('click', ()=>{
+    item.notes = textarea.value;
+    persistCurrentEquipmentItems();
+    cleanup();
+    renderEquipmentTypeList();
+    showToast('Note saved');
+  });
+  overlay.querySelector('#equipmentNotesCancel').addEventListener('click', cleanup);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+}
+
+function openEquipmentPhotoModal(item){
+  activeEquipmentPhotoItemId = item.id;
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:480px;">
+      <h3 style="font-size:15px;margin:0 0 12px;">${item.type} photos</h3>
+      <div id="equipmentPhotoModalBody"></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-primary" id="equipmentPhotoModalDone">Done</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function renderModalBody(){
+    const body = document.getElementById('equipmentPhotoModalBody');
+    if(!body) return;
+    body.innerHTML = '';
+
+    const photosWrap = document.createElement('div');
+    photosWrap.style.display = 'flex';
+    photosWrap.style.flexWrap = 'wrap';
+    photosWrap.style.gap = '10px';
+    photosWrap.style.marginBottom = '10px';
+    item.photos.forEach((photo, i)=>{
+      const card = document.createElement('div');
+      card.style.width = '160px';
+      card.style.border = '1px solid var(--line)';
+      card.style.borderRadius = '9px';
+      card.style.overflow = 'hidden';
+      card.style.background = '#fff';
+
+      const img = document.createElement('img');
+      img.src = photo.dataUrl;
+      img.style.width = '100%';
+      img.style.height = '140px';
+      img.style.objectFit = 'cover';
+      img.style.display = 'block';
+      img.style.cursor = 'zoom-in';
+      img.title = 'Tap to view full size';
+      img.addEventListener('click', ()=>{
+        openHistoryPhotoModal(photo.dataUrl, item.type + (item.photos.length > 1 ? ' — photo ' + (i + 1) : ''));
+      });
+
+      const captionInput = document.createElement('input');
+      captionInput.value = photo.caption || '';
+      captionInput.placeholder = 'Note (optional)';
+      captionInput.style.border = 'none';
+      captionInput.style.borderTop = '1px solid var(--line)';
+      captionInput.style.borderRadius = '0';
+      captionInput.style.fontSize = '11px';
+      captionInput.style.padding = '6px 8px';
+      captionInput.addEventListener('input', ()=>{
+        photo.caption = captionInput.value;
+      });
+      captionInput.addEventListener('change', ()=>{
+        persistCurrentEquipmentItems();
+      });
+
+      const removePhotoBtn = document.createElement('button');
+      removePhotoBtn.type = 'button';
+      removePhotoBtn.textContent = 'Remove';
+      removePhotoBtn.className = 'btn btn-ghost';
+      removePhotoBtn.style.width = '100%';
+      removePhotoBtn.style.borderRadius = '0';
+      removePhotoBtn.style.border = 'none';
+      removePhotoBtn.style.borderTop = '1px solid var(--line)';
+      removePhotoBtn.style.padding = '5px';
+      removePhotoBtn.style.fontSize = '11px';
+      removePhotoBtn.style.color = 'var(--rust)';
+      removePhotoBtn.addEventListener('click', async ()=>{
+        const confirmed = await confirmDialog('Delete this photo? This can\'t be undone.');
+        if(!confirmed) return;
+        item.photos.splice(i, 1);
+        persistCurrentEquipmentItems();
+        renderModalBody();
+        renderEquipmentTypeList();
+      });
+
+      card.appendChild(img);
+      card.appendChild(captionInput);
+      card.appendChild(removePhotoBtn);
+      photosWrap.appendChild(card);
+    });
+    body.appendChild(photosWrap);
+
+    const addPhotoBtn = document.createElement('button');
+    addPhotoBtn.type = 'button';
+    addPhotoBtn.className = 'btn btn-ghost';
+    addPhotoBtn.style.width = 'auto';
+    addPhotoBtn.textContent = '+ Add photo';
+    addPhotoBtn.addEventListener('click', ()=>{
+      document.getElementById('icEquipmentPhotoInput').click();
+    });
+    body.appendChild(addPhotoBtn);
+  }
+
+  overlay.dataset.refresh = 'equipment-photo-modal';
+  window.__renderEquipmentPhotoModalBody = renderModalBody;
+  renderModalBody();
+
+  const cleanup = ()=>{
+    document.body.removeChild(overlay);
+    activeEquipmentPhotoItemId = null;
+    renderEquipmentTypeList();
+  };
+  overlay.querySelector('#equipmentPhotoModalDone').addEventListener('click', cleanup);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+}
+
+document.getElementById('icEquipmentPhotoInput').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const item = currentEquipmentItems.find(i => i.id === activeEquipmentPhotoItemId);
+  if(!item){ e.target.value = ''; return; }
+  try{
+    const dataUrl = await resizeImageFile(file, 1200, 0.7);
+    item.photos.push({
+      id: 'eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+      dataUrl,
+      caption: ''
+    });
+    persistCurrentEquipmentItems();
+    if(typeof window.__renderEquipmentPhotoModalBody === 'function'){
+      window.__renderEquipmentPhotoModalBody();
+    }
+    renderEquipmentTypeList();
+  }catch(err){
+    showToast('Could not add that photo');
+  }
+  e.target.value = '';
+});
+
+
+function loadEquipmentForCustomer(c){
+  if(!c) return;
+  currentEquipmentTypeOptions = Array.isArray(c.equipmentTypeOptions)
+    ? [...c.equipmentTypeOptions]
+    : [...DEFAULT_EQUIPMENT_TYPES];
+  currentEquipmentTypeOptions = currentEquipmentTypeOptions.map(t => t === 'Chlorinator' ? 'Chlorination' : t);
+  currentEquipmentItems = Array.isArray(c.equipment)
+    ? c.equipment.map(item => ({...item,
+        type: item.type === 'Chlorinator' ? 'Chlorination' : item.type,
+        photos: (item.photos || []).map(p => ({...p}))}))
+    : [];
+  renderEquipmentTypeList();
+}
+
+function visitFieldIdsFor(type){
+  const ids = [];
+  chemConfig[type].chemicals.forEach(item => ids.push(fieldId(type, 'chem', item.key)));
+  chemConfig[type].dosages.forEach(item => ids.push(fieldId(type, 'dose', item.key)));
+  ids.push(type === 'pool' ? 'inNotes' : type === 'spa' ? 'inSpaNotes' : 'inFountainNotes');
+  return ids;
+}
+
+function hasUnsavedSectionData(){
+  if(!currentVisibleSection) return false;
+  let fieldIds, photoController;
+  if(currentVisibleSection === 'pool'){
+    fieldIds = visitFieldIdsFor('pool');
+    photoController = poolPhotoController;
+  } else if(currentVisibleSection === 'spa'){
+    fieldIds = visitFieldIdsFor('spa');
+    photoController = spaPhotoController;
+  } else {
+    fieldIds = visitFieldIdsFor('fountain');
+    photoController = fountainPhotoController;
+  }
+  const hasFieldValue = fieldIds.some(id=>{
+    const el = document.getElementById(id);
+    return el && el.value !== '' && el.value !== undefined;
+  });
+  return hasFieldValue || !!(photoController && photoController.getData());
+}
+
+let currentVisitStep = 1;
+
+function visitStepCardsFor(type){
+  const cap = type.charAt(0).toUpperCase() + type.slice(1);
+  const steps = [];
+
+  // Filter clean: before photo, then after photo with notes. No readings or dosages.
+  if(isFilterCleanVisit){
+    steps.push('visit' + cap + 'BeforePhotoSection');
+    steps.push(['visit' + cap + 'PhotoSection', 'visit' + cap + 'SaveSection']);
+    return steps;
+  }
+
+  if(appSettings.showBeforePhotos !== false){
+    steps.push('visit' + cap + 'BeforePhotoSection');
+  }
+  steps.push('visit' + cap + 'Section');
+  steps.push('visit' + cap + 'ProductsSection');
+  // The save card always rides along with the final step, whether or not
+  // the After photos card is part of it.
+  steps.push(appSettings.showAfterPhotos !== false
+    ? ['visit' + cap + 'PhotoSection', 'visit' + cap + 'SaveSection']
+    : ['visit' + cap + 'SaveSection']);
+  return steps;
+}
+
+function applyVisitStep(){
+  if(!currentVisibleSection) return;
+  const steps = visitStepCardsFor(currentVisibleSection);
+  if(!steps) return;
+  document.querySelectorAll('[data-step-left]').forEach(btn=>{
+    btn.textContent = currentVisitStep === 1 ? '← Return to route' : '← Previous';
+  });
+  document.querySelectorAll('[data-final-step-label]').forEach(btn=>{
+    btn.textContent = appSettings.showAfterPhotos !== false ? 'After photos →' : 'Save reading →';
+  });
+  steps.forEach((entry, i)=>{
+    const ids = Array.isArray(entry) ? entry : [entry];
+    const visible = (i + 1) === currentVisitStep;
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.style.display = visible ? 'block' : 'none';
+    });
+  });
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function goToVisitStep(step){
+  currentVisitStep = step;
+  applyVisitStep();
+}
+
+document.addEventListener('click', (e)=>{
+  const leftBtn = e.target.closest('[data-step-left]');
+  if(leftBtn){
+    if(currentVisitStep === 1){
+      switchView('home');
+    } else {
+      goToVisitStep(currentVisitStep - 1);
+    }
+    return;
+  }
+  const moveBtn = e.target.closest('[data-step-move]');
+  if(!moveBtn) return;
+  const delta = parseInt(moveBtn.dataset.stepMove, 10);
+  const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
+  const target = Math.min(Math.max(currentVisitStep + delta, 1), total);
+  goToVisitStep(target);
+});
+
+// Remembers which step you were on for each section, so switching tabs and
+// coming back returns you where you left off instead of restarting.
+let visitStepBySection = {};
+
+// All fountains share one set of input IDs, so a fountain's in-progress values
+// are stashed here when you switch away and restored when you come back.
+let fountainDraftValues = {};
+
+function fountainFieldIds(){
+  const ids = [];
+  chemConfig.fountain.chemicals.forEach(item => ids.push(fieldId('fountain','chem',item.key)));
+  chemConfig.fountain.dosages.forEach(item => ids.push(fieldId('fountain','dose',item.key)));
+  ids.push('inFountainNotes');
+  return ids;
+}
+
+function stashFountainDraft(){
+  if(currentVisibleSection !== 'fountain' || !currentVisitFountainId) return;
+  const draft = {};
+  fountainFieldIds().forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) draft[id] = el.value;
+  });
+  draft.__photo = fountainPhotoController.getData() || null;
+  draft.__beforePhoto = fountainBeforePhotoController.getData() || null;
+  fountainDraftValues[currentVisitFountainId] = draft;
+}
+
+function restoreFountainDraft(fountainId){
+  const draft = fountainDraftValues[fountainId];
+  fountainFieldIds().forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.value = draft && draft[id] !== undefined ? draft[id] : '';
+  });
+  fountainPhotoController.clear();
+  fountainBeforePhotoController.clear();
+  if(draft && draft.__photo) fountainPhotoController.setData(draft.__photo);
+  if(draft && draft.__beforePhoto) fountainBeforePhotoController.setData(draft.__beforePhoto);
+}
+
+function showVisitSection(sectionId){
+  // Preserve whatever's in progress before leaving the current section
+  stashFountainDraft();
+  if(currentVisibleSection){
+    const key = currentVisibleSection === 'fountain' ? currentVisitFountainId : currentVisibleSection;
+    if(key) visitStepBySection[key] = currentVisitStep;
+  }
+
+  hideAllVisitSections();
+
+  if(sectionId === 'equipment'){
+    currentVisibleSection = 'equipment';
+    const cust = customers.find(x => x.id === currentVisitCustomerId);
+    loadEquipmentForCustomer(cust);
+    document.getElementById('visitEquipmentSection').style.display = 'block';
+    renderVisitSectionButtons();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+    return;
+  }
+
+  currentVisitStep = visitStepBySection[sectionId] || 1;
+
+  if(sectionId === 'pool'){
+    visitVoiceController.setTarget(buildVoiceFieldsForType('pool'), renderStripPreview);
+    currentVisibleSection = 'pool';
+    renderStripPreview();
+  } else if(sectionId === 'spa'){
+    visitVoiceController.setTarget(buildVoiceFieldsForType('spa'), renderSpaStripPreview);
+    currentVisibleSection = 'spa';
+    renderSpaStripPreview();
+  } else {
+    currentVisitFountainId = sectionId;
+    const customer = customers.find(c => c.id === currentVisitCustomerId);
+    document.getElementById('visitFountainTitle').textContent = sectionLabel(customer, sectionId) + ' readings';
+    visitVoiceController.setTarget(buildVoiceFieldsForType('fountain'), function(){});
+    currentVisibleSection = 'fountain';
+    renderAllConfigFields();
+    restoreFountainDraft(sectionId);
+  }
+  renderVisitSectionButtons();
+  applyVisitStep();
+}
+
+let visitWakeLock = null;
+
+async function requestVisitWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  try{
+    visitWakeLock = await navigator.wakeLock.request('screen');
+  }catch(e){
+    visitWakeLock = null;
+  }
+}
+
+async function releaseVisitWakeLock(){
+  if(visitWakeLock){
+    try{ await visitWakeLock.release(); }catch(e){}
+    visitWakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState === 'visible'
+     && currentVisitCustomerId
+     && appSettings.voiceModeEnabled
+     && document.getElementById('view-visit').classList.contains('active')
+     && !visitWakeLock){
+    await requestVisitWakeLock();
+  }
+});
+
+async function openVisit(customerId){
+  if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
+    const confirmed = await confirmDialog('You have unsaved readings for this visit. Switching customers will discard them. Continue?', 'Discard & switch');
+    if(!confirmed) return;
+  }
+
+  const customer = customers.find(c => c.id === customerId);
+  if(!customer) return;
+  chemConfig = loadChemConfig();
+  renderAllConfigFields();
+  refreshDynamicFieldLabels();
+  currentVisitCustomerId = customerId;
+  currentVisitFountainId = null;
+
+  if(!pendingVisit || pendingVisit.customerId !== customerId){
+    pendingVisit = {
+      customerId,
+      neededSections: computeNeededSections(customer),
+      doneSections: {}
+    };
+    visitStepBySection = {};
+    fountainDraftValues = {};
+    startVisitTimer();
+  } else if(!visitTimerRunning){
+    startVisitTimer();
+  }
+
+  document.getElementById('visitCustomerName').textContent = customer.name;
+
+  isFilterCleanVisit = detectFilterCleanVisit(customerId);
+
+  // A filter clean gets its own wording, and skips the equipment toggles
+  const beforeCard = document.getElementById('visitPoolBeforePhotoSection');
+  const afterCard = document.getElementById('visitPoolPhotoSection');
+  if(beforeCard){
+    const h = beforeCard.querySelector('h2');
+    const p = beforeCard.querySelector('.voice-hint');
+    if(h) h.textContent = isFilterCleanVisit ? 'Before photos' : 'Before photos';
+    if(p) p.textContent = isFilterCleanVisit
+      ? 'Take a photo of the filter before you start.'
+      : 'Take a photo of the pool before you start work.';
+  }
+  if(afterCard){
+    const p2 = afterCard.querySelector('.voice-hint');
+    if(p2) p2.textContent = isFilterCleanVisit
+      ? 'Take a photo of the filter now that the clean is done, and add any notes below.'
+      : 'Take a photo of the pool now that the work is done.';
+  }
+
+  if(isFilterCleanVisit){
+    const box = document.getElementById('poolServiceChecks');
+    if(box){ box.style.display = 'none'; box.innerHTML = ''; }
+  } else {
+    renderPoolServiceChecks(customer);
+  }
+  renderVisitSectionButtons();
+  hideAllVisitSections();
+  switchView('visit');
+  applyVoiceModeSetting();
+  if(appSettings.voiceModeEnabled){
+    requestVisitWakeLock();
+  }
+
+  if(pendingVisit.neededSections.length > 0){
+    showVisitSection(pendingVisit.neededSections[0]);
+  }
+
+  if(appSettings.voiceModeEnabled){
+    visitVoiceController.startListening();
+  }
+}
+
+function markSectionDone(sectionId, readingId){
+  if(!pendingVisit || pendingVisit.customerId !== currentVisitCustomerId) return;
+  pendingVisit.doneSections[sectionId] = readingId;
+  renderVisitSectionButtons();
+  const allDone = pendingVisit.neededSections.length > 0
+    && pendingVisit.neededSections.every(id => pendingVisit.doneSections[id] !== undefined);
+  if(allDone){
+    finalizeVisitSend();
+  }
+}
+
+async function finalizeVisitSend(){
+  if(!pendingVisit) return;
+  const { customerId, doneSections } = pendingVisit;
+  const poolReadingId = doneSections['pool'] || null;
+  const spaReadingId = doneSections['spa'] || null;
+  const fountainReadings = Object.keys(doneSections)
+    .filter(id => id !== 'pool' && id !== 'spa')
+    .map(fountainId => ({ fountainId, readingId: doneSections[fountainId] }));
+
+  if(!poolReadingId && !spaReadingId && fountainReadings.length === 0){
+    showToast('Nothing logged yet for this visit');
+    return;
+  }
+
+  visitVoiceController.stopListening();
+  await releaseVisitWakeLock();
+
+  pendingVisit = null;
+
+  const elapsedMs = stopVisitTimer();
+  const customer = customers.find(c => c.id === customerId);
+  if(customer){
+    customer.lastServicedDate = todayDateStr();
+    if(elapsedMs !== null) customer.lastServiceDurationMs = elapsedMs;
+    await saveCustomers();
+  }
+
+  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
+  document.getElementById('reportCustomerSelect').value = customerId;
+  await renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadings);
+  switchView('report', {skipRefresh: true});
+  await attemptAutoSend(customerId, 'combined');
+
+  renderHomeList();
+  renderServicedList();
+}
+
+async function renderReport(customerId, readingId){
+  if(!customerId || !readingId) return;
+  const customer = customers.find(c=>c.id===customerId);
+  if(!customer) return;
+
+  const skipList = await loadSkippedVisits(customerId);
+  const skipRecord = skipList.find(r => r.id === readingId);
+  if(!skipRecord) return;
+
+  const out = document.getElementById('reportOutput');
+  out.innerHTML = `
+    <div class="report-doc">
+      <div class="report-head">
+        <div>
+          <h2>Service skipped</h2>
+          <div class="rdate">${customer.name}${customer.address ? ' — '+customer.address : ''}</div>
+          <div class="rdate">${fmtDate(skipRecord.timestamp || skipRecord.date)}</div>
+        </div>
+        <div class="report-badge" style="background:var(--gold-pale);color:#7A5A0C;">Skipped</div>
+      </div>
+      <p style="font-size:14px;color:var(--muted);margin-top:14px;">No service was performed for this customer on this day.</p>
+    </div>
+  `;
+  currentReportText = `SERVICE SKIPPED\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nDate: ${fmtDate(skipRecord.timestamp || skipRecord.date)}\n\nNo service was performed for this customer on this day.`;
+
+  document.getElementById('reportActions').style.display = 'flex';
+  document.getElementById('reportActions').dataset.email = customer.email || '';
+  document.getElementById('reportActions').dataset.customerName = customer.name;
+  document.getElementById('reportActions').dataset.customerId = customerId;
+  document.getElementById('reportActions').dataset.readingId = readingId;
+  document.getElementById('reportActions').dataset.type = 'skipped';
+  document.getElementById('reportActions').dataset.photo = '';
+  document.getElementById('btnDownloadPhoto').style.display = 'none';
+  document.getElementById('btnSharePhoto').style.display = 'none';
+}
+
+function buildReadingSection(reading, chemList, prodList){
+  let rowsHtml = '';
+  let rowsText = '';
+  chemList.forEach(chem=>{
+    const val = reading[chem.key];
+    const display = val !== '' && val !== undefined ? val + (chem.unit ? ' '+chem.unit : '') : 'not tested';
+    rowsHtml += `<tr><td>${chem.label}</td><td>${display}</td></tr>`;
+    rowsText += `${chem.label}: ${display}\n`;
+  });
+
+  let productsHtml = '';
+  let productsText = '';
+  const usedProducts = prodList.filter(p => reading[p.key] !== '' && reading[p.key] !== undefined);
+  if(usedProducts.length){
+    let prows = '';
+    usedProducts.forEach(p=>{
+      const display = reading[p.key] + (p.unit ? ' '+p.unit : '');
+      prows += `<tr><td>${p.label}</td><td>${display}</td></tr>`;
+      productsText += `${p.label}: ${display}\n`;
+    });
+    productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Products added</h3><table class="report-table">${prows}</table>`;
+  }
+
+  return {rowsHtml, rowsText, productsHtml, productsText};
+}
+
+async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadingRefs){
+  fountainReadingRefs = fountainReadingRefs || [];
+  const customer = customers.find(c=>c.id===customerId);
+  if(!customer) return;
+
+  const sections = [];
+
+  if(poolReadingId){
+    const list = await loadReadings(customerId, 'pool');
+    const reading = list.find(r=>r.id===poolReadingId);
+    if(reading) sections.push({label: 'Pool', reading, ...buildReadingSection(reading, chemConfig.pool.chemicals, chemConfig.pool.dosages)});
+  }
+  if(spaReadingId){
+    const list = await loadReadings(customerId, 'spa');
+    const reading = list.find(r=>r.id===spaReadingId);
+    if(reading) sections.push({label: 'Spa', reading, ...buildReadingSection(reading, chemConfig.spa.chemicals, chemConfig.spa.dosages)});
+  }
+  for(const ref of fountainReadingRefs){
+    const list = await loadFountainReadings(customerId, ref.fountainId);
+    const reading = list.find(r=>r.id===ref.readingId);
+    if(reading){
+      const fountain = getValidFountains(customer).find(f => f.id === ref.fountainId);
+      const label = fountain ? fountain.name : 'Fountain';
+      sections.push({label, reading, ...buildReadingSection(reading, chemConfig.fountain.chemicals, chemConfig.fountain.dosages)});
+    }
+  }
+
+  if(sections.length === 0) return;
+
+  const labelParts = sections.map(s => s.label);
+  const reportLabel = labelParts.length > 1
+    ? labelParts.slice(0, -1).join(', ') + ' & ' + labelParts[labelParts.length - 1]
+    : labelParts[0];
+
+  let sectionsHtml = '';
+  let sectionsText = '';
+  sections.forEach((s, i)=>{
+    const photoHtml = s.reading.photo
+      ? `<div style="margin-top:14px;"><img src="${s.reading.photo}" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="${s.label} visit photo"></div>`
+      : '';
+    sectionsHtml += `
+      <h3 style="font-size:13px;color:var(--teal-deep);margin:${i === 0 ? '6px' : '20px'} 0 6px;">${s.label}</h3>
+      <table class="report-table">${s.rowsHtml}</table>
+      ${s.productsHtml}
+      ${s.reading.notes ? `<div class="report-notes">${s.reading.notes}<div style="font-size:11px;color:var(--muted);margin-top:6px;">Internal only — not emailed to the customer.</div></div>` : ''}
+      ${photoHtml}
+    `;
+    // Notes are internal only — deliberately excluded from the emailed report
+    sectionsText += `\n${s.label.toUpperCase()}\n${s.rowsText}${s.productsText ? '\nPRODUCTS ADDED\n'+s.productsText : ''}\n`;
+  });
+
+  const durationMs = customer.lastServiceDurationMs;
+  const durationHtml = durationMs
+    ? `<div class="rdate" style="margin-top:6px;"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.06em;">Service time</span> <span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--ink);">${formatDuration(durationMs)}</span> <span style="font-size:11px;color:var(--muted);">· internal only, not emailed</span></div>`
+    : '';
+
+  const out = document.getElementById('reportOutput');
+  out.innerHTML = `
+    <div class="report-doc">
+      <div class="report-head">
+        <div>
+          <h2>${reportLabel} service report</h2>
+          <div class="rdate">${customer.name}${customer.address ? ' — '+customer.address : ''}</div>
+          <div class="rdate">${fmtDate(sections[0].reading.date)}</div>
+          ${durationHtml}
+        </div>
+        <div class="report-badge">Serviced</div>
+      </div>
+      ${sectionsHtml}
+    </div>
+  `;
+
+  currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(sections[0].reading.date)}\n${sectionsText}`;
+
+  // Only one photo can attach automatically (a single email can only carry one dynamic
+  // attachment via EmailJS) — prefer earliest section with a photo (pool, then spa, then fountains in order).
+  const sectionWithPhoto = sections.find(s => s.reading.photo);
+  const attachablePhoto = sectionWithPhoto ? sectionWithPhoto.reading.photo : '';
+  const photoCount = sections.filter(s => s.reading.photo).length;
+
+  document.getElementById('reportActions').style.display = 'flex';
+  document.getElementById('reportActions').dataset.email = customer.email || '';
+  document.getElementById('reportActions').dataset.customerName = customer.name;
+  document.getElementById('reportActions').dataset.customerId = customerId;
+  document.getElementById('reportActions').dataset.readingId = poolReadingId || spaReadingId || (fountainReadingRefs[0] && fountainReadingRefs[0].readingId) || '';
+  document.getElementById('reportActions').dataset.poolReadingId = poolReadingId || '';
+  document.getElementById('reportActions').dataset.spaReadingId = spaReadingId || '';
+  document.getElementById('reportActions').dataset.fountainReadings = JSON.stringify(fountainReadingRefs);
+  document.getElementById('reportActions').dataset.type = 'combined';
+  document.getElementById('reportActions').dataset.reportLabel = reportLabel;
+  document.getElementById('reportActions').dataset.photo = attachablePhoto;
+
+  const downloadPhotoBtn = document.getElementById('btnDownloadPhoto');
+  const sharePhotoBtn = document.getElementById('btnSharePhoto');
+  if(attachablePhoto){
+    downloadPhotoBtn.style.display = 'inline-flex';
+    downloadPhotoBtn.dataset.photo = attachablePhoto;
+    sharePhotoBtn.style.display = navigator.share ? 'inline-flex' : 'none';
+  } else {
+    downloadPhotoBtn.style.display = 'none';
+    downloadPhotoBtn.dataset.photo = '';
+    sharePhotoBtn.style.display = 'none';
+  }
+
+  if(photoCount > 1){
+    showToast(photoCount + ' photos saved — only one can attach to the email automatically');
+  }
+}
+
+document.getElementById('btnCopyReport').addEventListener('click', async ()=>{
+  try{
+    await navigator.clipboard.writeText(currentReportText);
+    showToast('Report copied');
+  }catch(e){
+    showToast('Could not copy — select text manually');
+  }
+});
+
+// Fill these in with your EmailJS values (see setup instructions), then true one-press sending
+// (no share sheet, no manual "To" field) will happen automatically instead of the fallbacks below.
+const EMAILJS_PUBLIC_KEY = 'bfwHISvPYiHm3NP4i';
+const EMAILJS_SERVICE_ID = 'service_6i1y90b';
+const EMAILJS_TEMPLATE_ID = 'template_j8bfwfn';
+
+function emailjsIsConfigured(){
+  return EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY'
+    && EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID'
+    && EMAILJS_TEMPLATE_ID !== 'YOUR_TEMPLATE_ID'
+    && typeof emailjs !== 'undefined';
+}
+
+function reportTypeLabel(type){
+  if(type === 'combined'){
+    const stored = document.getElementById('reportActions').dataset.reportLabel;
+    return stored || 'Pool & Spa';
+  }
+  if(type === 'spa') return 'Spa';
+  return 'Pool';
+}
+
+async function sendViaEmailJS(customerId, type){
+  const actions = document.getElementById('reportActions');
+  const email = actions.dataset.email;
+  const custName = actions.dataset.customerName;
+  const photo = actions.dataset.photo;
+
+  const templateParams = {
+    to_email: email,
+    subject: reportTypeLabel(type) + ' service report — ' + custName,
+    message: currentReportText
+  };
+  if(photo){
+    // Strip the "data:image/jpeg;base64," prefix — EmailJS wants the raw base64 content
+    templateParams.photo_attachment = photo.split(',')[1] || '';
+  }
+
+  try{
+    emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams);
+    showToast('Report sent to ' + email);
+    return true;
+  }catch(err){
+    showToast('Automatic send failed — falling back to manual review');
+    return false;
+  }
+}
+
+async function attemptAutoSend(customerId, type){
+  const actions = document.getElementById('reportActions');
+  const email = actions.dataset.email;
+  const custName = actions.dataset.customerName;
+  const photo = actions.dataset.photo;
+
+  if(!email){
+    showToast('Saved — no email on file, so review and send manually');
+    return;
+  }
+
+  // True one-press send, once EmailJS is configured — no share sheet, no manual "To" field
+  if(emailjsIsConfigured()){
+    const sent = await sendViaEmailJS(customerId, type);
+    if(sent) return;
+    // fall through to the manual fallbacks below if sending failed
+  }
+
+  // Prefer native share (can actually attach the photo as a real file)
+  if(photo && navigator.share){
+    try{
+      const res = await fetch(photo);
+      const blob = await res.blob();
+      const file = new File([blob], 'visit-photo.jpg', {type: blob.type || 'image/jpeg'});
+      const canShareFile = !navigator.canShare || navigator.canShare({files:[file]});
+      if(canShareFile){
+        const shareText = 'To: ' + email + '\n\n' + currentReportText;
+        await navigator.share({
+          title: reportTypeLabel(type) + ' service report — ' + custName,
+          text: shareText,
+          files: [file]
+        });
+        showToast('Share sheet opened — pick an app and hit send');
+        return;
+      }
+    }catch(err){
+      if(err && err.name === 'AbortError'){
+        showToast('Send cancelled — report is ready below whenever you want it');
+        return;
+      }
+      // fall through to mailto below on other errors
+    }
+  }
+
+  // Fallback: open a pre-filled email draft (text only — mailto can't attach files)
+  const subject = encodeURIComponent(reportTypeLabel(type) + ' service report — ' + custName);
+  let clipboardOk = false;
+  try{
+    await navigator.clipboard.writeText(currentReportText);
+    clipboardOk = true;
+  }catch(e){
+    clipboardOk = false;
+  }
+  const encodedBody = encodeURIComponent(currentReportText);
+  const MAX_BODY_LENGTH = 1500;
+  let body;
+  if(encodedBody.length > MAX_BODY_LENGTH){
+    const shortNote = clipboardOk
+      ? 'The full report is long, so it didn\'t fit in this draft. It has been copied to your clipboard — paste it here before sending.'
+      : 'The full report is long, so it didn\'t fit in this draft. Go back and tap "Copy report text", then paste it here before sending.';
+    body = encodeURIComponent(shortNote);
+  } else {
+    body = encodedBody;
+  }
+  const link = document.createElement('a');
+  link.href = `mailto:${email}?subject=${subject}&body=${body}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  if(photo){
+    showToast('Email opening — remember to attach the photo (see Download photo)');
+  } else if(encodedBody.length > MAX_BODY_LENGTH){
+    showToast(clipboardOk ? 'Report copied — paste it into the email' : 'Copy the report, then paste it into the email');
+  } else {
+    showToast('Email app opening — review and hit send');
+  }
+}
+
+document.getElementById('btnEmailReport').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+});
+
+document.getElementById('btnDownloadReport').addEventListener('click', ()=>{
+  const blob = new Blob([currentReportText], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pool-report.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('btnDownloadPhoto').addEventListener('click', (e)=>{
+  const photo = e.currentTarget.dataset.photo;
+  if(!photo) return;
+  const a = document.createElement('a');
+  a.href = photo;
+  a.download = 'visit-photo.jpg';
+  a.click();
+  showToast('Photo downloaded — attach it in your email');
+});
+
+document.getElementById('btnSharePhoto').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  if(!navigator.share){
+    showToast('Sharing isn\'t supported on this device — use Download photo instead');
+    return;
+  }
+  if(!actions.dataset.photo){
+    showToast('No photo on this reading');
+    return;
+  }
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+});
+
+document.getElementById('btnDeleteReport').addEventListener('click', async ()=>{
+  const actions = document.getElementById('reportActions');
+  const customerId = actions.dataset.customerId;
+  const readingId = actions.dataset.readingId;
+  const type = actions.dataset.type || 'combined';
+  if(!customerId || !readingId) return;
+  const confirmed = await confirmDialog(
+    type === 'skipped'
+      ? 'Delete this skipped-service record? This can\'t be undone.'
+      : 'Delete this report? This will remove every reading included in it and can\'t be undone.'
+  );
+  if(!confirmed) return;
+
+  if(type === 'skipped'){
+    const skipList = await loadSkippedVisits(customerId);
+    await saveSkippedVisits(customerId, skipList.filter(r => r.id !== readingId));
+    showToast('Skipped-service record deleted');
+    await refreshDateSelector(customerId);
+    return;
+  }
+
+  const poolReadingId = actions.dataset.poolReadingId;
+  const spaReadingId = actions.dataset.spaReadingId;
+  let fountainReadings = [];
+  try{ fountainReadings = JSON.parse(actions.dataset.fountainReadings || '[]'); }catch(e){ fountainReadings = []; }
+
+  if(poolReadingId){
+    const poolList = await loadReadings(customerId, 'pool');
+    await saveReadings(customerId, poolList.filter(r => r.id !== poolReadingId), 'pool');
+  }
+  if(spaReadingId){
+    const spaList = await loadReadings(customerId, 'spa');
+    await saveReadings(customerId, spaList.filter(r => r.id !== spaReadingId), 'spa');
+  }
+  for(const ref of fountainReadings){
+    const fList = await loadFountainReadings(customerId, ref.fountainId);
+    await saveFountainReadings(customerId, ref.fountainId, fList.filter(r => r.id !== ref.readingId));
+  }
+  showToast('Report deleted');
+  await refreshDateSelector(customerId);
+});
+
+let currentUser = null;
+
+function loadSession(){
+  const saved = lsGet('session');
+  if(!saved) return null;
+  const techs = lsGet('technicians') || [];
+  return techs.find(t => t.id === saved.techId) || null;
+}
+
+
+function showLogin(){
+  const el = document.getElementById('loginScreen');
+  if(el) el.style.display = 'flex';
+}
+function hideLogin(){
+  const el = document.getElementById('loginScreen');
+  if(el) el.style.display = 'none';
+}
+
+function attachLoginHandlers(afterLogin){
+  const btn = document.getElementById('btnLogin');
+  const pass = document.getElementById('loginPassword');
+  const skip = document.getElementById('btnDevSkip');
+
+  function attempt(){
+    const u = document.getElementById('loginUsername').value.trim().toLowerCase();
+    const p = pass.value;
+    const err = document.getElementById('loginError');
+    const techs = lsGet('technicians') || [];
+    if(techs.length === 0){
+      err.textContent = 'No accounts set up yet — add technicians on the website first, or use Skip sign-in.';
+      err.style.display = 'block';
+      return;
+    }
+    const match = techs.find(t => (t.username || '').toLowerCase() === u && t.password === p);
+    if(!match){
+      err.textContent = "That username and password don't match.";
+      err.style.display = 'block';
+      return;
+    }
+    err.style.display = 'none';
+    lsSet('session', {techId: match.id});
+    pass.value = '';
+    afterLogin(match);
+  }
+
+  if(btn) btn.addEventListener('click', attempt);
+  if(pass) pass.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') attempt(); });
+  if(skip) skip.addEventListener('click', ()=>{
+    const techs = lsGet('technicians') || [];
+    afterLogin(techs[0] || null);
+  });
+}
+
+function logout(){
+  lsSet('session', null);
+  currentUser = null;
+  document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  showLogin();
+}
+
+async function init(){
+  await loadCustomers();
+  renderAllConfigFields();
+  refreshDynamicFieldLabels();
+  document.getElementById('settingVoiceMode').checked = appSettings.voiceModeEnabled;
+  updateVoiceModeIndicator();
+
+  // DEV BYPASS — ?dev=1 skips sign-in. Remove before real use.
+  const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
+  const session = loadSession();
+
+  function enter(user){
+    currentUser = user;
+    const el = document.getElementById('signedInAs');
+    if(el) el.textContent = user ? user.name : 'Dev mode';
+    hideLogin();
+    renderHomeList();
+  }
+
+  attachLoginHandlers(enter);
+
+  if(devMode || session){
+    const techs = lsGet('technicians') || [];
+    enter(session || techs.find(t => !t.isAdmin) || techs[0] || null);
+  } else {
+    showLogin();
+    renderHomeList();
+  }
+}
+init();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>

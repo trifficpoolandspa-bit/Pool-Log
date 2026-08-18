@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PoolLog — Sign in</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#114B4F">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F2E2E;
+  --card:#FFFFFF;
+  --teal-deep:#114B4F;
+  --teal-mid:#1F8A8C;
+  --teal-pale:#E4F1EF;
+  --gold:#C68A17;
+  --rust:#B8492E;
+  --line:#DDE5E3;
+  --muted:#5E7371;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+  background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);
+  font-family:'Inter',system-ui,sans-serif;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+}
+.login-card{
+  background:var(--card);
+  border-radius:18px;
+  padding:28px 24px;
+  max-width:380px;
+  width:100%;
+  box-shadow:0 14px 44px rgba(0,0,0,0.3);
+}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:20px;}
+.brand-mark{
+  width:38px;height:38px;border-radius:9px;flex-shrink:0;
+  background:var(--teal-mid);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 1px rgba(17,75,79,0.12);
+}
+h1{font-family:'Space Grotesk',sans-serif;font-size:21px;margin:0;letter-spacing:-0.015em;}
+.sub{font-size:12.5px;color:var(--muted);margin:2px 0 0;}
+.field{margin-bottom:14px;}
+.field label{
+  display:block;
+  font-family:'JetBrains Mono',monospace;
+  font-size:11px;font-weight:600;color:var(--teal-mid);
+  margin-bottom:6px;text-transform:uppercase;letter-spacing:0.06em;
+}
+input{
+  width:100%;
+  padding:12px 14px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  font-size:16px;
+  font-family:'Inter',sans-serif;
+  background:#fff;
+  color:var(--ink);
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+input:focus{
+  outline:none;
+  border-color:var(--teal-mid);
+  box-shadow:0 0 0 3px rgba(31,138,140,0.15);
+}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:13px 18px;border-radius:10px;border:none;
+  font-size:15px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;
+  transition:transform .08s ease, background-color .15s ease;
+  width:100%;
+}
+.btn:active{transform:scale(0.98);}
+.btn-primary{background:var(--teal-deep);color:#fff;}
+.btn-ghost{background:transparent;color:var(--teal-deep);border:1px solid var(--line);}
+.error{
+  display:none;
+  font-size:12.5px;color:var(--rust);
+  background:#FCEEEA;border:1px solid #EFC0B4;
+  border-radius:9px;padding:9px 11px;margin:0 0 12px;
+}
+.devbar{
+  margin-top:22px;padding-top:16px;border-top:1px dashed var(--line);
+}
+.devbar p{
+  font-family:'JetBrains Mono',monospace;
+  font-size:10px;font-weight:600;color:var(--gold);
+  text-transform:uppercase;letter-spacing:0.06em;margin:0 0 9px;
+}
+.devbar .row{display:flex;gap:8px;}
+.devbar .btn{font-size:13px;padding:9px 12px;}
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+        <path d="M12 3C12 3 5 12 5 17C5 20.9 8.1 24 12 24C15.9 24 19 20.9 19 17C19 12 12 3 12 3Z" fill="#fff" opacity="0.95"/>
+      </svg>
+    </div>
+    <div>
+      <h1>PoolLog</h1>
+      <p class="sub">Sign in to get to your route.</p>
+    </div>
+  </div>
+
+  <div class="error" id="loginError"></div>
+
+  <div class="field">
+    <label>Username</label>
+    <input id="loginUsername" autocomplete="username" placeholder="sam.rivera">
+  </div>
+  <div class="field">
+    <label>Password</label>
+    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password">
+  </div>
+
+  <button class="btn btn-primary" id="btnLogin">Sign in</button>
+
+  <!-- DEV SHORTCUTS — remove this whole block before real use -->
+  <div class="devbar" id="devBar">
+    <p>Dev shortcuts — remove before launch</p>
+    <div class="row">
+      <button class="btn btn-ghost" id="btnDevTech">Technician app</button>
+      <button class="btn btn-ghost" id="btnDevAdmin">Admin app</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button class="btn btn-ghost" id="btnDevSite">Website (customers)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const LS_PREFIX = 'poollog:';
+function lsGet(key){
+  try { return JSON.parse(localStorage.getItem(LS_PREFIX + key)); }
+  catch(e){ return null; }
+}
+function lsSet(key, value){
+  try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); }
+  catch(e){}
+}
+
+function showError(msg){
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function routeFor(tech){
+  return tech.isAdmin ? './admin-readings-app.html' : './technician-app.html';
+}
+
+// Only navigate if the target actually exists. In preview environments the
+// app files sit at unrelated URLs, so a blind redirect would 404.
+async function goTo(url){
+  try {
+    const res = await fetch(url, {method:'HEAD'});
+    if(!res.ok) throw new Error('missing');
+    window.location.href = url;
+  } catch(e){
+    showError('Can\'t reach ' + url.replace('./','') + ' from here. This page only works when all the app files sit in the same folder (like on your live site). Open the app file directly instead.');
+  }
+}
+
+function doLogin(){
+  const u = document.getElementById('loginUsername').value.trim().toLowerCase();
+  const p = document.getElementById('loginPassword').value;
+  const techs = lsGet('technicians') || [];
+
+  if(techs.length === 0){
+    showError('No accounts set up yet. Add technicians on the website first.');
+    return;
+  }
+  const match = techs.find(t => (t.username || '').toLowerCase() === u && t.password === p);
+  if(!match){
+    showError("That username and password don't match. Check with your admin.");
+    return;
+  }
+  lsSet('session', {techId: match.id});
+  goTo(routeFor(match));
+}
+
+document.getElementById('btnLogin').addEventListener('click', doLogin);
+document.getElementById('loginPassword').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') doLogin();
+});
+document.getElementById('loginUsername').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter') document.getElementById('loginPassword').focus();
+});
+
+// If already signed in, go straight through
+(function(){
+  const session = lsGet('session');
+  if(!session || !session.techId) return;
+  const techs = lsGet('technicians') || [];
+  const tech = techs.find(t => t.id === session.techId);
+  if(tech) goTo(routeFor(tech));
+})();
+
+// ---- DEV SHORTCUTS — remove this block before real use ----
+document.getElementById('btnDevTech').addEventListener('click', ()=>{
+  goTo('./technician-app.html?dev=1');
+});
+document.getElementById('btnDevAdmin').addEventListener('click', ()=>{
+  goTo('./admin-readings-app.html?dev=1');
+});
+document.getElementById('btnDevSite').addEventListener('click', ()=>{
+  goTo('./customer-intake.html');
+});
+</script>
+</body>
+</html>
