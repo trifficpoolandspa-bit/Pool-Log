@@ -1,0 +1,8 @@
+# PoolLog data backups - never commit these, they hold live customer data
+poollog-backup-*.json
+poollog-before-restore-*.json
+poollog-*-test-customers.json
+
+# OS noise
+.DS_Store
+Thumbs.db
