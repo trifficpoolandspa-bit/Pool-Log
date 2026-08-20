@@ -438,7 +438,12 @@ select#customerSelect{font-weight:600;}
         <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">‹</button>
         <span id="weekLabel" style="flex:1 1 auto;font-size:14px;color:var(--muted);font-weight:600;text-align:center;"></span>
         <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">›</button>
-        <button id="pickDayBtn" class="btn btn-ghost" title="Jump to a date" style="width:auto;padding:6px 11px;font-size:16px;line-height:1;">📅</button>
+        <button id="pickDayBtn" title="Jump to a date" style="width:auto;flex-shrink:0;padding:7px 10px;line-height:0;background:var(--teal-pale);border:1.5px solid var(--teal-mid);border-radius:9px;cursor:pointer;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--teal-deep)" stroke-width="2" stroke-linecap="round">
+            <rect x="3" y="5" width="18" height="16" rx="2.5"></rect>
+            <path d="M3 10h18M8 3v4M16 3v4"></path>
+          </svg>
+        </button>
         <input type="date" id="pickDayInput" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
       </div>
       <p id="homeDateInfo" style="display:none;"></p>
@@ -874,21 +879,23 @@ function renderConfigFields(containerId, list, type, kind, onInput){
         const restStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
           + 'border-radius:9px;min-width:42px;'
           + "font-family:'JetBrains Mono',monospace;"
-          + 'background:#FBEAE6;color:#B8492E;border:1.5px solid #E8B5A8;'
+          + 'background:#E7F0F6;color:#0B6FA4;border:1.5px solid #A8CBE0;'
           + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
         const pressedStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
           + 'border-radius:9px;min-width:42px;'
           + "font-family:'JetBrains Mono',monospace;"
-          + 'background:#B8492E;color:#fff;border:1.5px solid #B8492E;'
+          + 'background:#0B6FA4;color:#fff;border:1.5px solid #0B6FA4;'
           + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
-        sBtn.style.cssText = restStyle;
+        sBtn.style.cssText = String(input.value) === String(amt) ? pressedStyle : restStyle;
         sBtn.textContent = amt;
         sBtn.addEventListener('click', ()=>{
-          input.value = amt;
+          // Tapping the value that's already set clears it back out
+          const alreadySet = String(input.value) === String(amt);
+          input.value = alreadySet ? '' : amt;
           input.dispatchEvent(new Event('input', {bubbles:true}));
           // Only one value can be current, so clear the others in this row
           suggestRow.querySelectorAll('button').forEach(b => b.style.cssText = restStyle);
-          sBtn.style.cssText = pressedStyle;
+          if(!alreadySet) sBtn.style.cssText = pressedStyle;
         });
         // Typing by hand should drop the highlight
         input.addEventListener('input', ()=>{
@@ -975,8 +982,11 @@ function hideStepBar(){
   document.querySelectorAll('.step-back').forEach(b => b.remove());
 }
 
+let currentViewName = 'home';
+
 function switchView(view, opts){
   opts = opts || {};
+  currentViewName = view;
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
   // Always land at the top rather than wherever the last page was scrolled to
@@ -996,7 +1006,14 @@ function switchView(view, opts){
 }
 
 document.querySelectorAll('.tab').forEach(t=>{
-  t.addEventListener('click', ()=>switchView(t.dataset.view));
+  t.addEventListener('click', ()=>{
+    // A visit left part-finished resumes rather than dumping you on the list
+    if(t.dataset.view === 'home' && visitDraft.customerId){
+      openVisit(visitDraft.customerId);
+      return;
+    }
+    switchView(t.dataset.view);
+  });
 });
 
 const STORAGE_PREFIX = 'poollog:';
@@ -1674,7 +1691,14 @@ function renderWeekLabel(){
 
   const today = new Date();
   const sameDay = (a,b)=> a.toDateString() === b.toDateString();
-  const prefix = sameDay(d, today) ? 'Today · ' : '';
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+
+  let prefix = '';
+  if(sameDay(d, today)) prefix = 'Today · ';
+  else if(sameDay(d, tomorrow)) prefix = 'Tomorrow · ';
+  else if(sameDay(d, yesterday)) prefix = 'Yesterday · ';
+
   label.textContent = prefix + d.toLocaleDateString(undefined,
     {month:'short', day:'numeric'});
 }
@@ -1962,8 +1986,12 @@ function hideOrderBanner(){
   pendingOrderIds = null;
 }
 
-document.getElementById('orderTempBtn').addEventListener('click', ()=>{
+document.getElementById('orderTempBtn').addEventListener('click', async ()=>{
   if(!pendingOrderIds) return hideOrderBanner();
+  const d = dateForWeekday(selectedHomeDay);
+  const when = d ? d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'}) : selectedHomeDay;
+  const ok = await confirmDialog('Keep this order for ' + when + ' only?', 'Yes, just today');
+  if(!ok) return;
   fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = pendingOrderIds;
   saveFieldRouteOrder();
   hideOrderBanner();
@@ -1971,8 +1999,11 @@ document.getElementById('orderTempBtn').addEventListener('click', ()=>{
   renderHomeList();
 });
 
-document.getElementById('orderPermBtn').addEventListener('click', ()=>{
+document.getElementById('orderPermBtn').addEventListener('click', async ()=>{
   if(!pendingOrderIds) return hideOrderBanner();
+  const ok = await confirmDialog('Use this order every ' + selectedHomeDay +
+    ' from now on?', 'Yes, every week');
+  if(!ok) return;
   fieldRouteOrder[orderKey(selectedHomeDay)] = pendingOrderIds;
   // Drop any one-off order for today so the weekly one takes effect
   delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
@@ -1982,7 +2013,9 @@ document.getElementById('orderPermBtn').addEventListener('click', ()=>{
   renderHomeList();
 });
 
-document.getElementById('orderCloseBtn').addEventListener('click', ()=>{
+document.getElementById('orderCloseBtn').addEventListener('click', async ()=>{
+  const ok = await confirmDialog('Undo this order change and go back to the usual route?', 'Remove changes');
+  if(!ok) return;
   // Throw away the one-off order so the route falls back to its usual sequence
   delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
   saveFieldRouteOrder();
@@ -3303,6 +3336,7 @@ function applyVisitStep(){
   });
   refreshSaveButtons();
   syncStepChrome();
+  armBackButton();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
@@ -3365,6 +3399,7 @@ function syncStepChrome(){
       if(!ok) return;
       discardVisitInProgress();
     }
+    visitDraft = {customerId: null, values: {}, section: null, step: 1};
     switchView('home');
   });
 
@@ -3544,6 +3579,8 @@ function restoreVisitDraft(customerId){
     if(!el) return;
     if(el.type === 'checkbox') el.checked = visitDraft.values[id];
     else el.value = visitDraft.values[id];
+    // Let the quick buttons re-mark themselves against the restored value
+    el.dispatchEvent(new Event('input', {bubbles:true}));
   });
   return true;
 }
@@ -3572,6 +3609,46 @@ function discardVisitInProgress(){
   currentVisibleSection = null;
   currentVisitStep = 1;
 }
+
+
+// ---------- Phone back button ----------
+// Without a history entry to consume, Android's back gesture closes the app
+// mid-visit. Keep one armed so back steps through the visit instead.
+function armBackButton(){
+  try{ history.pushState({poollog:true}, ''); }catch(e){}
+}
+
+window.addEventListener('popstate', async ()=>{
+  if(currentViewName === 'visit'){
+    if(currentVisitStep > 1){
+      goToVisitStep(currentVisitStep - 1);
+      armBackButton();
+      return;
+    }
+    // On the first step, back means leaving — same warning as the on-screen button
+    if(hasUnsavedSectionData()){
+      armBackButton();
+      const ok = await confirmDialog(
+        "This will remove all readings taken. Are you sure you'd like to cancel the report?",
+        'Cancel report');
+      if(!ok) return;
+      discardVisitInProgress();
+    } else {
+      armBackButton();
+    }
+    visitDraft = {customerId: null, values: {}, section: null, step: 1};
+    switchView('home');
+    return;
+  }
+
+  // Anywhere else, back returns to the route rather than closing the app
+  if(currentViewName !== 'home'){
+    armBackButton();
+    switchView('home');
+  }
+});
+
+armBackButton();
 
 async function openVisit(customerId){
   if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
