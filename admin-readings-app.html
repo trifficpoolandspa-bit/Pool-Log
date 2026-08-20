@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PoolLog Admin — Chemical Readings & Reports</title>
+<title>PoolLog Admin — Readings & Reports</title>
 <link rel="manifest" href="./manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <meta name="theme-color" content="#114B4F">
@@ -246,7 +246,7 @@ textarea{min-height:52px;resize:vertical;}
 .empty i{font-size:13px;}
 
 @keyframes briefIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
-.cust-row{
+.cust-row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
   display:flex;justify-content:space-between;align-items:center;
   padding:15px 4px 15px 12px;border-bottom:1px solid var(--line);cursor:pointer;
   position:relative;transition:background-color .15s ease;
@@ -310,6 +310,42 @@ textarea{min-height:52px;resize:vertical;}
 .status-tag.low{color:var(--gold);}
 .status-tag.high{color:var(--rust);}
 
+
+/* Step navigation pinned above the tab bar */
+
+/* Route-order prompt — amber so it reads as "needs a decision" */
+.order-banner{
+  position:fixed;top:0;left:0;right:0;z-index:120;
+  max-width:720px;margin:0 auto;
+  background:#FDF3DC;border-bottom:2px solid #E0B877;
+  padding:10px 14px;display:none;
+  box-shadow:0 3px 12px rgba(15,46,46,0.12);
+}
+.order-banner .ob-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.order-banner .ob-text{flex:1 1 auto;min-width:0;font-size:12.5px;color:#7A5410;font-weight:600;}
+.order-banner button{
+  flex-shrink:0;border-radius:8px;padding:8px 12px;font-size:12.5px;font-weight:700;
+  cursor:pointer;font-family:'Inter',sans-serif;border:1.5px solid #E0B877;
+}
+.ob-perm{background:#8C5A0F;color:#fff;border-color:#8C5A0F !important;}
+.ob-temp{background:#fff;color:#8C5A0F;}
+.ob-close{background:none;border:none !important;color:#8C5A0F;font-size:16px;padding:4px 6px;}
+.step-bar{
+  position:fixed;bottom:62px;left:0;right:0;z-index:40;
+  max-width:720px;margin:0 auto;
+  background:#fff;border-top:1px solid var(--line);
+  padding:10px 14px;
+  box-shadow:0 -4px 14px rgba(15,46,46,0.08);
+  display:none;
+}
+.step-bar .btn{width:100%;padding:14px 18px;font-size:15.5px;}
+body.has-step-bar{padding-bottom:146px;}
+.step-back{
+  flex-shrink:0;background:none;border:1px solid var(--line);
+  color:var(--teal-deep);border-radius:9px;
+  padding:6px 11px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;
+}
 .bottombar{
   position:fixed;bottom:0;left:0;right:0;
   background:#fff;border-top:1px solid var(--line);
@@ -398,12 +434,18 @@ select#customerSelect{font-weight:600;}
           <span id="voiceModeText">Voice entry off</span>
         </span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin:8px 0 12px;">
-        <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 16px;font-size:17px;line-height:1;">‹</button>
-        <span id="weekLabel" style="font-size:15px;color:var(--muted);font-weight:700;letter-spacing:0.03em;min-width:190px;text-align:center;"></span>
-        <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 16px;font-size:17px;line-height:1;">›</button>
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0 12px;">
+        <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:17px;line-height:1;">‹</button>
+        <span id="weekLabel" style="font-size:15px;color:var(--muted);font-weight:700;letter-spacing:0.03em;min-width:150px;text-align:center;"></span>
+        <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:17px;line-height:1;">›</button>
+        <button id="pickDayBtn" class="btn btn-ghost" title="Jump to a date" style="width:auto;padding:6px 11px;font-size:16px;line-height:1;">📅</button>
+        <input type="date" id="pickDayInput" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
       </div>
       <p id="homeDateInfo" style="font-size:19.7625px;color:var(--muted);margin:0 0 16px;text-align:center;font-weight:600;"></p>
+      <div class="field" style="max-width:280px;margin:0 auto 12px;">
+        <label>Viewing route for</label>
+        <select id="adminViewTech"><option value="">All customers</option></select>
+      </div>
       <div class="btn-row" id="dayTabs" style="flex-wrap:nowrap;gap:4px;margin-bottom:14px;justify-content:center;"></div>
       <div id="homeCustomerList"></div>
     </div>
@@ -460,23 +502,17 @@ select#customerSelect{font-weight:600;}
         <button class="btn btn-ghost" id="btnRemovePhotoBefore" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBefore" style="display:none;">
-      <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
-        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
-      </div>
     </div>
 
     <div class="card" id="visitPoolSection" style="display:none;">
-      <h2>Today's strip</h2>
+      <h2>Chemical Readings</h2>
 
       <div id="poolChemFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
     </div>
 
     <div class="card" id="visitPoolProductsSection" style="display:none;">
       <h2>Products added</h2>
       <div id="poolDoseFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
     </div>
 
     <div class="card" id="visitPoolPhotoSection" style="display:none;">
@@ -499,7 +535,6 @@ select#customerSelect{font-weight:600;}
         <textarea id="inNotes" placeholder="Added 2 lbs shock, backwashed filter..."></textarea>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
         <button class="btn btn-primary" id="btnSaveReading" style="flex:1;">Save pool reading</button>
       </div>
     </div>
@@ -516,23 +551,17 @@ select#customerSelect{font-weight:600;}
         <button class="btn btn-ghost" id="btnRemovePhotoBeforeSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeSpa" style="display:none;">
-      <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
-        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
-      </div>
     </div>
 
     <div class="card" id="visitSpaSection" style="display:none;">
       <h2>Today's spa strip</h2>
 
       <div id="spaChemFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
     </div>
 
     <div class="card" id="visitSpaProductsSection" style="display:none;">
       <h2>Products added</h2>
       <div id="spaDoseFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
     </div>
 
     <div class="card" id="visitSpaPhotoSection" style="display:none;">
@@ -554,7 +583,6 @@ select#customerSelect{font-weight:600;}
         <textarea id="inSpaNotes" placeholder="Drained and refilled, cleaned filter..."></textarea>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
         <button class="btn btn-primary" id="btnSaveSpaReading" style="flex:1;">Save spa reading</button>
       </div>
     </div>
@@ -571,22 +599,16 @@ select#customerSelect{font-weight:600;}
         <button class="btn btn-ghost" id="btnRemovePhotoBeforeFountain" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeFountain" style="display:none;">
-      <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
-        <button class="btn btn-primary" data-step-move="1" style="flex:1;">Today's strip →</button>
-      </div>
     </div>
 
     <div class="card" id="visitFountainSection" style="display:none;">
       <h2 id="visitFountainTitle">Fountain readings</h2>
       <div id="fountainChemFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;">Products added →</button></div>
     </div>
 
     <div class="card" id="visitFountainProductsSection" style="display:none;">
       <h2>Products added</h2>
       <div id="fountainDoseFields"></div>
-      <div class="btn-row" style="margin-top:16px;"><button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button><button class="btn btn-primary" data-step-move="1" style="flex:1;" data-final-step-label>After photos →</button></div>
     </div>
 
     <div class="card" id="visitFountainPhotoSection" style="display:none;">
@@ -608,7 +630,6 @@ select#customerSelect{font-weight:600;}
         <textarea id="inFountainNotes" placeholder="Cleaned basin, cleared debris from pump..."></textarea>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" data-step-left style="flex:0 0 34%;">← Previous</button>
         <button class="btn btn-primary" id="btnSaveFountainReading" style="flex:1;">Save fountain reading</button>
       </div>
     </div>
@@ -876,6 +897,19 @@ select#customerSelect{font-weight:600;}
 
 </main>
 
+<div class="order-banner" id="orderBanner">
+  <div class="ob-row">
+    <span class="ob-text" id="orderBannerText">Route order changed</span>
+    <button class="ob-temp" id="orderTempBtn" type="button">Just today</button>
+    <button class="ob-perm" id="orderPermBtn" type="button">Every week</button>
+    <button class="ob-close" id="orderCloseBtn" type="button" title="Dismiss">×</button>
+  </div>
+</div>
+
+<div class="step-bar" id="stepBar">
+  <button class="btn btn-primary" id="stepBarNext" type="button">Next</button>
+</div>
+
 <div class="bottombar">
   <button class="tab active" data-view="home"><i>&#9679;</i>Today</button>
   <button class="tab" data-view="technicians" id="navTechniciansBottom"><i>&#9679;</i>Techs</button>
@@ -942,7 +976,7 @@ const DEFAULT_CHEM_CONFIG = {
 };
 
 const DEFAULT_BUTTON_SETS = {
-  chlorine: [0, 1, 3, 5, 7.5, 10],
+  chlorine: [0, 1, 2, 3, 5, 7.5, 10],
   ph: [6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0, 8.2],
   alkalinity: [60, 70, 80, 90, 100, 110, 120, 130, 140],
   cya: [0, 30, 50, 100, 200],
@@ -1051,17 +1085,17 @@ function renderConfigFields(containerId, list, type, kind, onInput){
     if(showSuggestions){
       const suggestRow = document.createElement('div');
       suggestRow.className = 'btn-row';
-      suggestRow.style.gap = '5px';
-      suggestRow.style.marginTop = '5px';
+      suggestRow.style.gap = '10px';
+      suggestRow.style.marginTop = '8px';
       suggestRow.style.flexWrap = 'wrap';
       const suggestedAmounts = configuredButtons;
       suggestedAmounts.forEach(amt=>{
         const sBtn = document.createElement('button');
         sBtn.type = 'button';
-        sBtn.className = 'btn btn-secondary';
-        sBtn.style.width = 'auto';
-        sBtn.style.padding = '7px 11px';
-        sBtn.style.fontSize = '14px';
+        sBtn.className = 'btn';
+        sBtn.style.cssText = 'width:auto;padding:11px 16px;font-size:16px;font-weight:700;'
+          + 'background:#F3F0E4;color:#8C5A0F;border:1.5px solid #E0B877;border-radius:9px;'
+          + "font-family:'JetBrains Mono',monospace;min-width:46px;";
         sBtn.textContent = amt;
         sBtn.addEventListener('click', ()=>{
           input.value = amt;
@@ -1193,14 +1227,24 @@ function confirmDialog(message, confirmLabel){
   });
 }
 
+function hideStepBar(){
+  const bar = document.getElementById('stepBar');
+  if(bar) bar.style.display = 'none';
+  document.body.classList.remove('has-step-bar');
+  document.querySelectorAll('.step-back').forEach(b => b.remove());
+}
+
 function switchView(view, opts){
   opts = opts || {};
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
+  // Always land at the top rather than wherever the last page was scrolled to
+  window.scrollTo(0, 0);
   document.querySelectorAll('.tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.view === view);
   });
   if(view !== 'visit'){
+    hideStepBar();
     visitVoiceController.stopListening();
     releaseVisitWakeLock();
   }
@@ -1401,6 +1445,22 @@ function buildVoiceFieldsForType(type){
   return fields;
 }
 
+
+// Save stays disabled until an after photo has been taken for that section.
+function refreshSaveButtons(){
+  [['btnSaveReading', poolPhotoController],
+   ['btnSaveSpaReading', spaPhotoController],
+   ['btnSaveFountainReading', fountainPhotoController]].forEach(([btnId, ctrl])=>{
+    const btn = document.getElementById(btnId);
+    if(!btn || !ctrl) return;
+    const ready = !!ctrl.getData();
+    btn.disabled = !ready;
+    btn.style.opacity = ready ? '' : '0.4';
+    btn.style.cursor = ready ? '' : 'not-allowed';
+    btn.title = ready ? '' : 'Take an after photo first';
+  });
+}
+
 function refreshDynamicFieldLabels(){
   dynamicFieldLabels = {};
   buildVoiceFieldsForType('pool');
@@ -1530,9 +1590,13 @@ function makeVisitVoiceController(){
       };
 
       recognition.onend = ()=>{
-        if(listening){
+        if(!listening) return;
+        // Each restart makes the phone chime — that sound is played by the OS and
+        // can't be muted from here, so restart as rarely as we can get away with.
+        setTimeout(()=>{
+          if(!listening) return;
           try{ recognition.start(); }catch(e){ listening = false; }
-        }
+        }, 1200);
       };
     }
 
@@ -2145,6 +2209,7 @@ function makePhotoController(ids){
     previewImg.src = dataUrl;
     previewWrap.style.display = 'block';
     removeBtn.style.display = 'inline-flex';
+    if(ids.onChange) ids.onChange();
   }
 
   function clear(){
@@ -2153,6 +2218,7 @@ function makePhotoController(ids){
     previewWrap.style.display = 'none';
     removeBtn.style.display = 'none';
     fileInput.value = '';
+    if(ids.onChange) ids.onChange();
   }
 
   takeBtn.addEventListener('click', ()=>{ fileInput.click(); });
@@ -2178,16 +2244,19 @@ function makePhotoController(ids){
 }
 
 const poolPhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhoto', fileInput: 'inPhoto',
   previewWrap: 'photoPreviewWrap', previewImg: 'photoPreview', removeBtn: 'btnRemovePhoto'
 });
 
 const spaPhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhotoSpa', fileInput: 'inPhotoSpa',
   previewWrap: 'photoPreviewWrapSpa', previewImg: 'photoPreviewSpa', removeBtn: 'btnRemovePhotoSpa'
 });
 
 const fountainPhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhotoFountain', fileInput: 'inPhotoFountain',
   previewWrap: 'photoPreviewWrapFountain', previewImg: 'photoPreviewFountain', removeBtn: 'btnRemovePhotoFountain'
 });
@@ -2854,27 +2923,59 @@ function weekRangeStr(){
 
 function renderWeekLabel(){
   const label = document.getElementById('weekLabel');
-  let prefix;
-  if(weekOffset === 0){
-    prefix = 'This week';
-  } else if(weekOffset === 1){
-    prefix = 'Next week';
-  } else if(weekOffset === -1){
-    prefix = 'Last week';
-  } else if(weekOffset > 1){
-    prefix = weekOffset + ' weeks ahead';
-  } else {
-    prefix = Math.abs(weekOffset) + ' weeks ago';
-  }
-  label.textContent = prefix + ' (' + weekRangeStr() + ')';
+  const d = dateForWeekday(selectedHomeDay);
+  if(!d){ label.textContent = selectedHomeDay; return; }
+
+  const today = new Date();
+  const sameDay = (a,b)=> a.toDateString() === b.toDateString();
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+
+  let prefix = '';
+  if(sameDay(d, today)) prefix = 'Today · ';
+  else if(sameDay(d, tomorrow)) prefix = 'Tomorrow · ';
+  else if(sameDay(d, yesterday)) prefix = 'Yesterday · ';
+
+  label.textContent = prefix + d.toLocaleDateString(undefined,
+    {weekday:'short', month:'short', day:'numeric'});
 }
 
-document.getElementById('prevWeekBtn').addEventListener('click', ()=>{
-  weekOffset -= 1;
+// Arrows move a single day, rolling over into the next or previous week
+function stepDay(delta){
+  let i = DAYS_OF_WEEK.indexOf(selectedHomeDay);
+  if(i === -1) i = new Date().getDay();
+  let next = i + delta;
+  if(next > 6){ next = 0; weekOffset += 1; }
+  else if(next < 0){ next = 6; weekOffset -= 1; }
+  selectedHomeDay = DAYS_OF_WEEK[next];
   renderHomeList();
+}
+
+document.getElementById('prevWeekBtn').addEventListener('click', ()=> stepDay(-1));
+document.getElementById('nextWeekBtn').addEventListener('click', ()=> stepDay(1));
+
+document.getElementById('pickDayBtn').addEventListener('click', ()=>{
+  const input = document.getElementById('pickDayInput');
+  const d = dateForWeekday(selectedHomeDay) || new Date();
+  input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0,10);
+  if(typeof input.showPicker === 'function') input.showPicker();
+  else input.click();
 });
-document.getElementById('nextWeekBtn').addEventListener('click', ()=>{
-  weekOffset += 1;
+
+document.getElementById('pickDayInput').addEventListener('change', (e)=>{
+  if(!e.target.value) return;
+  const picked = new Date(e.target.value + 'T12:00:00');
+  const today = new Date();
+  // Work out how many weeks away that date's week is
+  const startOfThisWeek = new Date(today);
+  startOfThisWeek.setHours(0,0,0,0);
+  startOfThisWeek.setDate(today.getDate() - today.getDay());
+  const startOfPicked = new Date(picked);
+  startOfPicked.setHours(0,0,0,0);
+  startOfPicked.setDate(picked.getDate() - picked.getDay());
+  weekOffset = Math.round((startOfPicked - startOfThisWeek) / (7 * 86400000));
+  selectedHomeDay = DAYS_OF_WEEK[picked.getDay()];
   renderHomeList();
 });
 
@@ -2902,17 +3003,257 @@ function websiteOrderForDay(day){
   }, []);
 }
 
+
+// ---------- Touch drag for route reordering ----------
+// HTML5 drag events barely work on phones, so this handles touch directly:
+// the row lifts under your finger and the others slide out of the way.
+function attachTouchDrag(handle, row, container){
+  let dragging = false;
+  let startY = 0;
+  let originalNext = null;
+
+  function rowsIn(){
+    return Array.from(container.querySelectorAll('.cust-row'));
+  }
+
+  function lift(){
+    dragging = true;
+    originalNext = row.nextSibling;
+    row.style.transition = 'none';
+    row.style.opacity = '0.92';
+    row.style.background = '#fff';
+    row.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
+    row.style.borderRadius = '10px';
+    row.style.position = 'relative';
+    row.style.zIndex = '30';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function drop(){
+    dragging = false;
+    row.style.opacity = '';
+    row.style.background = '';
+    row.style.boxShadow = '';
+    row.style.borderRadius = '';
+    row.style.position = '';
+    row.style.zIndex = '';
+    row.style.transform = '';
+    document.body.style.overflow = '';
+
+    // Hold the new order and let the tech decide how long it should stick.
+    // Applied to this date straight away so the list stays as they left it.
+    const ids = rowsIn().map(r => r.dataset.custId).filter(Boolean);
+    if(ids.length){
+      fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = ids;
+      saveFieldRouteOrder();
+      showOrderBanner(ids);
+    }
+  }
+
+  function moveTo(clientY){
+    // Find the row under the finger and slot ourselves in beside it
+    const others = rowsIn().filter(r => r !== row);
+    for(const other of others){
+      const b = other.getBoundingClientRect();
+      if(clientY > b.top && clientY < b.bottom){
+        const below = clientY > b.top + b.height / 2;
+        if(below) other.after(row); else other.before(row);
+        return;
+      }
+    }
+  }
+
+  handle.addEventListener('touchstart', (e)=>{
+    if(e.touches.length !== 1) return;
+    e.preventDefault();
+    startY = e.touches[0].clientY;
+    lift();
+  }, {passive:false});
+
+  handle.addEventListener('touchmove', (e)=>{
+    if(!dragging) return;
+    e.preventDefault();
+    const y = e.touches[0].clientY;
+    row.style.transform = 'translateY(' + (y - startY) * 0.15 + 'px)';
+    moveTo(y);
+  }, {passive:false});
+
+  handle.addEventListener('touchend', (e)=>{
+    if(!dragging) return;
+    e.preventDefault();
+    drop();
+  }, {passive:false});
+
+  handle.addEventListener('touchcancel', ()=>{
+    if(dragging) drop();
+  });
+
+  // Mouse dragging for desktop, same behaviour
+  handle.addEventListener('mousedown', (e)=>{
+    e.preventDefault();
+    startY = e.clientY;
+    lift();
+    const onMove = (ev)=>{
+      if(!dragging) return;
+      row.style.transform = 'translateY(' + (ev.clientY - startY) * 0.15 + 'px)';
+      moveTo(ev.clientY);
+    };
+    const onUp = ()=>{
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if(dragging) drop();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+
+// ---------- Rescheduling ----------
+// Permanent changes move customer.day. One-offs are stored here as
+// {customerId, fromDate, toDate} and applied when building a day's route.
+function loadReschedules(){
+  return lsGet('rescheduledVisits') || [];
+}
+
+function isoForDay(dayName){
+  const d = dateForWeekday(dayName);
+  if(!d) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+}
+
+function openRescheduleModal(customer){
+  const fromISO = isoForDay(selectedHomeDay);
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;">
+      <h3 style="font-size:15px;margin:0 0 4px;">Reschedule ${customer.name}</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Currently on ${customer.day || 'no day'}. Pick the new date, then choose whether this is a one-off or their new regular day.</p>
+      <div class="field"><label>New date</label><input type="date" id="rsDate"></div>
+      <div class="btn-row" style="flex-direction:column;gap:8px;">
+        <button class="btn btn-primary" id="rsOnce" style="width:100%;">Just this once</button>
+        <button class="btn btn-ghost" id="rsAlways" style="width:100%;">Change their regular day</button>
+        <button class="btn btn-ghost" id="rsCancel" style="width:100%;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const dateEl = overlay.querySelector('#rsDate');
+  const cleanup = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#rsCancel').addEventListener('click', cleanup);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+
+  overlay.querySelector('#rsOnce').addEventListener('click', ()=>{
+    const toISO = dateEl.value;
+    if(!toISO){ showToast('Pick a date first'); return; }
+    const list = loadReschedules().filter(r => !(r.customerId === customer.id && r.fromDate === fromISO));
+    list.push({
+      id: 'resched_' + Date.now(),
+      customerId: customer.id,
+      fromDate: fromISO,
+      toDate: toISO,
+      createdAt: new Date().toISOString()
+    });
+    lsSet('rescheduledVisits', list);
+    cleanup();
+    renderHomeList();
+    const d = new Date(toISO + 'T12:00:00');
+    showToast(customer.name + ' moved to ' + d.toLocaleDateString(undefined,{weekday:'long', month:'short', day:'numeric'}));
+  });
+
+  overlay.querySelector('#rsAlways').addEventListener('click', async ()=>{
+    const toISO = dateEl.value;
+    if(!toISO){ showToast('Pick a date first'); return; }
+    const newDay = DAYS_OF_WEEK[new Date(toISO + 'T12:00:00').getDay()];
+    const ok = await confirmDialog('Move ' + customer.name + ' to ' + newDay +
+      ' every week from now on?', 'Change day');
+    if(!ok) return;
+    customer.day = newDay;
+    await saveCustomers();
+    cleanup();
+    renderHomeList();
+    showToast(customer.name + ' now serviced on ' + newDay + 's');
+  });
+}
+
+// Order can be set for one date only, or for that weekday from now on.
+// Adding a technician id keeps each tech's route separate when an admin edits one.
+function orderKey(day, dateISO){
+  const tech = (typeof adminViewTechId !== 'undefined' && adminViewTechId) ? '|' + adminViewTechId : '';
+  return (dateISO ? 'date:' + dateISO : 'day:' + day) + tech;
+}
+
 function orderCustomersForDay(day, list){
   const ids = list.map(c => c.id);
+  const iso = isoForDay(day);
 
-  // A tech's own reordering wins; otherwise follow the order set on the website
-  let order = (fieldRouteOrder[day] || []).filter(id => ids.includes(id));
+  // One-off order for this exact date wins, then the weekly order, then the website
+  let order = (fieldRouteOrder[orderKey(day, iso)] || []).filter(id => ids.includes(id));
+  if(order.length === 0){
+    order = (fieldRouteOrder[orderKey(day)] || []).filter(id => ids.includes(id));
+  }
+  if(order.length === 0){
+    order = (fieldRouteOrder[day] || []).filter(id => ids.includes(id));  // older saves
+  }
   if(order.length === 0){
     order = websiteOrderForDay(day).filter(id => ids.includes(id));
   }
   ids.forEach(id => { if(!order.includes(id)) order.push(id); });
   return order.map(id => list.find(c => c.id === id)).filter(Boolean);
 }
+
+// ---------- Route order prompt ----------
+let pendingOrderIds = null;
+let adminViewTechId = '';
+
+document.getElementById('adminViewTech').addEventListener('change', (e)=>{
+  adminViewTechId = e.target.value;
+  hideOrderBanner();
+  renderHomeList();
+});
+
+function showOrderBanner(ids){
+  pendingOrderIds = ids;
+  const banner = document.getElementById('orderBanner');
+  const text = document.getElementById('orderBannerText');
+  if(!banner) return;
+  const d = dateForWeekday(selectedHomeDay);
+  const dayName = d ? d.toLocaleDateString(undefined, {weekday:'long'}) : selectedHomeDay;
+  if(text) text.textContent = 'Order changed — keep it for ' + dayName + ' only, or every week?';
+  banner.style.display = 'block';
+}
+
+function hideOrderBanner(){
+  const banner = document.getElementById('orderBanner');
+  if(banner) banner.style.display = 'none';
+  pendingOrderIds = null;
+}
+
+document.getElementById('orderTempBtn').addEventListener('click', ()=>{
+  if(!pendingOrderIds) return hideOrderBanner();
+  fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = pendingOrderIds;
+  saveFieldRouteOrder();
+  hideOrderBanner();
+  showToast('Order saved for this date only');
+  renderHomeList();
+});
+
+document.getElementById('orderPermBtn').addEventListener('click', ()=>{
+  if(!pendingOrderIds) return hideOrderBanner();
+  fieldRouteOrder[orderKey(selectedHomeDay)] = pendingOrderIds;
+  // Drop any one-off order for today so the weekly one takes effect
+  delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
+  saveFieldRouteOrder();
+  hideOrderBanner();
+  showToast('Order saved for every ' + selectedHomeDay);
+  renderHomeList();
+});
+
+document.getElementById('orderCloseBtn').addEventListener('click', ()=>{
+  hideOrderBanner();
+  renderHomeList();
+});
 
 // Move a stop one position — works by tapping, unlike dragging
 function nudgeRouteStop(day, customerId, delta, visibleList){
@@ -2945,9 +3286,44 @@ function renderHomeList(){
   renderWeekLabel();
   const container = document.getElementById('homeCustomerList');
   const today = todayDateStr();
-  const todaysCustomers = orderCustomersForDay(selectedHomeDay, customers
+  const selDate = dateForWeekday(selectedHomeDay);
+  const selectedDayISO = selDate
+    ? new Date(selDate.getTime() - selDate.getTimezoneOffset() * 60000).toISOString().slice(0,10)
+    : '';
+
+  // One-off reschedules: pull people off this date, add anyone moved onto it
+  const reschedules = loadReschedules();
+  const movedAway = new Set(reschedules
+    .filter(r => r.fromDate === selectedDayISO).map(r => r.customerId));
+  const movedHere = new Set(reschedules
+    .filter(r => r.toDate === selectedDayISO).map(r => r.customerId));
+
+  // Keep the technician list current
+  const techSel = document.getElementById('adminViewTech');
+  if(techSel){
+    const prev = adminViewTechId;
+    techSel.innerHTML = '<option value="">All customers</option>';
+    (lsGet('technicians') || []).forEach(t=>{
+      const o = document.createElement('option');
+      o.value = t.id; o.textContent = t.name;
+      techSel.appendChild(o);
+    });
+    techSel.value = Array.from(techSel.options).some(o => o.value === prev) ? prev : '';
+    adminViewTechId = techSel.value;
+  }
+
+  const baseCustomers = customers
     .filter(c => c.day === selectedHomeDay && c.active !== false)
-    .filter(c => weekOffset !== 0 || c.lastServicedDate !== today));
+    .filter(c => weekOffset !== 0 || c.lastServicedDate !== today)
+    .filter(c => !movedAway.has(c.id))
+    .filter(c => !adminViewTechId || c.technicianId === adminViewTechId);
+
+  const movedInCustomers = customers.filter(c =>
+    movedHere.has(c.id) && c.active !== false &&
+    !baseCustomers.some(b => b.id === c.id));
+
+  const todaysCustomers = orderCustomersForDay(selectedHomeDay,
+    baseCustomers.concat(movedInCustomers));
 
   const dateInfo = document.getElementById('homeDateInfo');
   const stopText = todaysCustomers.length === 1 ? '1 route stop' : todaysCustomers.length + ' route stops';
@@ -2956,7 +3332,7 @@ function renderHomeList(){
   dateInfo.textContent = dateStr + ' · ' + stopText;
 
   if(todaysCustomers.length === 0){
-    container.innerHTML = `<div class="empty">No customers scheduled for ${selectedHomeDay}. Add one from the Log reading tab, or edit an existing customer's day from the Customers tab.</div>`;
+    container.innerHTML = `<div class="empty">No remaining customers for today.</div>`;
     return;
   }
   container.innerHTML = '';
@@ -2964,32 +3340,24 @@ function renderHomeList(){
   todaysCustomers.forEach((c, idx)=>{
     const row = document.createElement('div');
     row.className = 'cust-row';
-    row.innerHTML = `<div style="display:flex;align-items:center;gap:10px;min-width:0;">
-
-        <span class="mono" style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--teal-mid);min-width:18px;">${idx + 1}</span>
-        <div style="min-width:0;"><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>
+    row.style.flexWrap = 'nowrap';
+    row.innerHTML = `<div style="display:flex;align-items:center;min-width:0;flex:1 1 auto;">
+        <div style="min-width:0;flex:1 1 auto;"><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>
       </div>`;
 
     if(canReorder){
-      // Tap-based reordering — drag events don't fire reliably on phones
-      const nudge = document.createElement('div');
-      nudge.style.cssText = 'display:flex;flex-direction:column;gap:3px;flex-shrink:0;margin-right:4px;';
-      [['\u25B2', -1, 'Move up', idx === 0],
-       ['\u25BC',  1, 'Move down', idx === todaysCustomers.length - 1]].forEach(([sym, delta, title, off])=>{
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.textContent = sym;
-        b.title = title;
-        b.style.cssText = 'width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:7px;'
-          + 'background:#fff;color:var(--teal-deep);font-size:11px;line-height:1;cursor:pointer;'
-          + (off ? 'opacity:0.25;pointer-events:none;' : '');
-        b.addEventListener('click', (e)=>{
-          e.stopPropagation();
-          nudgeRouteStop(selectedHomeDay, c.id, delta, todaysCustomers);
-        });
-        nudge.appendChild(b);
-      });
-      row.insertBefore(nudge, row.firstChild);
+      row.dataset.custId = c.id;
+
+      // Grab handle — touch-action:none stops the browser hijacking the gesture
+      const handle = document.createElement('div');
+      handle.className = 'route-grip';
+      handle.textContent = '\u2261';
+      handle.style.cssText = 'flex-shrink:0;width:40px;align-self:stretch;display:flex;'
+        + 'align-items:center;justify-content:center;color:var(--muted);font-size:20px;'
+        + 'cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;'
+        + '-webkit-touch-callout:none;';
+      attachTouchDrag(handle, row, container);
+      row.insertBefore(handle, row.firstChild);
 
       row.draggable = true;
       row.addEventListener('dragstart', ()=>{
@@ -3020,14 +3388,18 @@ function renderHomeList(){
     rightWrap.style.display = 'flex';
     rightWrap.style.alignItems = 'center';
     rightWrap.style.gap = '10px';
+    rightWrap.style.flexShrink = '0';
     // Directions and Skip Service now live inside the drop-down panel
     const onWayBtn = document.createElement('button');
     onWayBtn.className = 'btn btn-secondary';
-    onWayBtn.style.width = 'auto';
-    onWayBtn.style.padding = '7px 12px';
-    onWayBtn.style.fontSize = '12px';
-    onWayBtn.style.marginLeft = 'auto';
-    onWayBtn.textContent = 'On my way';
+    // Fixed size on two lines so every row matches, whatever the address length
+    // Locked size — never resizes for long names or addresses
+    onWayBtn.style.cssText = 'flex:0 0 72px !important;width:72px !important;'
+      + 'min-width:72px !important;max-width:72px !important;'
+      + 'height:46px !important;min-height:46px;padding:0;'
+      + 'margin-left:10px;font-size:12px;line-height:1.25;text-align:center;'
+      + 'display:flex;flex-direction:column;align-items:center;justify-content:center;';
+    onWayBtn.innerHTML = '<span>On my</span><span>way</span>';
     onWayBtn.addEventListener('click', (e)=>{
       e.stopPropagation();
       sendOnMyWay(c);
@@ -3069,6 +3441,18 @@ function renderHomeList(){
       btnRow.className = 'btn-row';
       btnRow.style.marginTop = bits.length ? '12px' : '0';
       btnRow.style.flexWrap = 'wrap';
+
+      if(true){
+        const reschedBtn = document.createElement('button');
+        reschedBtn.className = 'btn btn-ghost';
+        reschedBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
+        reschedBtn.textContent = 'Reschedule';
+        reschedBtn.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          openRescheduleModal(c);
+        });
+        btnRow.appendChild(reschedBtn);
+      }
 
       const dirBtn = document.createElement('button');
       dirBtn.className = 'btn btn-ghost';
@@ -3195,12 +3579,8 @@ async function skipService(customer){
   showToast(customer.name + ' skipped for today');
   renderHomeList();
   renderServicedList();
-
-  populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
-  document.getElementById('reportCustomerSelect').value = customer.id;
-  syncReportCustomerSearchField();
-  await refreshDateSelector(customer.id);
-  switchView('report', {skipRefresh: true});
+  // Stay on the route rather than jumping to the report
+  switchView('home');
 }
 
 function openDirections(customer){
@@ -4061,9 +4441,6 @@ function applyVisitStep(){
   if(!currentVisibleSection) return;
   const steps = visitStepCardsFor(currentVisibleSection);
   if(!steps) return;
-  document.querySelectorAll('[data-step-left]').forEach(btn=>{
-    btn.textContent = currentVisitStep === 1 ? '← Return to route' : '← Previous';
-  });
   document.querySelectorAll('[data-final-step-label]').forEach(btn=>{
     btn.textContent = appSettings.showAfterPhotos !== false ? 'After photos →' : 'Save reading →';
   });
@@ -4075,44 +4452,94 @@ function applyVisitStep(){
       if(el) el.style.display = visible ? 'block' : 'none';
     });
   });
+  refreshSaveButtons();
+  syncStepChrome();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
+
+// Labels for the fixed bottom bar, by step
+function stepNextLabel(){
+  if(!currentVisibleSection) return '';
+  const steps = visitStepCardsFor(currentVisibleSection);
+  const cap = currentVisibleSection.charAt(0).toUpperCase() + currentVisibleSection.slice(1);
+  const nextEntry = steps[currentVisitStep];       // the step after this one
+  if(!nextEntry) return '';                        // last step — save lives on the card
+  const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
+  if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
+  if(id === 'visit' + cap + 'Section') return 'Chemical Readings \u2192';
+  if(id.indexOf('ProductsSection') !== -1) return 'Products added \u2192';
+  if(id.indexOf('PhotoSection') !== -1) return 'After photos \u2192';
+  return 'Next \u2192';
+}
+
+// Keeps the bottom bar and the in-heading back button in step
+function syncStepChrome(){
+  const bar = document.getElementById('stepBar');
+  const nextBtn = document.getElementById('stepBarNext');
+  if(!bar || !nextBtn) return;
+
+  const label = stepNextLabel();
+  if(currentVisibleSection && label){
+    nextBtn.textContent = label;
+    bar.style.display = 'block';
+    document.body.classList.add('has-step-bar');
+  } else {
+    bar.style.display = 'none';
+    document.body.classList.remove('has-step-bar');
+  }
+
+  // Park the back button beside the heading of whichever card is showing
+  document.querySelectorAll('.step-back').forEach(b => b.remove());
+  const steps = currentVisibleSection ? visitStepCardsFor(currentVisibleSection) : [];
+  const entry = steps[currentVisitStep - 1];
+  if(!entry) return;
+  const cardId = Array.isArray(entry) ? entry[0] : entry;
+  const card = document.getElementById(cardId);
+  if(!card) return;
+  const h = card.querySelector('h2');
+  if(!h) return;
+
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.className = 'step-back';
+  back.textContent = currentVisitStep === 1 ? '\u2190 Return to route' : '\u2190 Back';
+  back.addEventListener('click', ()=>{
+    if(currentVisitStep === 1) switchView('home');
+    else goToVisitStep(currentVisitStep - 1);
+  });
+
+  // Sit the heading and the button on one line
+  if(h.parentElement && h.parentElement.dataset.stepHead === 'true'){
+    h.parentElement.appendChild(back);
+  } else {
+    const wrap = document.createElement('div');
+    wrap.dataset.stepHead = 'true';
+    wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;';
+    h.parentNode.insertBefore(wrap, h);
+    wrap.appendChild(h);
+    wrap.appendChild(back);
+  }
+}
+
+document.getElementById('stepBarNext').addEventListener('click', ()=>{
+  const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
+  if(currentVisitStep >= total) return;
+  const missing = missingReadingFields();
+  if(missing.length){
+    showToast(missing.length === 1
+      ? 'Enter a reading for ' + missing[0].label + ' first'
+      : missing.length + ' readings still needed');
+    flagMissingReadings(missing);
+    return;
+  }
+  goToVisitStep(currentVisitStep + 1);
+});
 
 function goToVisitStep(step){
   currentVisitStep = step;
   applyVisitStep();
 }
 
-document.addEventListener('click', (e)=>{
-  const leftBtn = e.target.closest('[data-step-left]');
-  if(leftBtn){
-    if(currentVisitStep === 1){
-      switchView('home');
-    } else {
-      goToVisitStep(currentVisitStep - 1);
-    }
-    return;
-  }
-  const moveBtn = e.target.closest('[data-step-move]');
-  if(!moveBtn) return;
-  const delta = parseInt(moveBtn.dataset.stepMove, 10);
-
-  // Readings can be made mandatory before moving on
-  if(delta > 0){
-    const missing = missingReadingFields();
-    if(missing.length){
-      showToast(missing.length === 1
-        ? 'Enter a reading for ' + missing[0].label + ' first'
-        : missing.length + ' readings still needed');
-      flagMissingReadings(missing);
-      return;
-    }
-  }
-
-  const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
-  const target = Math.min(Math.max(currentVisitStep + delta, 1), total);
-  goToVisitStep(target);
-});
 
 // Remembers which step you were on for each section, so switching tabs and
 // coming back returns you where you left off instead of restarting.
@@ -4257,6 +4684,10 @@ async function openVisit(customerId){
     };
     visitStepBySection = {};
     fountainDraftValues = {};
+    // Also clear the live step, otherwise showVisitSection saves the previous
+    // customer's position back into the map before reading it
+    currentVisibleSection = null;
+    currentVisitStep = 1;
     startVisitTimer();
   } else if(!visitTimerRunning){
     startVisitTimer();
@@ -4349,11 +4780,14 @@ async function finalizeVisitSend(){
   document.getElementById('reportCustomerSelect').value = customerId;
   syncReportCustomerSearchField();
   await renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadings);
-  switchView('report', {skipRefresh: true});
   await attemptAutoSend(customerId, 'combined');
 
+  // Back to the route rather than parking on the report
   renderHomeList();
   renderServicedList();
+  switchView('home');
+  const who = customer ? customer.name : 'Customer';
+  showToast(who + ' done — report sent');
 }
 
 async function renderReport(customerId, readingId){
