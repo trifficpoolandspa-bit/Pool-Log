@@ -2642,7 +2642,7 @@ function renderGlobalHistory(){
       if(used.length){
         const lbl = document.createElement('div');
         lbl.className = 'report-sec';
-        lbl.textContent = 'Products added';
+        lbl.textContent = 'Chemicals Added';
         body.appendChild(lbl);
         const t = document.createElement('table');
         t.className = 'report-table';
@@ -2943,7 +2943,7 @@ function renderBilling(){
         if(v.products.length){
           const pLabel = document.createElement('div');
           pLabel.style.cssText = 'font-size:11.5px;font-weight:600;color:var(--muted);margin:8px 0 4px;';
-          pLabel.textContent = 'Products added';
+          pLabel.textContent = 'Chemicals Added';
           vBlock.appendChild(pLabel);
           const pt = document.createElement('table');
           pt.className = 'report-table';
@@ -6190,7 +6190,7 @@ function showHistory(customerId, name){
       return v !== '' && v !== undefined && v !== null && parseFloat(v) !== 0;
     });
     if(used.length){
-      html += '<div class="report-sec">Products added</div><table class="report-table">';
+      html += '<div class="report-sec">Chemicals Added</div><table class="report-table">';
       used.forEach(d=>{
         html += `<tr><td>${d.label}</td><td>${r[d.key]}${d.unit ? ' ' + d.unit : ''}</td></tr>`;
       });

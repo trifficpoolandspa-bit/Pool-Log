@@ -329,7 +329,7 @@ textarea{min-height:52px;resize:vertical;}
 }
 .ob-perm{background:#8C5A0F;color:#fff;border-color:#8C5A0F !important;}
 .ob-temp{background:#fff;color:#8C5A0F;}
-.ob-close{background:none;border:none !important;color:#8C5A0F;font-size:16px;padding:4px 6px;}
+.ob-close{background:#fff;color:#B8492E;border-color:#EFC0B4 !important;}
 .step-bar{
   position:fixed;bottom:62px;left:0;right:0;z-index:40;
   max-width:720px;margin:0 auto;
@@ -428,25 +428,22 @@ select#customerSelect{font-weight:600;}
   <div class="view active" id="view-home">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Today's customers</h2>
+        <h2 style="margin:0;" id="homeDayHeading">Today</h2>
         <span id="voiceModeIndicator" style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
           <span id="voiceModeText">Voice entry off</span>
         </span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0 12px;">
-        <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:17px;line-height:1;">‹</button>
-        <span id="weekLabel" style="font-size:15px;color:var(--muted);font-weight:700;letter-spacing:0.03em;min-width:150px;text-align:center;"></span>
-        <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 14px;font-size:17px;line-height:1;">›</button>
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 14px;">
+        <button id="prevWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">‹</button>
+        <span id="weekLabel" style="flex:1 1 auto;font-size:14px;color:var(--muted);font-weight:600;text-align:center;"></span>
+        <button id="nextWeekBtn" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">›</button>
         <button id="pickDayBtn" class="btn btn-ghost" title="Jump to a date" style="width:auto;padding:6px 11px;font-size:16px;line-height:1;">📅</button>
         <input type="date" id="pickDayInput" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
       </div>
-      <p id="homeDateInfo" style="font-size:19.7625px;color:var(--muted);margin:0 0 16px;text-align:center;font-weight:600;"></p>
-      <div class="field" style="max-width:280px;margin:0 auto 12px;">
-        <label>Viewing route for</label>
-        <select id="adminViewTech"><option value="">All customers</option></select>
-      </div>
-      <div class="btn-row" id="dayTabs" style="flex-wrap:nowrap;gap:4px;margin-bottom:14px;justify-content:center;"></div>
+      <p id="homeDateInfo" style="display:none;"></p>
+      <select id="adminViewTech" style="display:none;"><option value="">All customers</option></select>
+      <div id="dayTabs" style="display:none;"></div>
       <div id="homeCustomerList"></div>
     </div>
   </div>
@@ -511,7 +508,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitPoolProductsSection" style="display:none;">
-      <h2>Products added</h2>
+      <h2>Chemicals Added</h2>
       <div id="poolDoseFields"></div>
     </div>
 
@@ -560,7 +557,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitSpaProductsSection" style="display:none;">
-      <h2>Products added</h2>
+      <h2>Chemicals Added</h2>
       <div id="spaDoseFields"></div>
     </div>
 
@@ -607,7 +604,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitFountainProductsSection" style="display:none;">
-      <h2>Products added</h2>
+      <h2>Chemicals Added</h2>
       <div id="fountainDoseFields"></div>
     </div>
 
@@ -902,7 +899,7 @@ select#customerSelect{font-weight:600;}
     <span class="ob-text" id="orderBannerText">Route order changed</span>
     <button class="ob-temp" id="orderTempBtn" type="button">Just today</button>
     <button class="ob-perm" id="orderPermBtn" type="button">Every week</button>
-    <button class="ob-close" id="orderCloseBtn" type="button" title="Dismiss">×</button>
+    <button class="ob-close" id="orderCloseBtn" type="button">Remove changes</button>
   </div>
 </div>
 
@@ -1093,13 +1090,30 @@ function renderConfigFields(containerId, list, type, kind, onInput){
         const sBtn = document.createElement('button');
         sBtn.type = 'button';
         sBtn.className = 'btn';
-        sBtn.style.cssText = 'width:auto;padding:11px 16px;font-size:16px;font-weight:700;'
-          + 'background:#F3F0E4;color:#8C5A0F;border:1.5px solid #E0B877;border-radius:9px;'
-          + "font-family:'JetBrains Mono',monospace;min-width:46px;";
+        // Soft red until pressed, then solid so the choice is obvious
+        const restStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
+          + 'border-radius:9px;min-width:42px;'
+          + "font-family:'JetBrains Mono',monospace;"
+          + 'background:#FBEAE6;color:#B8492E;border:1.5px solid #E8B5A8;'
+          + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
+        const pressedStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
+          + 'border-radius:9px;min-width:42px;'
+          + "font-family:'JetBrains Mono',monospace;"
+          + 'background:#B8492E;color:#fff;border:1.5px solid #B8492E;'
+          + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
+        sBtn.style.cssText = restStyle;
         sBtn.textContent = amt;
         sBtn.addEventListener('click', ()=>{
           input.value = amt;
           input.dispatchEvent(new Event('input', {bubbles:true}));
+          // Only one value can be current, so clear the others in this row
+          suggestRow.querySelectorAll('button').forEach(b => b.style.cssText = restStyle);
+          sBtn.style.cssText = pressedStyle;
+        });
+        // Typing by hand should drop the highlight
+        input.addEventListener('input', ()=>{
+          if(String(input.value) !== String(amt)) sBtn.style.cssText = restStyle;
+          else sBtn.style.cssText = pressedStyle;
         });
         suggestRow.appendChild(sBtn);
       });
@@ -1244,6 +1258,7 @@ function switchView(view, opts){
     t.classList.toggle('active', t.dataset.view === view);
   });
   if(view !== 'visit'){
+    captureVisitDraft();
     hideStepBar();
     visitVoiceController.stopListening();
     releaseVisitWakeLock();
@@ -2923,21 +2938,22 @@ function weekRangeStr(){
 
 function renderWeekLabel(){
   const label = document.getElementById('weekLabel');
+  const heading = document.getElementById('homeDayHeading');
   const d = dateForWeekday(selectedHomeDay);
-  if(!d){ label.textContent = selectedHomeDay; return; }
+
+  // Heading is just the weekday; the date sits quietly beneath it
+  if(heading) heading.textContent = d
+    ? d.toLocaleDateString(undefined, {weekday:'long'})
+    : selectedHomeDay;
+
+  if(!label) return;
+  if(!d){ label.textContent = ''; return; }
 
   const today = new Date();
   const sameDay = (a,b)=> a.toDateString() === b.toDateString();
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-
-  let prefix = '';
-  if(sameDay(d, today)) prefix = 'Today · ';
-  else if(sameDay(d, tomorrow)) prefix = 'Tomorrow · ';
-  else if(sameDay(d, yesterday)) prefix = 'Yesterday · ';
-
+  const prefix = sameDay(d, today) ? 'Today · ' : '';
   label.textContent = prefix + d.toLocaleDateString(undefined,
-    {weekday:'short', month:'short', day:'numeric'});
+    {month:'short', day:'numeric'});
 }
 
 // Arrows move a single day, rolling over into the next or previous week
@@ -3251,8 +3267,12 @@ document.getElementById('orderPermBtn').addEventListener('click', ()=>{
 });
 
 document.getElementById('orderCloseBtn').addEventListener('click', ()=>{
+  // Throw away the one-off order so the route falls back to its usual sequence
+  delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
+  saveFieldRouteOrder();
   hideOrderBanner();
   renderHomeList();
+  showToast('Order change removed');
 });
 
 // Move a stop one position — works by tapping, unlike dragging
@@ -4467,7 +4487,7 @@ function stepNextLabel(){
   const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
   if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
   if(id === 'visit' + cap + 'Section') return 'Chemical Readings \u2192';
-  if(id.indexOf('ProductsSection') !== -1) return 'Products added \u2192';
+  if(id.indexOf('ProductsSection') !== -1) return 'Chemicals Added \u2192';
   if(id.indexOf('PhotoSection') !== -1) return 'After photos \u2192';
   return 'Next \u2192';
 }
@@ -4503,9 +4523,20 @@ function syncStepChrome(){
   back.type = 'button';
   back.className = 'step-back';
   back.textContent = currentVisitStep === 1 ? '\u2190 Return to route' : '\u2190 Back';
-  back.addEventListener('click', ()=>{
-    if(currentVisitStep === 1) switchView('home');
-    else goToVisitStep(currentVisitStep - 1);
+  back.addEventListener('click', async ()=>{
+    if(currentVisitStep !== 1){
+      goToVisitStep(currentVisitStep - 1);
+      return;
+    }
+    // Leaving by this button is a deliberate exit, so anything unsaved goes
+    if(hasUnsavedSectionData()){
+      const ok = await confirmDialog(
+        "This will remove all readings taken. Are you sure you'd like to cancel the report?",
+        'Cancel report');
+      if(!ok) return;
+      discardVisitInProgress();
+    }
+    switchView('home');
   });
 
   // Sit the heading and the button on one line
@@ -4662,6 +4693,67 @@ document.addEventListener('visibilitychange', async ()=>{
   }
 });
 
+
+// ---------- Keeping a part-finished visit alive ----------
+// Field values live only in the DOM, so leaving the visit view and coming back
+// would otherwise lose them. Stash them on the way out, put them back on return.
+let visitDraft = {customerId: null, values: {}, section: null, step: 1};
+
+function captureVisitDraft(){
+  if(!currentVisitCustomerId) return;
+  const view = document.getElementById('view-visit');
+  if(!view) return;
+  const values = {};
+  view.querySelectorAll('input, textarea, select').forEach(el=>{
+    if(!el.id) return;
+    if(el.type === 'file') return;
+    values[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  visitDraft = {
+    customerId: currentVisitCustomerId,
+    values,
+    section: currentVisibleSection,
+    step: currentVisitStep,
+    fountainId: currentVisitFountainId
+  };
+}
+
+function restoreVisitDraft(customerId){
+  if(!visitDraft.customerId || visitDraft.customerId !== customerId) return false;
+  Object.keys(visitDraft.values).forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(el.type === 'checkbox') el.checked = visitDraft.values[id];
+    else el.value = visitDraft.values[id];
+  });
+  return true;
+}
+
+
+// Throws away everything typed for the current visit that hasn't been saved
+function discardVisitInProgress(){
+  const view = document.getElementById('view-visit');
+  if(view){
+    view.querySelectorAll('input, textarea').forEach(el=>{
+      if(el.type === 'file') return;
+      if(el.type === 'checkbox') el.checked = false;
+      else el.value = '';
+    });
+  }
+  [poolPhotoController, spaPhotoController, fountainPhotoController].forEach(ctrl=>{
+    if(ctrl) ctrl.clear();
+  });
+  ['pool','spa','fountain'].forEach(t=>{
+    const b = beforeControllerFor(t);
+    if(b) b.clear();
+  });
+  visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  fountainDraftValues = {};
+  visitStepBySection = {};
+  currentVisibleSection = null;
+  currentVisitStep = 1;
+}
+
 async function openVisit(customerId){
   if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
     const confirmed = await confirmDialog('You have unsaved readings for this visit. Switching customers will discard them. Continue?', 'Discard & switch');
@@ -4729,8 +4821,23 @@ async function openVisit(customerId){
     requestVisitWakeLock();
   }
 
+  const resuming = visitDraft.customerId === customerId;
   if(pendingVisit.neededSections.length > 0){
-    showVisitSection(pendingVisit.neededSections[0]);
+    // Go back to the section and step they were on, not the beginning
+    const target = (resuming && visitDraft.section
+      && pendingVisit.neededSections.indexOf(visitDraft.section) !== -1)
+      ? visitDraft.section
+      : pendingVisit.neededSections[0];
+    if(resuming && visitDraft.fountainId) currentVisitFountainId = visitDraft.fountainId;
+    if(resuming && visitDraft.step) visitStepBySection[target] = visitDraft.step;
+    showVisitSection(target);
+  }
+
+  // Put back anything they had typed but not yet saved
+  if(resuming){
+    restoreVisitDraft(customerId);
+    renderStripPreview();
+    refreshSaveButtons();
   }
 
   if(appSettings.voiceModeEnabled){
@@ -4767,6 +4874,7 @@ async function finalizeVisitSend(){
   await releaseVisitWakeLock();
 
   pendingVisit = null;
+  visitDraft = {customerId: null, values: {}, section: null, step: 1};
 
   const elapsedMs = stopVisitTimer();
   const customer = customers.find(c => c.id === customerId);
@@ -4852,7 +4960,7 @@ function buildReadingSection(reading, chemList, prodList){
       prows += `<tr><td>${p.label}</td><td>${display}</td></tr>`;
       productsText += `${p.label}: ${display}\n`;
     });
-    productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Products added</h3><table class="report-table">${prows}</table>`;
+    productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Chemicals Added</h3><table class="report-table">${prows}</table>`;
   }
 
   return {rowsHtml, rowsText, productsHtml, productsText};
