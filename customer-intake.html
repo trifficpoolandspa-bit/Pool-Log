@@ -647,6 +647,10 @@ input::placeholder{color:#A9BCB9;}
         <h2>Assigned customers</h2>
         <span class="section-count" id="techAssignedCount"></span>
       </div>
+      <div class="field" style="max-width:260px;">
+        <label>Service day</label>
+        <select id="techAssignedDay"></select>
+      </div>
       <div id="techAssignedList"></div>
       <button class="btn btn-primary" id="btnShowAssignCustomers" style="width:auto;margin-top:14px;">+ Assign customer</button>
     </div>
@@ -906,6 +910,16 @@ input::placeholder{color:#A9BCB9;}
         </label>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can't save a pool, spa, or fountain reading in the field app until they've added both a before and an after photo for that visit.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require readings before moving on</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireReadings">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must fill in every chemical reading before they can leave the readings step of a visit. Filter clean visits are exempt.</p>
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -1262,14 +1276,37 @@ function getOrderedCustomersForDay(day, routeKey){
   return order.map(id => dayRouteCustomers.find(c => c.id === id)).filter(Boolean);
 }
 
-function reorderCustomer(day, routeKey, draggedId, targetId){
+// placeBelow: drop landed on the lower half of the target row
+function reorderCustomer(day, routeKey, draggedId, targetId, placeBelow){
   const dayOrders = dayOrdersFor(day);
   const order = dayOrders[routeKey] || [];
   const fromIndex = order.indexOf(draggedId);
-  const toIndex = order.indexOf(targetId);
-  if(fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+  if(fromIndex === -1) return;
+
   order.splice(fromIndex, 1);
+
+  // Work out the target position AFTER removal so indexes don't drift
+  let toIndex = order.indexOf(targetId);
+  if(toIndex === -1){ order.splice(fromIndex, 0, draggedId); return; }
+  if(placeBelow) toIndex += 1;
+
   order.splice(toIndex, 0, draggedId);
+  dayOrders[routeKey] = order;
+  saveRouteOrders();
+  renderRouteOrderList();
+  renderRouteMapPins();
+}
+
+// Move one position up or down — precise, no dragging needed
+function nudgeRouteCustomer(day, routeKey, customerId, delta){
+  const dayOrders = dayOrdersFor(day);
+  const order = dayOrders[routeKey] || [];
+  const i = order.indexOf(customerId);
+  if(i === -1) return;
+  const j = i + delta;
+  if(j < 0 || j >= order.length) return;
+  order.splice(i, 1);
+  order.splice(j, 0, customerId);
   dayOrders[routeKey] = order;
   saveRouteOrders();
   renderRouteOrderList();
@@ -1322,9 +1359,28 @@ function renderRouteOrderList(){
     info.style.minWidth = '0';
     info.innerHTML = `<div class="cust-name" style="font-size:13.5px;">${c.name}</div><div class="cust-meta" style="font-size:11.5px;">${c.address || 'No address on file'}</div>`;
 
+    const nudgeWrap = document.createElement('div');
+    nudgeWrap.style.cssText = 'display:flex;flex-direction:column;gap:2px;flex-shrink:0;';
+    [['\u2191', -1, 'Move up', i === 0],
+     ['\u2193',  1, 'Move down', i === ordered.length - 1]].forEach(([sym, delta, title, disabled])=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = sym;
+      b.title = title;
+      b.style.cssText = 'width:26px;height:20px;padding:0;border:1px solid var(--line);border-radius:5px;'
+        + 'background:#fff;color:var(--teal-deep);font-size:11px;line-height:1;cursor:pointer;'
+        + (disabled ? 'opacity:0.3;pointer-events:none;' : '');
+      b.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        nudgeRouteCustomer(selectedMapDay, selectedRoute, c.id, delta);
+      });
+      nudgeWrap.appendChild(b);
+    });
+
     row.appendChild(handle);
     row.appendChild(badge);
     row.appendChild(info);
+    row.appendChild(nudgeWrap);
 
     row.addEventListener('dragstart', (e)=>{
       draggedCustomerId = c.id;
@@ -1334,23 +1390,36 @@ function renderRouteOrderList(){
     row.addEventListener('dragend', ()=>{
       row.style.opacity = '1';
       draggedCustomerId = null;
-      container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
+      container.querySelectorAll('.cust-row').forEach(r => {
+        r.style.borderTop = '';
+        r.style.borderBottom = '';
+      });
     });
+    function dropIsBelow(e){
+      const r = row.getBoundingClientRect();
+      return (e.clientY - r.top) > r.height / 2;
+    }
+    function clearMarks(){
+      row.style.borderTop = '';
+      row.style.borderBottom = '';
+    }
+
     row.addEventListener('dragover', (e)=>{
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      if(draggedCustomerId && draggedCustomerId !== c.id){
-        row.style.borderTop = '2px solid var(--gold)';
-      }
+      if(!draggedCustomerId || draggedCustomerId === c.id) return;
+      // Show the line on the edge the customer will actually land on
+      clearMarks();
+      if(dropIsBelow(e)) row.style.borderBottom = '3px solid var(--gold)';
+      else row.style.borderTop = '3px solid var(--gold)';
     });
-    row.addEventListener('dragleave', ()=>{
-      row.style.borderTop = '';
-    });
+    row.addEventListener('dragleave', clearMarks);
     row.addEventListener('drop', (e)=>{
       e.preventDefault();
-      row.style.borderTop = '';
+      const below = dropIsBelow(e);
+      clearMarks();
       if(draggedCustomerId && draggedCustomerId !== c.id){
-        reorderCustomer(selectedMapDay, selectedRoute, draggedCustomerId, c.id);
+        reorderCustomer(selectedMapDay, selectedRoute, draggedCustomerId, c.id, below);
       }
     });
 
@@ -1759,7 +1828,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforeAfterPhotos: false, showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforeAfterPhotos: false, showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 function saveSettings(){
@@ -1770,6 +1839,12 @@ document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
   appSettings.showAfterPhotos = e.target.checked;
   saveSettings();
   showToast(appSettings.showAfterPhotos ? 'After photos step turned on in the field apps' : 'After photos step turned off');
+});
+
+document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
+  appSettings.requireReadings = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireReadings ? 'Readings are now required in the field apps' : 'Readings are no longer required');
 });
 
 document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
@@ -4272,13 +4347,78 @@ function openQuickButtonsModal(item){
 
 let draggedButtonCtx = null;
 
+let draggedConfigItem = null;
+
+// Moves a chemical or dosage to a new spot in its list
+function moveConfigItem(listKey, fromKey, toKey, placeBelow){
+  const lists = activeConfigLists();
+  const arr = lists[listKey];
+  if(!arr) return;
+  const from = arr.findIndex(i => i.key === fromKey);
+  if(from === -1) return;
+  const moved = arr.splice(from, 1)[0];
+  let to = arr.findIndex(i => i.key === toKey);
+  if(to === -1){ arr.splice(from, 0, moved); return; }
+  if(placeBelow) to += 1;
+  arr.splice(to, 0, moved);
+  saveActiveConfig();
+  renderChemConfigLists();
+}
+
 function makeConfigRow(item, listKey){
   const card = document.createElement('div');
   card.style.padding = '12px 0';
   card.style.borderBottom = '1px solid var(--line)';
+  card.draggable = true;
+
+  card.addEventListener('dragstart', (e)=>{
+    draggedConfigItem = {key: item.key, listKey};
+    card.style.opacity = '0.4';
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  card.addEventListener('dragend', ()=>{
+    card.style.opacity = '1';
+    draggedConfigItem = null;
+    document.querySelectorAll('#chemConfigChemicalsList > div, #chemConfigDosagesList > div')
+      .forEach(d => { d.style.borderTop = ''; d.style.borderBottom = '1px solid var(--line)'; });
+  });
+  function dropBelow(e){
+    const r = card.getBoundingClientRect();
+    return (e.clientY - r.top) > r.height / 2;
+  }
+  card.addEventListener('dragover', (e)=>{
+    e.preventDefault();
+    if(!draggedConfigItem || draggedConfigItem.listKey !== listKey
+       || draggedConfigItem.key === item.key) return;
+    card.style.borderTop = '';
+    card.style.borderBottom = '1px solid var(--line)';
+    if(dropBelow(e)) card.style.borderBottom = '3px solid var(--gold)';
+    else card.style.borderTop = '3px solid var(--gold)';
+  });
+  card.addEventListener('dragleave', ()=>{
+    card.style.borderTop = '';
+    card.style.borderBottom = '1px solid var(--line)';
+  });
+  card.addEventListener('drop', (e)=>{
+    e.preventDefault();
+    const below = dropBelow(e);
+    card.style.borderTop = '';
+    card.style.borderBottom = '1px solid var(--line)';
+    if(draggedConfigItem && draggedConfigItem.listKey === listKey
+       && draggedConfigItem.key !== item.key){
+      moveConfigItem(listKey, draggedConfigItem.key, item.key, below);
+    }
+  });
 
   const row = document.createElement('div');
   row.className = 'fountain-row';
+
+  const handle = document.createElement('span');
+  handle.textContent = '\u283F';
+  handle.title = 'Drag to reorder — this is the order techs see in the app';
+  handle.style.cssText = 'color:var(--muted);font-size:16px;cursor:grab;flex-shrink:0;user-select:none;padding-right:2px;';
+  row.appendChild(handle);
+
   const nameInput = document.createElement('input');
   nameInput.value = item.label;
   nameInput.placeholder = 'Name';
@@ -5132,6 +5272,13 @@ function renderTechProfile(techId){
   }
 }
 
+let techAssignedDayFilter = '';
+
+document.getElementById('techAssignedDay').addEventListener('change', (e)=>{
+  techAssignedDayFilter = e.target.value;
+  if(currentTechDetailId) renderTechAssignedList(currentTechDetailId);
+});
+
 function renderTechAssignedList(techId){
   const container = document.getElementById('techAssignedList');
   const countEl = document.getElementById('techAssignedCount');
@@ -5139,10 +5286,14 @@ function renderTechAssignedList(techId){
     .filter(c => c.technicianId === techId && c.active !== false)
     .slice()
     .sort((a,b)=>{
-      const dayIdx = d => DAYS_OF_WEEK.indexOf(d);
+      // Day order first, with unscheduled customers last
+      const dayIdx = d => {
+        const i = DAYS_OF_WEEK.indexOf(d);
+        return i === -1 ? 99 : i;
+      };
       const da = dayIdx(a.day), db = dayIdx(b.day);
       if(da !== db) return da - db;
-      return (a.name||'').localeCompare(b.name||'');
+      return sortKeyName(a.name).localeCompare(sortKeyName(b.name));
     });
 
   if(countEl) countEl.textContent = assigned.length
@@ -5152,12 +5303,52 @@ function renderTechAssignedList(techId){
     container.innerHTML = emptyState('No customers assigned to this technician yet — check some below.');
     return;
   }
+  // Day dropdown, showing a count beside each day
+  const daySel = document.getElementById('techAssignedDay');
+  if(daySel){
+    const prev = techAssignedDayFilter;
+    daySel.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = '';
+    allOpt.textContent = 'All days (' + assigned.length + ')';
+    daySel.appendChild(allOpt);
+    DAYS_OF_WEEK.forEach(d=>{
+      const n = assigned.filter(x => (x.day || '') === d).length;
+      if(n === 0) return;
+      const o = document.createElement('option');
+      o.value = d;
+      o.textContent = d + ' (' + n + ')';
+      daySel.appendChild(o);
+    });
+    const noneCount = assigned.filter(x => !DAYS_OF_WEEK.includes(x.day || '')).length;
+    if(noneCount){
+      const o = document.createElement('option');
+      o.value = '__none__';
+      o.textContent = 'No day set (' + noneCount + ')';
+      daySel.appendChild(o);
+    }
+    const stillThere = Array.from(daySel.options).some(o => o.value === prev);
+    daySel.value = stillThere ? prev : '';
+    techAssignedDayFilter = daySel.value;
+  }
+
+  const shown = assigned.filter(c=>{
+    if(!techAssignedDayFilter) return true;
+    if(techAssignedDayFilter === '__none__') return !DAYS_OF_WEEK.includes(c.day || '');
+    return (c.day || '') === techAssignedDayFilter;
+  });
+
   container.innerHTML = '';
-  assigned.forEach(c=>{
+  if(shown.length === 0){
+    container.innerHTML = emptyState('No customers on that day.');
+    return;
+  }
+
+  shown.forEach(c=>{
     const row = document.createElement('div');
     row.className = 'cust-row';
     const metaParts = [];
-    metaParts.push(c.day || 'No day set');
+    if(!techAssignedDayFilter) metaParts.push(c.day || 'No day set');
     if(c.address) metaParts.push(c.address);
     metaParts.push(badgeText(c));
     row.innerHTML = `<div class="cust-left"><div class="cust-avatar">${initialOf(c.name)}</div><div class="cust-info"><div class="cust-name">${displayName(c.name)}</div><div class="cust-meta">${metaParts.join(' · ')}</div></div></div>`;
@@ -7700,6 +7891,7 @@ document.getElementById('settingRequireBeforeAfterPhotos').checked = appSettings
 document.getElementById('settingShowDosageSuggestions').checked = appSettings.showDosageSuggestions;
 document.getElementById('settingBeforePhotos').checked = appSettings.showBeforePhotos !== false;
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
+document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
 

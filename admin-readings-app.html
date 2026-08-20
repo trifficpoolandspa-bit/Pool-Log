@@ -815,6 +815,18 @@ select#customerSelect{font-weight:600;}
     <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Require readings before moving on</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireReadings">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, every chemical reading must be filled in before a technician can leave the readings step. Filter clean visits are exempt.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
           <h2 style="margin:0;">Allow technicians to rearrange routes</h2>
           <label class="toggle-switch">
             <input type="checkbox" id="settingRouteReorder" checked>
@@ -2716,7 +2728,7 @@ function renderTechRoute(){
   list.forEach(c=>{
     const row = document.createElement('div');
     row.className = 'cust-row';
-    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>`;
+    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>`;
     container.appendChild(row);
   });
 }
@@ -2877,11 +2889,43 @@ function saveFieldRouteOrder(){
   lsSet('fieldRouteOrder', fieldRouteOrder);
 }
 
+// The website saves route order under 'routeOrders', keyed by day then route.
+// Flatten that into a plain id list so the field apps inherit the same order.
+function websiteOrderForDay(day){
+  const ro = lsGet('routeOrders') || {};
+  const forDay = ro[day];
+  if(!forDay) return [];
+  if(Array.isArray(forDay)) return forDay;           // older flat shape
+  return Object.keys(forDay).reduce((acc, routeKey)=>{
+    const arr = forDay[routeKey];
+    return Array.isArray(arr) ? acc.concat(arr) : acc;
+  }, []);
+}
+
 function orderCustomersForDay(day, list){
   const ids = list.map(c => c.id);
+
+  // A tech's own reordering wins; otherwise follow the order set on the website
   let order = (fieldRouteOrder[day] || []).filter(id => ids.includes(id));
+  if(order.length === 0){
+    order = websiteOrderForDay(day).filter(id => ids.includes(id));
+  }
   ids.forEach(id => { if(!order.includes(id)) order.push(id); });
   return order.map(id => list.find(c => c.id === id)).filter(Boolean);
+}
+
+// Move a stop one position — works by tapping, unlike dragging
+function nudgeRouteStop(day, customerId, delta, visibleList){
+  const ordered = orderCustomersForDay(day, visibleList).map(c => c.id);
+  const i = ordered.indexOf(customerId);
+  if(i === -1) return;
+  const j = i + delta;
+  if(j < 0 || j >= ordered.length) return;
+  ordered.splice(i, 1);
+  ordered.splice(j, 0, customerId);
+  fieldRouteOrder[day] = ordered;
+  saveFieldRouteOrder();
+  renderHomeList();
 }
 
 function moveRouteCustomer(day, draggedId, targetId, visibleList){
@@ -2921,12 +2965,32 @@ function renderHomeList(){
     const row = document.createElement('div');
     row.className = 'cust-row';
     row.innerHTML = `<div style="display:flex;align-items:center;gap:10px;min-width:0;">
-        ${canReorder ? '<span class="route-handle" style="color:var(--muted);font-size:17px;cursor:grab;flex-shrink:0;user-select:none;touch-action:none;">⠿</span>' : ''}
+
         <span class="mono" style="flex-shrink:0;font-size:12px;font-weight:700;color:var(--teal-mid);min-width:18px;">${idx + 1}</span>
-        <div style="min-width:0;"><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>
+        <div style="min-width:0;"><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>
       </div>`;
 
     if(canReorder){
+      // Tap-based reordering — drag events don't fire reliably on phones
+      const nudge = document.createElement('div');
+      nudge.style.cssText = 'display:flex;flex-direction:column;gap:3px;flex-shrink:0;margin-right:4px;';
+      [['\u25B2', -1, 'Move up', idx === 0],
+       ['\u25BC',  1, 'Move down', idx === todaysCustomers.length - 1]].forEach(([sym, delta, title, off])=>{
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = sym;
+        b.title = title;
+        b.style.cssText = 'width:34px;height:26px;padding:0;border:1px solid var(--line);border-radius:7px;'
+          + 'background:#fff;color:var(--teal-deep);font-size:11px;line-height:1;cursor:pointer;'
+          + (off ? 'opacity:0.25;pointer-events:none;' : '');
+        b.addEventListener('click', (e)=>{
+          e.stopPropagation();
+          nudgeRouteStop(selectedHomeDay, c.id, delta, todaysCustomers);
+        });
+        nudge.appendChild(b);
+      });
+      row.insertBefore(nudge, row.firstChild);
+
       row.draggable = true;
       row.addEventListener('dragstart', ()=>{
         draggedRouteCustomerId = c.id;
@@ -3082,7 +3146,7 @@ function renderServicedList(){
     const durationBadge = c.lastServiceDurationMs
       ? `<span class="mono" style="background:var(--teal-pale);color:var(--teal-deep);font-weight:700;font-size:11px;padding:3px 8px;border-radius:20px;margin-left:8px;">${formatDuration(c.lastServiceDurationMs)}</span>`
       : '';
-    row.innerHTML = `<div><div class="cust-name">${c.name}${durationBadge}</div><div class="cust-meta">${c.address || 'No address on file'} · ${poolSpaBadgeText(c)}</div></div>`;
+    row.innerHTML = `<div style="min-width:0;"><div class="cust-name">${c.name}${durationBadge}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>`;
     const reserviceBtn = document.createElement('button');
     reserviceBtn.className = 'btn btn-secondary';
     reserviceBtn.style.width = 'auto';
@@ -3211,7 +3275,7 @@ async function renderCustomerList(){
     const row = document.createElement('div');
     row.className = 'cust-row';
     const dayLabel = c.day ? c.day : 'No day set';
-    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta">${c.address || 'No address on file'} · ${dayLabel} · ${poolSpaBadgeText(c)}</div></div>`;
+    row.innerHTML = `<div style="min-width:0;"><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>`;
     const rightWrap = document.createElement('div');
     rightWrap.style.display = 'flex';
     rightWrap.style.alignItems = 'center';
@@ -3643,6 +3707,12 @@ function applyVoiceModeSetting(){
 
 document.getElementById('btnAdminLogout').addEventListener('click', adminLogout);
 
+document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
+  appSettings.requireReadings = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireReadings ? 'Readings are now required' : 'Readings are no longer required');
+});
+
 document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
   appSettings.allowRouteReorder = e.target.checked;
   saveSettings();
@@ -3917,6 +3987,52 @@ function hasUnsavedSectionData(){
 
 let currentVisitStep = 1;
 
+
+// When "require readings" is on, every chemical field on the readings step
+// must be filled before a tech can move forward.
+function missingReadingFields(){
+  if(appSettings.requireReadings !== true) return [];
+  if(!currentVisibleSection) return [];
+  if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return [];
+
+  const type = currentVisibleSection;
+  const cap = type.charAt(0).toUpperCase() + type.slice(1);
+  const steps = visitStepCardsFor(type);
+  const readingsIndex = steps.findIndex(s =>
+    (Array.isArray(s) ? s[0] : s) === 'visit' + cap + 'Section');
+
+  // Only guards the step that actually holds the readings
+  if(readingsIndex === -1 || currentVisitStep !== readingsIndex + 1) return [];
+
+  const cid = currentVisitCustomerId;
+  const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+                    : chemConfig[type];
+  const out = [];
+  (lists.chemicals || []).forEach(ch=>{
+    const el = document.getElementById(fieldId(type, 'chem', ch.key));
+    if(el && String(el.value).trim() === ''){
+      out.push({label: ch.label || ch.key, el});
+    }
+  });
+  return out;
+}
+
+function flagMissingReadings(missing){
+  missing.forEach(m=>{
+    m.el.style.borderColor = 'var(--rust)';
+    m.el.style.boxShadow = '0 0 0 3px rgba(184,73,46,0.15)';
+    const clear = ()=>{
+      m.el.style.borderColor = '';
+      m.el.style.boxShadow = '';
+      m.el.removeEventListener('input', clear);
+    };
+    m.el.addEventListener('input', clear);
+  });
+  if(missing[0] && missing[0].el.scrollIntoView){
+    missing[0].el.scrollIntoView({behavior:'smooth', block:'center'});
+  }
+}
+
 function visitStepCardsFor(type){
   const cap = type.charAt(0).toUpperCase() + type.slice(1);
   const steps = [];
@@ -3980,6 +4096,19 @@ document.addEventListener('click', (e)=>{
   const moveBtn = e.target.closest('[data-step-move]');
   if(!moveBtn) return;
   const delta = parseInt(moveBtn.dataset.stepMove, 10);
+
+  // Readings can be made mandatory before moving on
+  if(delta > 0){
+    const missing = missingReadingFields();
+    if(missing.length){
+      showToast(missing.length === 1
+        ? 'Enter a reading for ' + missing[0].label + ' first'
+        : missing.length + ' readings still needed');
+      flagMissingReadings(missing);
+      return;
+    }
+  }
+
   const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
   const target = Math.min(Math.max(currentVisitStep + delta, 1), total);
   goToVisitStep(target);
@@ -4266,17 +4395,22 @@ async function renderReport(customerId, readingId){
 function buildReadingSection(reading, chemList, prodList){
   let rowsHtml = '';
   let rowsText = '';
+  // Anything left blank is simply left out — no "not tested" filler
   chemList.forEach(chem=>{
     const val = reading[chem.key];
+    if(val === '' || val === undefined || val === null) return;
     const st = chem.noStatus ? null : statusOf(chem, val);
-    const display = val !== '' && val !== undefined ? val + (chem.unit ? ' '+chem.unit : '') : 'not tested';
+    const display = val + (chem.unit ? ' '+chem.unit : '');
     rowsHtml += `<tr><td>${chem.full}</td><td>${display}${st ? `<span class="status-tag ${st}">${st.toUpperCase()}</span>` : ''}</td></tr>`;
     rowsText += `${chem.full}: ${display}${st ? ' ['+st.toUpperCase()+']' : ''}\n`;
   });
 
   let productsHtml = '';
   let productsText = '';
-  const usedProducts = prodList.filter(p => reading[p.key] !== '' && reading[p.key] !== undefined);
+  const usedProducts = prodList.filter(p=>{
+    const v = reading[p.key];
+    return v !== '' && v !== undefined && v !== null && parseFloat(v) !== 0;
+  });
   if(usedProducts.length){
     let prows = '';
     usedProducts.forEach(p=>{
@@ -4711,6 +4845,7 @@ async function init(){
   document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
   document.getElementById('settingTechniciansTab').checked = appSettings.showTechniciansTab !== false;
   document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
+  document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
   applyTechniciansTabVisibility();
   chemConfig = loadChemConfig();
   renderAllConfigFields();
