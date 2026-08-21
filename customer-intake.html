@@ -436,7 +436,11 @@ input::placeholder{color:#A9BCB9;}
 
   <div class="view active" id="view-customers">
     <div class="card" id="addCustomerCard">
-      <button class="btn btn-primary" id="btnAddCustomer" style="width:auto;">+ Add a customer</button>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnAddCustomer" style="width:auto;">+ Add a customer</button>
+        <button class="btn btn-ghost" id="btnImportCustomers" style="width:auto;">Import customers</button>
+      </div>
+      <input type="file" accept=".csv,text/csv" id="importCsvInput" style="display:none;">
     </div>
 
     <div class="card" id="backToListCard" style="display:none;">
@@ -681,15 +685,37 @@ input::placeholder{color:#A9BCB9;}
       <button class="btn btn-ghost" id="btnRestoreChemDefaults" style="width:auto;margin-top:12px;color:var(--rust);border-color:#EFC9BC;">Restore default labels</button>
     </div>
     <div class="card" id="customConfigPicker" style="display:none;position:relative;z-index:60;overflow:visible;">
-      <h2>Custom setup for one body of water</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Find a customer, pick one of their bodies of water, and set exactly what gets recorded there. Anything you set here overrides the Pool, Spa, and Fountain lists for that body only.</p>
+      <h2>Custom setup for one customer</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Find a customer, pick one of their bodies of water, and set exactly what gets recorded there. This affects only that customer.</p>
+
       <div class="field" style="position:relative;">
         <label>Customer</label>
-        <input id="customCustSearch" placeholder="Start typing a name…" autocomplete="off" style="padding-right:38px;">
-        <button type="button" id="customCustClear" style="display:none;position:absolute;right:8px;bottom:4px;height:30px;width:30px;padding:0;border:1px solid #EFC9BC;border-radius:8px;background:#fff;color:var(--rust);font-size:18px;line-height:1;cursor:pointer;align-items:center;justify-content:center;">×</button>
+        <input id="customCustSearch" placeholder="Start typing a name&hellip;" autocomplete="off" style="padding-right:38px;">
+        <button type="button" id="customCustClear" style="display:none;position:absolute;right:8px;bottom:4px;height:30px;width:30px;padding:0;border:1px solid #EFC9BC;border-radius:8px;background:#fff;color:var(--rust);font-size:18px;line-height:1;cursor:pointer;align-items:center;justify-content:center;">&times;</button>
         <div id="customCustSuggest" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:200;background:#fff;border:1px solid var(--line);border-radius:10px;margin-top:4px;box-shadow:0 8px 24px rgba(15,46,46,0.22);max-height:240px;overflow-y:auto;"></div>
       </div>
-      <div id="customBodyList"></div>
+
+      <div id="customBodyList" style="display:none;"></div>
+
+      <div class="btn-row" id="customActionRow" style="display:none;margin-top:16px;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="btnUndoCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;">Undo changes</button>
+        <button class="btn btn-ghost" id="btnDeleteCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;color:var(--rust);border-color:#EFC9BC;">Delete</button>
+        <span id="customSaveNote" style="font-size:11.5px;color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div class="card" id="photoRequireCard">
+      <h2 style="margin:0 0 4px;">Photos for this section</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;" id="photoRequireHint">Require photos before a technician can move past each photo step.</p>
+      <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
+        <input type="checkbox" id="chkRequireBeforePhoto" style="margin:0;">
+        <span>Require a before photo</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
+        <input type="checkbox" id="chkRequireAfterPhoto" style="margin:0;">
+        <span>Require an after photo</span>
+      </label>
+      <p id="photoRequireNote" style="display:none;font-size:11.5px;color:var(--rust);margin:8px 0 0;"></p>
     </div>
 
     <div class="card">
@@ -903,13 +929,33 @@ input::placeholder{color:#A9BCB9;}
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require before & after photos</h2>
+        <h2 style="margin:0;">Require before photos</h2>
         <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireBeforeAfterPhotos">
+          <input type="checkbox" id="settingRequireBeforePhotos">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can't save a pool, spa, or fountain reading in the field app until they've added both a before and an after photo for that visit.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take a before photo on every pool, spa, and extra body of water before moving on. Has no effect while the Before photos step is switched off below.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require after photos</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireAfterPhotos">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can save the reading. Has no effect while the After photos step is switched off below.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require a reason for skipped services</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireSkipReason">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, skipping a service opens a screen where the technician must explain why, with the option to attach a photo. The reason is saved with that visit.</p>
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -1760,6 +1806,116 @@ const DEFAULT_CHEM_CONFIG = {
   }
 };
 
+
+// ---------- Quick button colours ----------
+// A button is either a plain number (default blue) or {v: value, c: colourKey}
+
+// ---------- Touch-friendly reordering ----------
+// HTML5 drag events barely fire on phones, so this handles touch directly.
+// Use it for every draggable list — pass the grab handle, the row it moves,
+// its container, and a callback that receives the new order of keys.
+function attachTouchReorder(handle, item, container, itemSelector, onReorder){
+  let dragging = false;
+
+  function itemsIn(){
+    return Array.from(container.querySelectorAll(itemSelector));
+  }
+
+  function lift(){
+    dragging = true;
+    item.style.opacity = '0.9';
+    item.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
+    item.style.borderRadius = '10px';
+    item.style.position = 'relative';
+    item.style.zIndex = '30';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function drop(){
+    dragging = false;
+    item.style.opacity = '';
+    item.style.boxShadow = '';
+    item.style.borderRadius = '';
+    item.style.position = '';
+    item.style.zIndex = '';
+    document.body.style.overflow = '';
+    const keys = itemsIn().map(el => el.dataset.reorderKey).filter(k => k !== undefined);
+    if(keys.length && onReorder) onReorder(keys);
+  }
+
+  // Works for stacked rows and for chips laid out side by side
+  function moveTo(clientX, clientY){
+    const others = itemsIn().filter(el => el !== item);
+    for(const other of others){
+      const b = other.getBoundingClientRect();
+      const inside = clientX > b.left && clientX < b.right
+                  && clientY > b.top && clientY < b.bottom;
+      if(!inside) continue;
+      const wide = b.width > b.height;   // chip in a row vs a full-width row
+      const past = wide
+        ? clientX > b.left + b.width / 2
+        : clientY > b.top + b.height / 2;
+      if(past) other.after(item); else other.before(item);
+      return;
+    }
+  }
+
+  handle.style.touchAction = 'none';
+  handle.style.webkitUserSelect = 'none';
+  handle.style.userSelect = 'none';
+  handle.style.cursor = 'grab';
+
+  handle.addEventListener('touchstart', (e)=>{
+    if(e.touches.length !== 1) return;
+    e.preventDefault();
+    lift();
+  }, {passive:false});
+
+  handle.addEventListener('touchmove', (e)=>{
+    if(!dragging) return;
+    e.preventDefault();
+    moveTo(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive:false});
+
+  handle.addEventListener('touchend', (e)=>{
+    if(!dragging) return;
+    e.preventDefault();
+    drop();
+  }, {passive:false});
+
+  handle.addEventListener('touchcancel', ()=>{ if(dragging) drop(); });
+
+  // Mouse works the same way, so desktop behaves identically
+  handle.addEventListener('mousedown', (e)=>{
+    e.preventDefault();
+    lift();
+    const onMove = (ev)=>{ if(dragging) moveTo(ev.clientX, ev.clientY); };
+    const onUp = ()=>{
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if(dragging) drop();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+const QUICK_BUTTON_COLORS = {
+  blue:   {label:'Blue',   fill:'#E7F0F6', border:'#A8CBE0', text:'#0B6FA4', solid:'#0B6FA4'},
+  red:    {label:'Red',    fill:'#FBEAE6', border:'#E8B5A8', text:'#B8492E', solid:'#B8492E'},
+  orange: {label:'Orange', fill:'#FCEFE0', border:'#EDC79B', text:'#B5670F', solid:'#B5670F'},
+  yellow: {label:'Yellow', fill:'#FBF3D8', border:'#E5D08A', text:'#8A6D0B', solid:'#C79F10'},
+  green:  {label:'Green',  fill:'#E6F2EA', border:'#A9CDB6', text:'#2E7D4F', solid:'#2E7D4F'},
+  purple: {label:'Purple', fill:'#EFEAF6', border:'#C0B0DC', text:'#5B3E96', solid:'#5B3E96'},
+  pink:   {label:'Pink',   fill:'#FBE9F1', border:'#E9B3CB', text:'#A8386A', solid:'#A8386A'},
+  brown:  {label:'Brown',  fill:'#F1EAE3', border:'#CDB79F', text:'#6B4A2A', solid:'#6B4A2A'},
+  black:  {label:'Black',  fill:'#ECEDEE', border:'#B6BABD', text:'#2B3234', solid:'#2B3234'}
+};
+
+function btnValue(b){ return (b && typeof b === 'object') ? b.v : b; }
+function btnColorKey(b){ return (b && typeof b === 'object' && b.c) ? b.c : 'blue'; }
+function btnPalette(b){ return QUICK_BUTTON_COLORS[btnColorKey(b)] || QUICK_BUTTON_COLORS.blue; }
+
 const DEFAULT_BUTTON_SETS = {
   chlorine: [0, 1, 2, 3, 5, 7.5, 10],
   ph: [6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0, 8.2],
@@ -1807,6 +1963,13 @@ let selectedChemConfigType = 'pool';
 
 function saveActiveConfig(){
   if(selectedChemConfigType === 'custom'){
+    // First real edit is what creates the customer's setup
+    if(customCustomerId && customBodyKey && customWorking
+       && customWorkingFor === customCustomerId + '|' + customBodyKey
+       && !(customConfig[customCustomerId] && customConfig[customCustomerId][customBodyKey])){
+      customConfig[customCustomerId] = customConfig[customCustomerId] || {};
+      customConfig[customCustomerId][customBodyKey] = customWorking;
+    }
     saveCustomConfig();
   } else {
     saveChemConfig();
@@ -1828,7 +1991,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforeAfterPhotos: false, showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 function saveSettings(){
@@ -1839,6 +2002,12 @@ document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
   appSettings.showAfterPhotos = e.target.checked;
   saveSettings();
   showToast(appSettings.showAfterPhotos ? 'After photos step turned on in the field apps' : 'After photos step turned off');
+});
+
+document.getElementById('settingRequireSkipReason').addEventListener('change', (e)=>{
+  appSettings.requireSkipReason = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
 });
 
 document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
@@ -1869,10 +2038,16 @@ function applyPoolGallonsFieldVisibility(){
   document.getElementById('poolGallonsField').style.display = appSettings.showPoolSizeInProfile ? 'block' : 'none';
 }
 
-document.getElementById('settingRequireBeforeAfterPhotos').addEventListener('change', (e)=>{
-  appSettings.requireBeforeAfterPhotos = e.target.checked;
+document.getElementById('settingRequireAfterPhotos').addEventListener('change', (e)=>{
+  appSettings.requireAfterPhotos = e.target.checked;
   saveSettings();
-  showToast(appSettings.requireBeforeAfterPhotos ? 'Before & after photos now required in the field app' : 'Before & after photos no longer required');
+  showToast(appSettings.requireAfterPhotos ? 'After photos now required everywhere' : 'After photos no longer required everywhere');
+});
+
+document.getElementById('settingRequireBeforePhotos').addEventListener('change', (e)=>{
+  appSettings.requireBeforePhotos = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireBeforePhotos ? 'Before photos now required everywhere' : 'Before photos no longer required everywhere');
 });
 
 document.getElementById('settingShowPoolSize').addEventListener('change', (e)=>{
@@ -4202,6 +4377,55 @@ function makeButtonsEditor(item){
   return wrap;
 }
 
+
+// Nine-colour palette for a single quick button
+function openColorPicker(item, idx, onDone){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '300';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:320px;">
+      <h3 style="font-size:15px;margin:0 0 12px;">Button colour</h3>
+      <div id="colorGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-ghost" id="colorCancel" style="flex:1;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const grid = overlay.querySelector('#colorGrid');
+  const currentKey = btnColorKey(item.buttons[idx]);
+
+  Object.keys(QUICK_BUTTON_COLORS).forEach(key=>{
+    const p = QUICK_BUTTON_COLORS[key];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:5px;'
+      + 'padding:9px 4px;border-radius:10px;cursor:pointer;background:' + p.fill + ';'
+      + 'border:' + (key === currentKey ? '2px solid ' + p.solid : '1.5px solid ' + p.border) + ';';
+    const dot = document.createElement('span');
+    dot.style.cssText = 'width:22px;height:22px;border-radius:50%;background:' + p.solid + ';';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:11px;font-weight:700;color:' + p.text + ';';
+    lbl.textContent = p.label;
+    b.appendChild(dot);
+    b.appendChild(lbl);
+    b.addEventListener('click', ()=>{
+      const v = btnValue(item.buttons[idx]);
+      // Blue is the default, so it stays a plain number
+      item.buttons[idx] = key === 'blue' ? v : {v, c: key};
+      saveActiveConfig();
+      document.body.removeChild(overlay);
+      if(onDone) onDone();
+    });
+    grid.appendChild(b);
+  });
+
+  const close = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#colorCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+}
+
 function openQuickButtonsModal(item){
   const overlay = document.createElement('div');
   overlay.className = 'confirm-overlay';
@@ -4239,7 +4463,6 @@ function openQuickButtonsModal(item){
 
     (item.buttons || []).forEach((val, idx)=>{
       const chip = document.createElement('div');
-      chip.draggable = true;
       chip.style.display = 'inline-flex';
       chip.style.alignItems = 'center';
       chip.style.gap = '6px';
@@ -4249,26 +4472,52 @@ function openQuickButtonsModal(item){
       chip.style.background = '#fff';
       chip.style.cursor = 'grab';
 
+      const pal = btnPalette(val);
+      chip.style.background = pal.fill;
+      chip.style.borderColor = pal.border;
+
+      const grip = document.createElement('span');
+      grip.textContent = '\u2261';
+      grip.title = 'Drag to reorder';
+      grip.style.cssText = 'flex-shrink:0;font-size:15px;color:' + pal.text
+        + ';opacity:0.55;padding:0 2px;';
+      chip.appendChild(grip);
+
       const numInput = document.createElement('input');
       numInput.type = 'number';
       numInput.step = 'any';
-      numInput.value = val;
+      numInput.value = btnValue(val);
       numInput.style.width = '58px';
       numInput.style.padding = '2px 4px';
       numInput.style.border = 'none';
+      numInput.style.background = 'transparent';
+      numInput.style.color = pal.text;
       numInput.style.fontSize = '13px';
       numInput.style.fontFamily = "'JetBrains Mono',monospace";
-      numInput.style.fontWeight = '600';
+      numInput.style.fontWeight = '700';
       numInput.addEventListener('change', ()=>{
         const parsed = parseFloat(numInput.value);
         if(isNaN(parsed)){
-          numInput.value = item.buttons[idx];
+          numInput.value = btnValue(item.buttons[idx]);
           return;
         }
-        item.buttons[idx] = parsed;
+        const key = btnColorKey(item.buttons[idx]);
+        item.buttons[idx] = key === 'blue' ? parsed : {v: parsed, c: key};
         saveActiveConfig();
       });
       chip.appendChild(numInput);
+
+      // Colour swatch — opens the palette for this button
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.title = 'Change colour';
+      swatch.style.cssText = 'width:18px;height:18px;flex-shrink:0;padding:0;border-radius:50%;'
+        + 'border:1.5px solid rgba(0,0,0,0.18);cursor:pointer;background:' + pal.solid + ';';
+      swatch.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        openColorPicker(item, idx, renderBody);
+      });
+      chip.appendChild(swatch);
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -4288,29 +4537,10 @@ function openQuickButtonsModal(item){
       });
       chip.appendChild(del);
 
-      chip.addEventListener('dragstart', ()=>{
-        draggedButtonCtx = {item, idx};
-        chip.style.opacity = '0.4';
-      });
-      chip.addEventListener('dragend', ()=>{
-        chip.style.opacity = '1';
-        draggedButtonCtx = null;
-      });
-      chip.addEventListener('dragover', (e)=>{
-        e.preventDefault();
-        if(draggedButtonCtx && draggedButtonCtx.item === item && draggedButtonCtx.idx !== idx){
-          chip.style.borderLeft = '3px solid var(--gold)';
-        }
-      });
-      chip.addEventListener('dragleave', ()=>{ chip.style.borderLeft = '1px solid var(--line)'; });
-      chip.addEventListener('drop', (e)=>{
-        e.preventDefault();
-        chip.style.borderLeft = '1px solid var(--line)';
-        if(!draggedButtonCtx || draggedButtonCtx.item !== item) return;
-        const from = draggedButtonCtx.idx;
-        if(from === idx) return;
-        const moved = item.buttons.splice(from, 1)[0];
-        item.buttons.splice(idx, 0, moved);
+      chip.dataset.reorderKey = String(idx);
+      attachTouchReorder(grip, chip, list, '[data-reorder-key]', (keys)=>{
+        const reordered = keys.map(k => item.buttons[parseInt(k, 10)]);
+        item.buttons = reordered;
         saveActiveConfig();
         renderBody();
       });
@@ -4369,7 +4599,7 @@ function makeConfigRow(item, listKey){
   const card = document.createElement('div');
   card.style.padding = '12px 0';
   card.style.borderBottom = '1px solid var(--line)';
-  card.draggable = true;
+  card.dataset.reorderKey = item.key;
 
   card.addEventListener('dragstart', (e)=>{
     draggedConfigItem = {key: item.key, listKey};
@@ -4414,10 +4644,24 @@ function makeConfigRow(item, listKey){
   row.className = 'fountain-row';
 
   const handle = document.createElement('span');
-  handle.textContent = '\u283F';
+  handle.textContent = '\u2261';
   handle.title = 'Drag to reorder — this is the order techs see in the app';
-  handle.style.cssText = 'color:var(--muted);font-size:16px;cursor:grab;flex-shrink:0;user-select:none;padding-right:2px;';
+  handle.style.cssText = 'color:var(--muted);font-size:18px;flex-shrink:0;padding:0 6px 0 2px;';
   row.appendChild(handle);
+
+  const listContainer = document.getElementById(
+    listKey === 'chemicals' ? 'chemConfigChemicalsList' : 'chemConfigDosagesList');
+  if(listContainer){
+    attachTouchReorder(handle, card, listContainer, '[data-reorder-key]', (keys)=>{
+      const lists = activeConfigLists();
+      if(!lists) return;
+      const byKey = {};
+      lists[listKey].forEach(i => { byKey[i.key] = i; });
+      lists[listKey] = keys.map(k => byKey[k]).filter(Boolean);
+      saveActiveConfig();
+      renderChemConfigLists();
+    });
+  }
 
   const nameInput = document.createElement('input');
   nameInput.value = item.label;
@@ -4437,6 +4681,23 @@ function makeConfigRow(item, listKey){
   });
   row.appendChild(nameInput);
   row.appendChild(unitInput);
+
+  // Required — technicians can't move past this step until it's filled in
+  const reqWrap = document.createElement('label');
+  reqWrap.title = 'Technicians must fill this in before moving on';
+  reqWrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;'
+    + 'font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;';
+  const reqCb = document.createElement('input');
+  reqCb.type = 'checkbox';
+  reqCb.checked = !!item.required;
+  reqCb.style.margin = '0';
+  reqCb.addEventListener('change', ()=>{
+    item.required = reqCb.checked;
+    saveActiveConfig();
+  });
+  reqWrap.appendChild(reqCb);
+  reqWrap.appendChild(document.createTextNode('Required'));
+  row.appendChild(reqWrap);
 
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
@@ -4501,32 +4762,43 @@ wireApplyAll('chkApplyAllDosages', 'applyPoolDosagesToAll', 'dosages', 'dosages'
 
 // ---------- Custom per-body configuration ----------
 // Overrides live at poollog:customChemConfig => { customerId: { bodyKey: {chemicals, dosages} } }
+// ---------- Custom setup per customer, per body of water ----------
+// Stored as customConfig[customerId][bodyKey] = {chemicals, dosages}.
+// Anything not set here falls back to the standard Pool/Spa/Extra lists.
 let customConfig = lsGet('customChemConfig') || {};
 let customCustomerId = null;
 let customBodyKey = null;
+let customCustHideTimer = null;
+let customSnapshot = null;
 
 function saveCustomConfig(){
   lsSet('customChemConfig', customConfig);
+  const note = document.getElementById('customSaveNote');
+  if(note) note.textContent = 'Saved automatically at ' +
+    new Date().toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
 }
 
-// Which list the config editors are currently writing to
-function activeConfigLists(){
-  if(selectedChemConfigType === 'custom'){
-    if(!customCustomerId || !customBodyKey) return null;
-    customConfig[customCustomerId] = customConfig[customCustomerId] || {};
-    if(!customConfig[customCustomerId][customBodyKey]){
-      // Seed from the matching default so nobody starts from an empty list
-      const base = customBodyKey === 'pool' ? 'pool' : (customBodyKey === 'spa' ? 'spa' : 'fountain');
-      customConfig[customCustomerId][customBodyKey] = {
-        chemicals: chemConfig[base].chemicals.map(i => ({...i, buttons:(i.buttons||[]).slice()})),
-        dosages: chemConfig[base].dosages.map(i => ({...i, buttons:(i.buttons||[]).slice()}))
-      };
-      saveCustomConfig();
-    }
-    return customConfig[customCustomerId][customBodyKey];
-  }
-  return chemConfig[selectedChemConfigType];
-}
+
+// One-off tidy: earlier builds saved a customer's setup the moment you viewed
+// them, so remove any that are still identical to the standard lists.
+(function clearUntouchedCustomSetups(){
+  if(lsGet('customSetupsTidied')) return;
+  const chem = lsGet('chemConfig');
+  if(!chem){ lsSet('customSetupsTidied', true); return; }
+  let removed = 0;
+  Object.keys(customConfig).forEach(cid=>{
+    Object.keys(customConfig[cid] || {}).forEach(bodyKey=>{
+      const base = bodyKey === 'pool' ? 'pool' : (bodyKey === 'spa' ? 'spa' : 'fountain');
+      if(!chem[base]) return;
+      const mine = JSON.stringify(customConfig[cid][bodyKey]);
+      const std = JSON.stringify({chemicals: chem[base].chemicals, dosages: chem[base].dosages});
+      if(mine === std){ delete customConfig[cid][bodyKey]; removed++; }
+    });
+    if(Object.keys(customConfig[cid]).length === 0) delete customConfig[cid];
+  });
+  if(removed) lsSet('customChemConfig', customConfig);
+  lsSet('customSetupsTidied', true);
+})();
 
 function bodiesForCustomer(cust){
   const out = [];
@@ -4538,8 +4810,94 @@ function bodiesForCustomer(cust){
   return out;
 }
 
-let customCustHideTimer = null;
+// Held in memory until something is actually changed, so simply looking at a
+// customer doesn't mark them as customised.
+let customWorking = null;
+let customWorkingFor = null;
 
+function activeConfigLists(){
+  if(selectedChemConfigType === 'custom'){
+    if(!customCustomerId || !customBodyKey) return null;
+
+    const saved = customConfig[customCustomerId] && customConfig[customCustomerId][customBodyKey];
+    if(saved) return saved;
+
+    // Not customised yet — hand back a copy of the default to edit
+    const slot = customCustomerId + '|' + customBodyKey;
+    if(customWorkingFor !== slot){
+      const base = customBodyKey === 'pool' ? 'pool'
+        : (customBodyKey === 'spa' ? 'spa' : 'fountain');
+      customWorking = {
+        chemicals: chemConfig[base].chemicals.map(i => ({...i, buttons:(i.buttons||[]).slice()})),
+        dosages: chemConfig[base].dosages.map(i => ({...i, buttons:(i.buttons||[]).slice()}))
+      };
+      customWorkingFor = slot;
+    }
+    return customWorking;
+  }
+  return chemConfig[selectedChemConfigType];
+}
+
+function takeCustomSnapshot(){
+  const lists = (customCustomerId && customBodyKey && customConfig[customCustomerId])
+    ? customConfig[customCustomerId][customBodyKey] : null;
+  customSnapshot = lists ? JSON.parse(JSON.stringify(lists)) : null;
+}
+
+// Buttons for each of the customer's bodies of water
+function renderCustomBodies(){
+  const box = document.getElementById('customBodyList');
+  const actions = document.getElementById('customActionRow');
+  if(!box) return;
+  box.innerHTML = '';
+
+  const cust = customers.find(c => c.id === customCustomerId);
+  if(!cust){
+    box.style.display = 'none';
+    if(actions) actions.style.display = 'none';
+    return;
+  }
+
+  const bodies = bodiesForCustomer(cust);
+  if(bodies.length === 0){
+    box.style.display = 'block';
+    box.innerHTML = emptyState('This customer has no pool, spa, or extra bodies of water set.');
+    if(actions) actions.style.display = 'none';
+    return;
+  }
+
+  if(!customBodyKey || !bodies.some(b => b.key === customBodyKey)){
+    customBodyKey = bodies[0].key;
+  }
+
+  const label = document.createElement('div');
+  label.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:14px 0 8px;";
+  label.textContent = 'Body of water';
+  box.appendChild(label);
+
+  const row = document.createElement('div');
+  row.className = 'btn-row';
+  row.style.flexWrap = 'wrap';
+  bodies.forEach(b=>{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = b.key === customBodyKey ? 'btn btn-primary' : 'btn btn-ghost';
+    btn.style.cssText = 'width:auto;padding:8px 14px;font-size:13px;';
+    btn.textContent = b.label;
+    btn.addEventListener('click', ()=>{
+      customBodyKey = b.key;
+          renderCustomBodies();
+      takeCustomSnapshot();
+      renderChemConfigLists();
+    });
+    row.appendChild(btn);
+  });
+  box.appendChild(row);
+  box.style.display = 'block';
+  if(actions) actions.style.display = 'flex';
+}
+
+// ---------- Customer search ----------
 function hideCustomCustSuggest(){
   const s = document.getElementById('customCustSuggest');
   if(s){ s.style.display = 'none'; s.innerHTML = ''; }
@@ -4555,7 +4913,7 @@ function renderCustomCustSuggest(term){
       .filter(Boolean).join(' ').toLowerCase().includes(t))
     .slice()
     .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)))
-    .slice(0, 10);
+    .slice(0, t ? 10 : 200);
 
   box.innerHTML = '';
   if(matches.length === 0){
@@ -4564,9 +4922,11 @@ function renderCustomCustSuggest(term){
     return;
   }
   matches.forEach(cust=>{
+    const hasCustom = !!(customConfig[cust.id] && Object.keys(customConfig[cust.id]).length);
     const item = document.createElement('div');
     item.style.cssText = 'padding:10px 12px;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--line);';
     item.innerHTML = '<div style="font-weight:600;">' + displayName(cust.name) +
+      (hasCustom ? ' <span style="background:var(--teal-mid);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px;vertical-align:middle;">CUSTOM</span>' : '') +
       '</div><div style="font-size:11.5px;color:var(--muted);">' + (cust.address || 'No address on file') + '</div>';
     item.addEventListener('mouseenter', ()=>{ item.style.background = 'var(--teal-pale)'; });
     item.addEventListener('mouseleave', ()=>{ item.style.background = '#fff'; });
@@ -4574,10 +4934,11 @@ function renderCustomCustSuggest(term){
       e.preventDefault();
       customCustomerId = cust.id;
       customBodyKey = null;
-      document.getElementById('customCustSearch').value = displayName(cust.name);
+          document.getElementById('customCustSearch').value = displayName(cust.name);
       document.getElementById('customCustClear').style.display = 'flex';
       hideCustomCustSuggest();
       renderCustomBodies();
+      takeCustomSnapshot();
       renderChemConfigLists();
     });
     box.appendChild(item);
@@ -4585,80 +4946,31 @@ function renderCustomCustSuggest(term){
   box.style.display = 'block';
 }
 
-function renderCustomBodies(){
-  const box = document.getElementById('customBodyList');
-  if(!box) return;
-  box.innerHTML = '';
-  const cust = customers.find(c => c.id === customCustomerId);
-  if(!cust) return;
-
-  const bodies = bodiesForCustomer(cust);
-  if(bodies.length === 0){
-    box.innerHTML = emptyState('This customer has no pool, spa, or extra bodies of water set.');
-    return;
-  }
-
-  // Land on the first body of water so it's ready to edit straight away
-  if(!customBodyKey || !bodies.some(b => b.key === customBodyKey)){
-    customBodyKey = bodies[0].key;
-  }
-
-  const label = document.createElement('div');
-  label.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:14px 0 8px;";
-  label.textContent = 'Bodies of water';
-  box.appendChild(label);
-
-  const row = document.createElement('div');
-  row.className = 'btn-row';
-  row.style.flexWrap = 'wrap';
-  bodies.forEach(b=>{
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    const isSel = customBodyKey === b.key;
-    btn.className = isSel ? 'btn btn-primary' : 'btn btn-ghost';
-    btn.style.cssText = 'width:auto;padding:8px 14px;font-size:13px;';
-    const hasOverride = customConfig[customCustomerId] && customConfig[customCustomerId][b.key];
-    btn.textContent = b.label + (hasOverride ? ' ·' : '');
-    btn.addEventListener('click', ()=>{
-      customBodyKey = b.key;
-      renderCustomBodies();
-      renderChemConfigLists();
-    });
-    row.appendChild(btn);
-  });
-  box.appendChild(row);
-
-  if(customBodyKey){
-    const reset = document.createElement('button');
-    reset.type = 'button';
-    reset.className = 'btn btn-ghost';
-    reset.style.cssText = 'width:auto;margin-top:12px;padding:7px 12px;font-size:12px;color:var(--rust);border-color:#EFC9BC;';
-    reset.textContent = 'Reset this body to the standard list';
-    reset.addEventListener('click', async ()=>{
-      const ok = await confirmDialog('Remove the custom setup for this body of water? It will go back to using the standard Pool, Spa, or Fountain list.', 'Reset');
-      if(!ok) return;
-      if(customConfig[customCustomerId]) delete customConfig[customCustomerId][customBodyKey];
-      saveCustomConfig();
-      customBodyKey = null;
-      renderCustomBodies();
-      renderChemConfigLists();
-      showToast('Reset to the standard list');
-    });
-    box.appendChild(reset);
-  }
-}
-
 document.getElementById('customCustSearch').addEventListener('focus', (e)=>{
   if(customCustHideTimer){ clearTimeout(customCustHideTimer); customCustHideTimer = null; }
   renderCustomCustSuggest(e.target.value);
+});
+
+// Tapping a field that already holds a name clears it and shows everyone,
+// so you can either scroll the list or start typing a different name.
+document.getElementById('customCustSearch').addEventListener('mousedown', (e)=>{
+  const inp = e.currentTarget;
+  if(!inp.value) return;
+  e.preventDefault();
+  if(customCustHideTimer){ clearTimeout(customCustHideTimer); customCustHideTimer = null; }
+  inp.value = '';
+  document.getElementById('customCustClear').style.display = 'none';
+  inp.focus();
+  renderCustomCustSuggest('');
 });
 document.getElementById('customCustSearch').addEventListener('input', (e)=>{
   document.getElementById('customCustClear').style.display = e.target.value ? 'flex' : 'none';
   renderCustomCustSuggest(e.target.value);
 });
-
+document.getElementById('customCustSearch').addEventListener('blur', ()=>{
+  customCustHideTimer = setTimeout(hideCustomCustSuggest, 150);
+});
 document.getElementById('customCustClear').addEventListener('click', ()=>{
-  // Clicking the button blurs the field, which queues a hide — cancel it
   if(customCustHideTimer){ clearTimeout(customCustHideTimer); customCustHideTimer = null; }
   const inp = document.getElementById('customCustSearch');
   inp.value = '';
@@ -4670,8 +4982,95 @@ document.getElementById('customCustClear').addEventListener('click', ()=>{
   inp.focus();
   renderCustomCustSuggest('');
 });
-document.getElementById('customCustSearch').addEventListener('blur', ()=>{
-  customCustHideTimer = setTimeout(hideCustomCustSuggest, 150);
+
+// ---------- Undo and delete ----------
+document.getElementById('btnUndoCustomConfig').addEventListener('click', async ()=>{
+  if(!customCustomerId || !customBodyKey || !customSnapshot){
+    showToast('Nothing to undo');
+    return;
+  }
+  const cust = customers.find(c => c.id === customCustomerId);
+  const ok = await confirmDialog('Undo every change made to this setup since you opened it?', 'Undo changes');
+  if(!ok) return;
+  customConfig[customCustomerId][customBodyKey] = JSON.parse(JSON.stringify(customSnapshot));
+  saveCustomConfig();
+  renderChemConfigLists();
+  showToast('Changes undone');
+});
+
+document.getElementById('btnDeleteCustomConfig').addEventListener('click', async ()=>{
+  if(!customCustomerId || !customBodyKey){
+    showToast('Pick a customer and a body of water first');
+    return;
+  }
+  const cust = customers.find(c => c.id === customCustomerId);
+  const ok = await confirmDialog('Remove this custom setup? ' +
+    (cust ? cust.name : 'This customer') + ' will go back to the standard lists for this body of water.');
+  if(!ok) return;
+  if(customConfig[customCustomerId]) delete customConfig[customCustomerId][customBodyKey];
+  if(customConfig[customCustomerId] && Object.keys(customConfig[customCustomerId]).length === 0){
+    delete customConfig[customCustomerId];
+  }
+  saveCustomConfig();
+  takeCustomSnapshot();
+  renderChemConfigLists();
+  showToast('Custom setup removed');
+});
+
+
+// Per-section photo requirements. The global before/after photo switches turn
+// the steps off entirely, so they always win over these.
+function renderPhotoRequirements(){
+  const card = document.getElementById('photoRequireCard');
+  const beforeBox = document.getElementById('chkRequireBeforePhoto');
+  const afterBox = document.getElementById('chkRequireAfterPhoto');
+  const note = document.getElementById('photoRequireNote');
+  if(!card || !beforeBox || !afterBox) return;
+
+  const lists = activeConfigLists();
+  if(!lists){
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+
+  beforeBox.checked = lists.requireBeforePhoto === true;
+  afterBox.checked = lists.requireAfterPhoto === true;
+
+  // If the step itself is switched off in Settings, the requirement can't apply
+  const beforeOff = appSettings.showBeforePhotos === false;
+  const afterOff = appSettings.showAfterPhotos === false;
+  beforeBox.disabled = beforeOff;
+  afterBox.disabled = afterOff;
+  beforeBox.parentElement.style.opacity = beforeOff ? '0.45' : '';
+  afterBox.parentElement.style.opacity = afterOff ? '0.45' : '';
+
+  const off = [];
+  if(beforeOff) off.push('Before photos');
+  if(afterOff) off.push('After photos');
+  if(off.length){
+    note.textContent = off.join(' and ') + (off.length === 1 ? ' is' : ' are') +
+      ' switched off in Settings, so that requirement has no effect until it is turned back on.';
+    note.style.display = 'block';
+  } else {
+    note.style.display = 'none';
+  }
+}
+
+document.getElementById('chkRequireBeforePhoto').addEventListener('change', (e)=>{
+  const lists = activeConfigLists();
+  if(!lists) return;
+  lists.requireBeforePhoto = e.target.checked;
+  saveActiveConfig();
+  showToast(e.target.checked ? 'Before photo now required here' : 'Before photo no longer required here');
+});
+
+document.getElementById('chkRequireAfterPhoto').addEventListener('change', (e)=>{
+  const lists = activeConfigLists();
+  if(!lists) return;
+  lists.requireAfterPhoto = e.target.checked;
+  saveActiveConfig();
+  showToast(e.target.checked ? 'After photo now required here' : 'After photo no longer required here');
 });
 
 function renderChemConfigLists(){
@@ -4682,6 +5081,7 @@ function renderChemConfigLists(){
   if(doseBox) doseBox.checked = !!appSettings.applyPoolDosagesToAll;
 
   renderChemConfigTypeControl();
+  renderPhotoRequirements();
 
   const onCustom = selectedChemConfigType === 'custom';
   const picker = document.getElementById('customConfigPicker');
@@ -4716,6 +5116,22 @@ function renderChemConfigLists(){
 document.querySelectorAll('#chemConfigTypeControl .history-type-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     selectedChemConfigType = btn.dataset.type;
+    if(selectedChemConfigType === 'custom'){
+      // Always start fresh — no customer carried over from last time
+      customCustomerId = null;
+      customBodyKey = null;
+      customWorking = null;
+      customWorkingFor = null;
+      customSnapshot = null;
+      const searchEl = document.getElementById('customCustSearch');
+      if(searchEl) searchEl.value = '';
+      const clearEl = document.getElementById('customCustClear');
+      if(clearEl) clearEl.style.display = 'none';
+      const noteEl = document.getElementById('customSaveNote');
+      if(noteEl) noteEl.textContent = '';
+      hideCustomCustSuggest();
+      renderCustomBodies();
+    }
     renderChemConfigLists();
   });
 });
@@ -4843,6 +5259,26 @@ function showToast(msg){
 
 // confirmLabel: text for the confirm button. Pass a second argument to change it —
 // anything other than a destructive action gets the normal teal styling.
+// Message-only dialog for when something simply can't proceed
+function alertDialog(message, title){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:420px;">
+        ${title ? '<h3 style="font-size:15px;margin:0 0 8px;">' + title + '</h3>' : ''}
+        <p>${message}</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="alertOk" style="flex:1;">OK</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = ()=>{ document.body.removeChild(overlay); resolve(); };
+    overlay.querySelector('#alertOk').addEventListener('click', done);
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) done(); });
+  });
+}
+
 function confirmDialog(message, confirmLabel){
   const label = confirmLabel || 'Delete';
   const destructive = !confirmLabel || /delete|remove permanently/i.test(label);
@@ -7566,6 +8002,245 @@ function matchesSearch(c, term){
   return haystack.includes(term);
 }
 
+
+// ---------- Importing customers from a spreadsheet ----------
+// Handles quoted fields and commas inside quotes, which plain splitting doesn't.
+function parseCsv(text){
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(inQuotes){
+      if(ch === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if(ch === '"'){
+      inQuotes = true;
+    } else if(ch === ','){
+      row.push(field); field = '';
+    } else if(ch === '\n'){
+      row.push(field); field = '';
+      if(row.some(f => f.trim() !== '')) rows.push(row);
+      row = [];
+    } else if(ch !== '\r'){
+      field += ch;
+    }
+  }
+  row.push(field);
+  if(row.some(f => f.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+// Splits "123 Main St, Goodyear, AZ 85338" into its parts, tolerating
+// missing commas like "123 Main St Goodyear, AZ 85338"
+function splitAddress(raw){
+  let a = (raw || '').trim().replace(/,\s*$/, '');
+  let state = '', zip = '';
+  const m = a.match(/\b([A-Za-z]{2})\.?\s+(\d{5})(?:-\d{4})?\s*$/);
+  if(m){
+    state = m[1].toUpperCase();
+    zip = m[2];
+    a = a.slice(0, m.index).trim().replace(/,\s*$/, '').trim();
+  }
+  let city = '';
+  if(a.includes(',')){
+    const parts = a.split(',');
+    city = parts.pop().trim();
+    a = parts.join(',').trim();
+  }
+  return {address: a, city, state, zip};
+}
+
+const IMPORT_FIELDS = [
+  {key:'name',        label:'Name',            hints:['name','customer','client']},
+  {key:'address',     label:'Address',         hints:['address','street','addr']},
+  {key:'city',        label:'City',            hints:['city','town']},
+  {key:'state',       label:'State',           hints:['state','province']},
+  {key:'zip',         label:'ZIP',             hints:['zip','postal']},
+  {key:'phone',       label:'Phone',           hints:['phone','mobile','cell','tel']},
+  {key:'email',       label:'Email',           hints:['email','e-mail']},
+  {key:'day',         label:'Service day',     hints:['day','service day','schedule']},
+  {key:'gateCode',    label:'Gate code',       hints:['gate','code']},
+  {key:'poolGallons', label:'Pool gallons',    hints:['gallon','volume','size']},
+  {key:'accessNotes', label:'Access notes',    hints:['note','access','comment']}
+];
+
+function guessColumn(headers, field){
+  const lower = headers.map(h => (h || '').trim().toLowerCase());
+  for(const hint of field.hints){
+    const exact = lower.indexOf(hint);
+    if(exact !== -1) return exact;
+  }
+  for(const hint of field.hints){
+    const partial = lower.findIndex(h => h && h.includes(hint));
+    if(partial !== -1) return partial;
+  }
+  return -1;
+}
+
+document.getElementById('btnImportCustomers').addEventListener('click', ()=>{
+  document.getElementById('importCsvInput').click();
+});
+
+document.getElementById('importCsvInput').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+
+  let rows;
+  try{
+    rows = parseCsv(await file.text());
+  }catch(err){
+    showToast("Couldn't read that file");
+    return;
+  }
+  if(rows.length < 2){
+    await alertDialog('That file has no rows under its header, so there is nothing to import.', 'Nothing to import');
+    return;
+  }
+
+  openImportMapper(rows);
+});
+
+function openImportMapper(rows){
+  const headers = rows[0];
+  const dataRows = rows.slice(1);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
+      <h3 style="font-size:16px;margin:0 0 4px;">Import customers</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Found ${dataRows.length} row${dataRows.length === 1 ? '' : 's'}. Match your spreadsheet columns to PoolLog fields — anything left as "Skip" is ignored. These are added to your existing customers, nothing is replaced.</p>
+      <div id="importMapBody" style="flex:1;overflow-y:auto;"></div>
+      <div id="importPreview" style="font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:10px;"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-primary" id="importGo" style="flex:1;">Import</button>
+        <button class="btn btn-ghost" id="importCancel" style="width:auto;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const body = overlay.querySelector('#importMapBody');
+  const mapping = {};
+
+  IMPORT_FIELDS.forEach(field=>{
+    const guess = guessColumn(headers, field);
+    mapping[field.key] = guess;
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:8px;';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'flex:0 0 120px;font-size:13px;font-weight:600;';
+    lbl.textContent = field.label;
+    const sel = document.createElement('select');
+    sel.style.cssText = 'flex:1;min-width:0;';
+    const skip = document.createElement('option');
+    skip.value = '-1';
+    skip.textContent = 'Skip';
+    sel.appendChild(skip);
+    headers.forEach((hdr, i)=>{
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = (hdr || '').trim() || ('Column ' + (i + 1));
+      sel.appendChild(o);
+    });
+    sel.value = String(guess);
+    sel.addEventListener('change', ()=>{
+      mapping[field.key] = parseInt(sel.value, 10);
+      updatePreview();
+    });
+    row.appendChild(lbl);
+    row.appendChild(sel);
+    body.appendChild(row);
+  });
+
+  const previewEl = overlay.querySelector('#importPreview');
+  function updatePreview(){
+    if(mapping.name === -1){
+      previewEl.innerHTML = '<span style="color:var(--rust);font-weight:600;">Pick which column holds the customer name.</span>';
+      return;
+    }
+    const first = dataRows[0] || [];
+    const nm = (first[mapping.name] || '').trim();
+    previewEl.textContent = 'First row will import as: ' + (nm || '(no name — that row will be skipped)');
+  }
+  updatePreview();
+
+  const close = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#importCancel').addEventListener('click', close);
+
+  overlay.querySelector('#importGo').addEventListener('click', async ()=>{
+    if(mapping.name === -1){
+      showToast('Pick which column holds the name');
+      return;
+    }
+
+    const val = (row, key)=>{
+      const i = mapping[key];
+      return i === -1 ? '' : (row[i] || '').trim();
+    };
+
+    const incoming = [];
+    let skipped = 0;
+    dataRows.forEach((row, n)=>{
+      const name = val(row, 'name');
+      if(!name){ skipped++; return; }
+
+      // Use split-out columns when given, otherwise parse the single address
+      let addr = val(row, 'address');
+      let city = val(row, 'city');
+      let state = val(row, 'state');
+      let zip = val(row, 'zip');
+      if(!city && !state && !zip && addr){
+        const parts = splitAddress(addr);
+        addr = parts.address; city = parts.city; state = parts.state; zip = parts.zip;
+      }
+
+      const rawDay = val(row, 'day');
+      const day = DAYS_OF_WEEK.find(d => d.toLowerCase() === rawDay.toLowerCase()) || '';
+
+      incoming.push({
+        id: 'cust_imp_' + Date.now() + '_' + n,
+        name,
+        address: addr, city, state, zip,
+        phone: val(row, 'phone'),
+        email: val(row, 'email'),
+        day: day || 'Monday',
+        hasPool: true, hasSpa: false,
+        poolGallons: val(row, 'poolGallons'),
+        technicianId: '',
+        gateCode: val(row, 'gateCode'),
+        accessNotes: val(row, 'accessNotes'),
+        fountains: [], dogs: [], active: true
+      });
+    });
+
+    if(incoming.length === 0){
+      await alertDialog('No rows had a name in the column you picked, so nothing was imported.', 'Nothing imported');
+      return;
+    }
+
+    // Flag anyone who looks like they are already on file
+    const existingNames = new Set(customers.map(x => (x.name || '').trim().toLowerCase()));
+    const dupes = incoming.filter(x => existingNames.has(x.name.trim().toLowerCase()));
+
+    const ok = await confirmDialog(
+      'Add ' + incoming.length + (incoming.length === 1 ? ' customer' : ' customers') + '?' +
+      (skipped ? ' ' + skipped + ' row' + (skipped === 1 ? '' : 's') + ' had no name and will be skipped.' : '') +
+      (dupes.length ? ' ' + dupes.length + ' already appear to be on file and will be added again as duplicates.' : ''),
+      'Import');
+    if(!ok) return;
+
+    customers = customers.concat(incoming);
+    saveCustomers();
+    renderList();
+    close();
+    showToast('Imported ' + incoming.length + (incoming.length === 1 ? ' customer' : ' customers'));
+  });
+}
+
 function renderList(){
   const container = document.getElementById('customerList');
   updateStats();
@@ -7887,11 +8562,13 @@ renderTechnicianList();
 populateTechnicianSelect();
 renderEquipmentTypeList();
 document.getElementById('settingShowPoolSize').checked = appSettings.showPoolSizeInProfile;
-document.getElementById('settingRequireBeforeAfterPhotos').checked = appSettings.requireBeforeAfterPhotos;
+document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
+document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
 document.getElementById('settingShowDosageSuggestions').checked = appSettings.showDosageSuggestions;
 document.getElementById('settingBeforePhotos').checked = appSettings.showBeforePhotos !== false;
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
 document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
+document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
 

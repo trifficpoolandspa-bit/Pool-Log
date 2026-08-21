@@ -346,6 +346,10 @@ body.has-step-bar{padding-bottom:146px;}
   padding:6px 11px;font-size:12px;font-weight:600;
   cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap;
 }
+
+/* Section tabs scroll sideways rather than wrapping onto more rows */
+#visitSectionButtons::-webkit-scrollbar{display:none;}
+#visitSectionButtons > button{flex:0 0 auto;}
 .bottombar{
   position:fixed;bottom:0;left:0;right:0;
   background:#fff;border-top:1px solid var(--line);
@@ -428,8 +432,12 @@ select#customerSelect{font-weight:600;}
   <div class="view active" id="view-home">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;" id="homeDayHeading">Today</h2>
-        <span id="voiceModeIndicator" style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+          <h2 style="margin:0;" id="homeDayHeading">Today</h2>
+          <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
+          <span id="homeJobCount" style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;color:var(--gold);"></span>
+        </div>
+        <span id="voiceModeIndicator" style="display:none;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
           <span id="voiceModeText">Voice entry off</span>
         </span>
@@ -456,10 +464,8 @@ select#customerSelect{font-weight:600;}
   <!-- VISIT VIEW -->
   <div class="view" id="view-visit">
     <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">
-        <h2 id="visitCustomerName" style="margin:0;">Customer</h2>
-        <div class="btn-row" id="visitSectionButtons" style="flex-wrap:wrap;flex:1;justify-content:center;"></div>
-      </div>
+      <h2 id="visitCustomerName" style="display:none;">Customer</h2>
+      <div class="btn-row" id="visitSectionButtons" style="flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;"></div>
     </div>
 
     <div id="visitVoiceCard" style="display:none;">
@@ -500,7 +506,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreviewBefore" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhotoBefore" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhotoBefore" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhotoBefore" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBefore" style="display:none;">
@@ -525,7 +531,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhoto" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhoto" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhoto" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhoto" style="display:none;">
@@ -536,9 +542,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inNotes" placeholder="Added 2 lbs shock, backwashed filter..."></textarea>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btnSaveReading" style="flex:1;">Save pool reading</button>
-      </div>
+      <button class="btn btn-primary" id="btnSaveReading" style="display:none;">Save pool reading</button>
     </div>
 
     <!-- SPA SECTION -->
@@ -549,7 +553,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreviewBeforeSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhotoBeforeSpa" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhotoBeforeSpa" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhotoBeforeSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeSpa" style="display:none;">
@@ -573,7 +577,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreviewSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhotoSpa" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhotoSpa" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhotoSpa" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoSpa" style="display:none;">
@@ -584,9 +588,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inSpaNotes" placeholder="Drained and refilled, cleaned filter..."></textarea>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btnSaveSpaReading" style="flex:1;">Save spa reading</button>
-      </div>
+      <button class="btn btn-primary" id="btnSaveSpaReading" style="display:none;">Save spa reading</button>
     </div>
 
     <!-- FOUNTAIN SECTION -->
@@ -597,7 +599,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreviewBeforeFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhotoBeforeFountain" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhotoBeforeFountain" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhotoBeforeFountain" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoBeforeFountain" style="display:none;">
@@ -620,7 +622,7 @@ select#customerSelect{font-weight:600;}
         <img id="photoPreviewFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
       <div class="btn-row" style="justify-content:center;margin:34px 0 34px;">
-        <button class="btn btn-secondary" id="btnTakePhotoFountain" style="width:auto;padding:16px 40px;font-size:17px;">Take photo</button>
+        <button class="btn btn-secondary" id="btnTakePhotoFountain" style="width:auto;padding:16px 40px;font-size:17px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;">Take photo</button>
         <button class="btn btn-ghost" id="btnRemovePhotoFountain" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="inPhotoFountain" style="display:none;">
@@ -631,9 +633,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inFountainNotes" placeholder="Cleaned basin, cleared debris from pump..."></textarea>
       </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btnSaveFountainReading" style="flex:1;">Save fountain reading</button>
-      </div>
+      <button class="btn btn-primary" id="btnSaveFountainReading" style="display:none;">Save reading</button>
     </div>
 
   </div>
@@ -744,7 +744,7 @@ select#customerSelect{font-weight:600;}
       <h2>Your customers</h2>
       <div style="position:relative;margin-bottom:12px;">
         <input id="adminCustomerSearch" placeholder="Search by name, address, phone, or email" style="padding-right:38px;">
-        <button type="button" id="btnClearAdminCustomerSearch" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);height:26px;width:26px;padding:0;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;">×</button>
+        <button type="button" id="btnClearAdminCustomerSearch" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);height:26px;width:26px;padding:0;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;align-items:center;justify-content:center;">×</button>
       </div>
       <div class="btn-row" style="margin-bottom:14px;">
         <button class="btn btn-ghost" id="btnNewCustomerTab" style="width:auto;">+ Add new customer</button>
@@ -777,14 +777,14 @@ select#customerSelect{font-weight:600;}
       <div class="field" style="position:relative;">
         <label>Customer</label>
         <input id="reportCustomerSearch" placeholder="Search customers by name, address, phone, or email" autocomplete="off" style="padding-right:38px;">
-        <button type="button" id="btnClearReportCustomer" style="display:none;position:absolute;right:10px;bottom:9px;height:26px;width:26px;padding:0;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;">×</button>
+        <button type="button" id="btnClearReportCustomer" style="display:none;position:absolute;right:10px;bottom:7px;height:26px;width:26px;padding:0;border:none;background:none;color:var(--muted);font-size:17px;line-height:1;cursor:pointer;align-items:center;justify-content:center;">×</button>
         <div id="reportCustomerSuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:10px;margin-top:4px;box-shadow:0 4px 14px rgba(15,46,46,0.14);max-height:260px;overflow-y:auto;"></div>
         <select id="reportCustomerSelect" style="display:none;"></select>
       </div>
       <div class="field">
         <label>Reading date</label>
         <div style="display:flex;align-items:center;gap:8px;">
-          <select id="reportReadingSelect" style="flex:1;"></select>
+          <select id="reportReadingSelect" style="flex:1;padding-right:16px;"></select>
           <button type="button" id="btnReportDatePicker" title="Pick a date from the calendar"
             style="flex:0 0 44px;height:40px;padding:0;display:flex;align-items:center;justify-content:center;border:1.5px solid var(--teal-mid);border-radius:10px;background:var(--teal-pale);cursor:pointer;line-height:0;">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--teal-deep)" stroke-width="2" stroke-linecap="round">
@@ -828,16 +828,17 @@ select#customerSelect{font-weight:600;}
         <button class="btn btn-ghost" id="btnAdminLogout" style="width:auto;">Sign out</button>
       </div>
     </div>
+    <input type="checkbox" id="settingVoiceMode" style="display:none;">
     <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <h2 style="margin:0;">Voice entry mode</h2>
+          <h2 style="margin:0;">Require a reason for skipped services</h2>
           <label class="toggle-switch">
-            <input type="checkbox" id="settingVoiceMode" checked>
+            <input type="checkbox" id="settingRequireSkipReason">
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit gets a continuous voice-entry option and keeps the screen awake while you're using it. Turning this off removes the voice control from visits and stops the screen-awake behavior too.</p>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, skipping a service opens a screen where the technician must explain why, with the option to attach a photo.</p>
       </div>
     </div>
     <div class="card">
@@ -982,6 +983,25 @@ const DEFAULT_CHEM_CONFIG = {
   }
 };
 
+
+// ---------- Quick button colours ----------
+// A button is either a plain number (default blue) or {v: value, c: colourKey}
+const QUICK_BUTTON_COLORS = {
+  blue:   {label:'Blue',   fill:'#E7F0F6', border:'#A8CBE0', text:'#0B6FA4', solid:'#0B6FA4'},
+  red:    {label:'Red',    fill:'#FBEAE6', border:'#E8B5A8', text:'#B8492E', solid:'#B8492E'},
+  orange: {label:'Orange', fill:'#FCEFE0', border:'#EDC79B', text:'#B5670F', solid:'#B5670F'},
+  yellow: {label:'Yellow', fill:'#FBF3D8', border:'#E5D08A', text:'#8A6D0B', solid:'#C79F10'},
+  green:  {label:'Green',  fill:'#E6F2EA', border:'#A9CDB6', text:'#2E7D4F', solid:'#2E7D4F'},
+  purple: {label:'Purple', fill:'#EFEAF6', border:'#C0B0DC', text:'#5B3E96', solid:'#5B3E96'},
+  pink:   {label:'Pink',   fill:'#FBE9F1', border:'#E9B3CB', text:'#A8386A', solid:'#A8386A'},
+  brown:  {label:'Brown',  fill:'#F1EAE3', border:'#CDB79F', text:'#6B4A2A', solid:'#6B4A2A'},
+  black:  {label:'Black',  fill:'#ECEDEE', border:'#B6BABD', text:'#2B3234', solid:'#2B3234'}
+};
+
+function btnValue(b){ return (b && typeof b === 'object') ? b.v : b; }
+function btnColorKey(b){ return (b && typeof b === 'object' && b.c) ? b.c : 'blue'; }
+function btnPalette(b){ return QUICK_BUTTON_COLORS[btnColorKey(b)] || QUICK_BUTTON_COLORS.blue; }
+
 const DEFAULT_BUTTON_SETS = {
   chlorine: [0, 1, 2, 3, 5, 7.5, 10],
   ph: [6.8, 7.0, 7.2, 7.4, 7.6, 7.8, 8.0, 8.2],
@@ -1096,7 +1116,9 @@ function renderConfigFields(containerId, list, type, kind, onInput){
       suggestRow.style.marginTop = '8px';
       suggestRow.style.flexWrap = 'wrap';
       const suggestedAmounts = configuredButtons;
-      suggestedAmounts.forEach(amt=>{
+      suggestedAmounts.forEach(btnDef=>{
+        const amt = btnValue(btnDef);
+        const pal = btnPalette(btnDef);
         const sBtn = document.createElement('button');
         sBtn.type = 'button';
         sBtn.className = 'btn';
@@ -1104,12 +1126,12 @@ function renderConfigFields(containerId, list, type, kind, onInput){
         const restStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
           + 'border-radius:9px;min-width:42px;'
           + "font-family:'JetBrains Mono',monospace;"
-          + 'background:#E7F0F6;color:#0B6FA4;border:1.5px solid #A8CBE0;'
+          + 'background:' + pal.fill + ';color:' + pal.text + ';border:1.5px solid ' + pal.border + ';'
           + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
         const pressedStyle = 'width:auto;padding:8px 12px;font-size:16px;font-weight:700;'
           + 'border-radius:9px;min-width:42px;'
           + "font-family:'JetBrains Mono',monospace;"
-          + 'background:#0B6FA4;color:#fff;border:1.5px solid #0B6FA4;'
+          + 'background:' + pal.solid + ';color:#fff;border:1.5px solid ' + pal.solid + ';'
           + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
         sBtn.style.cssText = String(input.value) === String(amt) ? pressedStyle : restStyle;
         sBtn.textContent = amt;
@@ -1138,6 +1160,10 @@ function renderConfigFields(containerId, list, type, kind, onInput){
 
 
 // A customer's body of water can override the standard lists
+// A customer assigned to a named configuration uses its lists for every body
+// of water; anyone unassigned falls back to the standard Pool/Spa/Extra lists.
+// A customer can have their own chemicals and dosages for a single body of
+// water; anything unset falls back to the standard Pool/Spa/Extra lists.
 function listsForBody(customerId, bodyKey, fallbackType){
   const custom = lsGet('customChemConfig') || {};
   const forCust = custom[customerId];
@@ -1580,6 +1606,8 @@ function makeVisitVoiceController(){
       const el = document.getElementById(fieldId);
       if(el){
         el.value = updates[fieldId];
+        // Let the quick buttons mark themselves, same as a tap
+        el.dispatchEvent(new Event('input', {bubbles:true}));
         labels.push(dynamicFieldLabels[fieldId] || fieldId);
       }
     });
@@ -1656,6 +1684,28 @@ function makeVisitVoiceController(){
       setStatus('');
     }
   }
+
+  // Screen off or app backgrounded: stop cleanly rather than chiming in a pocket
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){
+      if(listening && recognition){
+        try{ recognition.stop(); }catch(e){}
+      }
+    } else if(listening && recognition){
+      try{ recognition.start(); }catch(e){}
+    }
+  });
+
+  // Screen off or app backgrounded: stop cleanly rather than chiming in a pocket
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden){
+      if(listening && recognition){
+        try{ recognition.stop(); }catch(e){}
+      }
+    } else if(listening && recognition){
+      try{ recognition.start(); }catch(e){}
+    }
+  });
 
   return {setTarget, startListening, stopListening, isListening: ()=>listening};
 }
@@ -2326,7 +2376,7 @@ document.getElementById('btnNewCustomerTab').addEventListener('click', ()=>{
 
 document.getElementById('adminCustomerSearch').addEventListener('input', (e)=>{
   adminCustomerSearchTerm = e.target.value;
-  document.getElementById('btnClearAdminCustomerSearch').style.display = adminCustomerSearchTerm ? 'block' : 'none';
+  document.getElementById('btnClearAdminCustomerSearch').style.display = adminCustomerSearchTerm ? 'flex' : 'none';
   renderCustomerList();
 });
 
@@ -3383,6 +3433,37 @@ function renderHomeList(){
   const todaysCustomers = orderCustomersForDay(selectedHomeDay,
     baseCustomers.concat(movedInCustomers));
 
+  // Remaining out of total, counting down as visits are completed.
+  // The route list hides finished customers, so count those separately.
+  const doneToday = customers.filter(cust =>
+    cust.active !== false &&
+    cust.lastServicedDate === today &&
+    cust.day === selectedHomeDay
+  ).length;
+  const remaining = todaysCustomers.length;
+  const totalStops = remaining + (weekOffset === 0 ? doneToday : 0);
+
+  const stopEl = document.getElementById('homeStopCount');
+  if(stopEl){
+    stopEl.textContent = totalStops ? remaining + '/' + totalStops : '';
+    stopEl.title = totalStops ? remaining + ' of ' + totalStops + ' stops left' : '';
+  }
+
+  // Work orders and filter cleans landing on this day count as jobs
+  const jobIds = new Set();
+  (lsGet('scheduledFilterCleans') || [])
+    .filter(s => s.status === 'scheduled' && s.date === selectedDayISO)
+    .forEach(s => jobIds.add(s.customerId));
+  (lsGet('scheduledWorkOrders') || [])
+    .filter(j => j.status === 'scheduled' && j.date === selectedDayISO)
+    .forEach(j => jobIds.add(j.customerId));
+  const jobCount = todaysCustomers.filter(cust => jobIds.has(cust.id)).length;
+  const jobEl = document.getElementById('homeJobCount');
+  if(jobEl){
+    jobEl.textContent = jobCount ? jobCount + (jobCount === 1 ? ' job' : ' jobs') : '';
+    jobEl.title = jobCount ? 'Filter cleans and work orders scheduled today' : '';
+  }
+
   const dateInfo = document.getElementById('homeDateInfo');
   const stopText = todaysCustomers.length === 1 ? '1 route stop' : todaysCustomers.length + ' route stops';
   const d = dateForWeekday(selectedHomeDay);
@@ -3455,12 +3536,12 @@ function renderHomeList(){
     onWayBtn.style.cssText = 'flex:0 0 72px !important;width:72px !important;'
       + 'min-width:72px !important;max-width:72px !important;'
       + 'height:46px !important;min-height:46px;padding:0;'
-      + 'margin-left:10px;font-size:12px;line-height:1.25;text-align:center;'
-      + 'display:flex;flex-direction:column;align-items:center;justify-content:center;';
-    onWayBtn.innerHTML = '<span>On my</span><span>way</span>';
+      + 'margin-left:10px;font-size:11.5px;line-height:1.25;text-align:center;'
+      + 'display:flex;align-items:center;justify-content:center;';
+    onWayBtn.textContent = 'Directions';
     onWayBtn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      sendOnMyWay(c);
+      openDirections(c);
     });
     rightWrap.appendChild(onWayBtn);
     const chev = document.createElement('div');
@@ -3479,7 +3560,24 @@ function renderHomeList(){
       const panel = document.createElement('div');
       panel.className = 'route-brief';
       panel.dataset.for = c.id;
-      panel.style.cssText = 'background:var(--surface-alt);border-radius:10px;padding:12px 14px;margin:0 0 10px;font-size:13.5px;line-height:1.6;animation:briefIn .16s ease;';
+      panel.style.cssText = 'background:var(--surface-alt);border-radius:10px;padding:18px 20px;margin:0 0 14px;font-size:16px;line-height:1.85;animation:briefIn .16s ease;';
+
+      // Phone first — a tech usually wants this before anything else
+      if(c.phone){
+        const line = document.createElement('div');
+        line.style.marginBottom = '2px';
+        const strong = document.createElement('strong');
+        strong.textContent = '\ud83d\udcde Phone: ';
+        line.appendChild(strong);
+        const tel = document.createElement('a');
+        // tel: opens the dialer with the number ready, without placing the call
+        tel.href = 'tel:' + c.phone.replace(/[^0-9+]/g, '');
+        tel.textContent = c.phone;
+        tel.style.cssText = 'color:var(--teal-deep);font-weight:700;text-decoration:underline;';
+        tel.addEventListener('click', (ev)=> ev.stopPropagation());
+        line.appendChild(tel);
+        panel.appendChild(line);
+      }
 
       const bits = [];
       if(c.gateCode) bits.push(['\ud83d\udd11 Gate code', c.gateCode]);
@@ -3497,7 +3595,7 @@ function renderHomeList(){
 
       const btnRow = document.createElement('div');
       btnRow.className = 'btn-row';
-      btnRow.style.marginTop = bits.length ? '12px' : '0';
+      btnRow.style.marginTop = '16px';
       btnRow.style.flexWrap = 'wrap';
 
       if(true){
@@ -3512,15 +3610,15 @@ function renderHomeList(){
         btnRow.appendChild(reschedBtn);
       }
 
-      const dirBtn = document.createElement('button');
-      dirBtn.className = 'btn btn-ghost';
-      dirBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
-      dirBtn.textContent = 'Directions';
-      dirBtn.addEventListener('click', (e)=>{
+      const onWayBtn = document.createElement('button');
+      onWayBtn.className = 'btn btn-ghost';
+      onWayBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
+      onWayBtn.textContent = 'On my way';
+      onWayBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
-        openDirections(c);
+        sendOnMyWay(c);
       });
-      btnRow.appendChild(dirBtn);
+      btnRow.appendChild(onWayBtn);
 
       const skipBtn2 = document.createElement('button');
       skipBtn2.className = 'btn btn-ghost';
@@ -3576,7 +3674,12 @@ function renderServicedList(){
   const container = document.getElementById('servicedList');
   if(!container) return;
   const today = todayDateStr();
-  const servicedCustomers = customers.filter(c => c.lastServicedDate === today && c.active !== false);
+  const servicedCustomers = customers
+    .filter(c => c.lastServicedDate === today && c.active !== false)
+    .slice()
+    // In the order they were submitted; anything logged before this was tracked
+    // has no timestamp, so it sits first rather than disappearing
+    .sort((a,b)=> (a.lastServicedAt || '').localeCompare(b.lastServicedAt || ''));
   if(servicedCustomers.length === 0){
     container.innerHTML = '<div class="empty">No one\'s been serviced yet today.</div>';
     return;
@@ -3595,8 +3698,25 @@ function renderServicedList(){
     reserviceBtn.style.padding = '7px 12px';
     reserviceBtn.style.fontSize = '12px';
     reserviceBtn.textContent = 'Reservice';
-    reserviceBtn.addEventListener('click', ()=> reserviceCustomer(c));
+    reserviceBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      reserviceCustomer(c);
+    });
     row.appendChild(reserviceBtn);
+
+    // Tapping the row pulls up today's report for that customer
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', async ()=>{
+      const sel = document.getElementById('reportCustomerSelect');
+      if(sel){
+        populateCustomerSelect(sel, 'Add a customer first');
+        sel.value = c.id;
+      }
+      if(typeof syncReportCustomerSearchField === 'function') syncReportCustomerSearchField();
+      await refreshDateSelector(c.id);
+      switchView('report', {skipRefresh: true});
+    });
+
     container.appendChild(row);
   });
 }
@@ -3618,20 +3738,98 @@ async function reserviceCustomer(customer){
   renderHomeList();
 }
 
+
+// Asks why a service was skipped, with an optional photo
+function openSkipReasonModal(customer){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:440px;">
+        <h3 style="font-size:15px;margin:0 0 4px;">Why was ${customer.name} skipped?</h3>
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">This is saved with the visit so the office knows what happened.</p>
+        <div class="field">
+          <label>Reason</label>
+          <textarea id="skipReasonText" rows="4" placeholder="Gate was locked, dog in the yard, customer asked to reschedule..." style="min-height:96px;"></textarea>
+        </div>
+        <div class="field">
+          <label>Photo (optional)</label>
+          <button type="button" class="btn btn-ghost" id="skipPhotoBtn" style="width:auto;">Take photo</button>
+          <input type="file" accept="image/*" capture="environment" id="skipPhotoInput" style="display:none;">
+          <div id="skipPhotoWrap" style="display:none;margin-top:10px;">
+            <img id="skipPhotoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Skip photo">
+            <button type="button" class="btn btn-ghost" id="skipPhotoRemove" style="width:auto;margin-top:8px;color:var(--rust);border-color:#EFC9BC;">Remove photo</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="skipReasonSave" style="flex:1;">Skip service</button>
+          <button class="btn btn-ghost" id="skipReasonCancel" style="width:auto;">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    let photoData = null;
+    const textEl = overlay.querySelector('#skipReasonText');
+    const input = overlay.querySelector('#skipPhotoInput');
+    const wrap = overlay.querySelector('#skipPhotoWrap');
+    const preview = overlay.querySelector('#skipPhotoPreview');
+
+    setTimeout(()=> textEl.focus(), 60);
+
+    overlay.querySelector('#skipPhotoBtn').addEventListener('click', ()=> input.click());
+    input.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      try{
+        photoData = await resizeImageFile(file, 1000, 0.6);
+        preview.src = photoData;
+        wrap.style.display = 'block';
+      }catch(err){ showToast('Could not read that photo'); }
+    });
+    overlay.querySelector('#skipPhotoRemove').addEventListener('click', ()=>{
+      photoData = null;
+      wrap.style.display = 'none';
+      input.value = '';
+    });
+
+    const done = (result)=>{ document.body.removeChild(overlay); resolve(result); };
+    overlay.querySelector('#skipReasonCancel').addEventListener('click', ()=> done(null));
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) done(null); });
+    overlay.querySelector('#skipReasonSave').addEventListener('click', ()=>{
+      const reason = textEl.value.trim();
+      if(!reason){ showToast('Add a reason first'); textEl.focus(); return; }
+      done({reason, photo: photoData});
+    });
+  });
+}
+
 async function skipService(customer){
-  const confirmed = await confirmDialog('Are you sure you want to skip service for ' + customer.name + ' today?', 'Yes');
-  if(!confirmed) return;
+  let skipInfo = null;
+  if(appSettings.requireSkipReason === true){
+    skipInfo = await openSkipReasonModal(customer);
+    if(!skipInfo) return;
+  } else {
+    const confirmed = await confirmDialog('Are you sure you want to skip service for ' + customer.name + ' today?', 'Yes');
+    if(!confirmed) return;
+  }
   if(pendingVisit && pendingVisit.customerId === customer.id){
     pendingVisit = null;
     stopVisitTimer();
   }
   const today = todayDateStr();
   customer.lastServicedDate = today;
+  customer.lastServicedAt = new Date().toISOString();
   await saveCustomers();
 
   const skipList = await loadSkippedVisits(customer.id);
   const filtered = skipList.filter(s => s.date !== today);
-  filtered.unshift({id: 'skip_' + Date.now(), date: today, timestamp: new Date().toISOString()});
+  filtered.unshift({
+    id: 'skip_' + Date.now(),
+    date: today,
+    timestamp: new Date().toISOString(),
+    reason: skipInfo ? skipInfo.reason : '',
+    photo: skipInfo ? skipInfo.photo : null
+  });
   await saveSkippedVisits(customer.id, filtered);
 
   showToast(customer.name + ' skipped for today');
@@ -4014,7 +4212,7 @@ function selectReportCustomer(c){
   const sel = document.getElementById('reportCustomerSelect');
   sel.value = c.id;
   document.getElementById('reportCustomerSearch').value = c.name;
-  document.getElementById('btnClearReportCustomer').style.display = 'block';
+  document.getElementById('btnClearReportCustomer').style.display = 'flex';
   hideReportCustomerSuggestions();
   refreshDateSelector(c.id);
 }
@@ -4023,7 +4221,7 @@ document.getElementById('reportCustomerSearch').addEventListener('focus', (e)=>{
   renderReportCustomerSuggestions(e.target.value);
 });
 document.getElementById('reportCustomerSearch').addEventListener('input', (e)=>{
-  document.getElementById('btnClearReportCustomer').style.display = e.target.value ? 'block' : 'none';
+  document.getElementById('btnClearReportCustomer').style.display = e.target.value ? 'flex' : 'none';
   renderReportCustomerSuggestions(e.target.value);
 });
 document.getElementById('reportCustomerSearch').addEventListener('blur', ()=>{
@@ -4119,8 +4317,11 @@ let pendingVisit = null;
 // sectionId is 'pool', 'spa', or a fountain's id
 
 // Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
-const DEFAULT_SETTINGS = { voiceModeEnabled: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showTechniciansTab: true };
+const DEFAULT_SETTINGS = { voiceModeEnabled: false, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showTechniciansTab: true };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
+// Voice entry has been removed — the browser chimed on every restart and that
+// sound can't be muted from a web app.
+appSettings.voiceModeEnabled = false;
 
 function saveSettings(){
   lsSet('settings', appSettings);
@@ -4144,6 +4345,12 @@ function applyVoiceModeSetting(){
 }
 
 document.getElementById('btnAdminLogout').addEventListener('click', adminLogout);
+
+document.getElementById('settingRequireSkipReason').addEventListener('change', (e)=>{
+  appSettings.requireSkipReason = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
+});
 
 document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
   appSettings.requireReadings = e.target.checked;
@@ -4365,7 +4572,7 @@ function renderVisitSectionButtons(){
   equipBtn.className = 'btn btn-ghost';
   equipBtn.style.width = 'auto';
   equipBtn.style.fontWeight = '700';
-  equipBtn.style.marginLeft = 'auto';
+  equipBtn.style.marginLeft = '6px';
   equipBtn.textContent = 'Equipment';
   if(currentVisibleSection === 'equipment'){
     equipBtn.style.background = 'var(--teal-deep)';
@@ -4428,28 +4635,82 @@ let currentVisitStep = 1;
 
 // When "require readings" is on, every chemical field on the readings step
 // must be filled before a tech can move forward.
+// A field blocks progress if it's ticked Required on the website, or if the
+// blanket "require readings" setting is switched on.
+
+// Returns a message if this section requires a photo that hasn't been taken.
+// The global before/after switches remove the step entirely, so they win.
+function missingRequiredPhoto(){
+  if(!currentVisibleSection) return '';
+  if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return '';
+
+  const type = currentVisibleSection;
+  const cap = type.charAt(0).toUpperCase() + type.slice(1);
+  const cid = currentVisitCustomerId;
+  const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+                    : chemConfig[type];
+  if(!lists) return '';
+
+  const steps = visitStepCardsFor(type);
+  const stepId = s => Array.isArray(s) ? s[0] : s;
+  const idx = currentVisitStep - 1;
+  const here = steps[idx] ? stepId(steps[idx]) : '';
+
+  // Required either everywhere (Settings) or just for this section
+  const beforeNeeded = appSettings.requireBeforePhotos === true || lists.requireBeforePhoto === true;
+  const afterNeeded = appSettings.requireAfterPhotos === true || lists.requireAfterPhoto === true;
+
+  if(here === 'visit' + cap + 'BeforePhotoSection'
+     && appSettings.showBeforePhotos !== false
+     && beforeNeeded){
+    const ctrl = beforeControllerFor(type);
+    if(ctrl && !ctrl.getData()) return 'A before photo is required here';
+  }
+
+  if(here.indexOf(cap + 'PhotoSection') !== -1
+     && here.indexOf('Before') === -1
+     && appSettings.showAfterPhotos !== false
+     && afterNeeded){
+    const ctrl = type === 'pool' ? poolPhotoController
+      : (type === 'spa' ? spaPhotoController : fountainPhotoController);
+    if(ctrl && !ctrl.getData()) return 'An after photo is required here';
+  }
+
+  return '';
+}
+
 function missingReadingFields(){
-  if(appSettings.requireReadings !== true) return [];
   if(!currentVisibleSection) return [];
   if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return [];
 
   const type = currentVisibleSection;
   const cap = type.charAt(0).toUpperCase() + type.slice(1);
   const steps = visitStepCardsFor(type);
-  const readingsIndex = steps.findIndex(s =>
-    (Array.isArray(s) ? s[0] : s) === 'visit' + cap + 'Section');
+  const stepId = s => Array.isArray(s) ? s[0] : s;
 
-  // Only guards the step that actually holds the readings
-  if(readingsIndex === -1 || currentVisitStep !== readingsIndex + 1) return [];
+  const readingsIndex = steps.findIndex(s => stepId(s) === 'visit' + cap + 'Section');
+  const productsIndex = steps.findIndex(s => stepId(s) === 'visit' + cap + 'ProductsSection');
+
+  const onReadings = readingsIndex !== -1 && currentVisitStep === readingsIndex + 1;
+  const onProducts = productsIndex !== -1 && currentVisitStep === productsIndex + 1;
+  if(!onReadings && !onProducts) return [];
 
   const cid = currentVisitCustomerId;
   const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
                     : chemConfig[type];
+
+  const requireAll = appSettings.requireReadings === true;
+  const items = onReadings ? (lists.chemicals || []) : (lists.dosages || []);
+  const kind = onReadings ? 'chem' : 'dose';
+
   const out = [];
-  (lists.chemicals || []).forEach(ch=>{
-    const el = document.getElementById(fieldId(type, 'chem', ch.key));
+  items.forEach(item=>{
+    // Blanket setting only covers readings; dosages rely on their own tick
+    const needed = item.required === true || (requireAll && onReadings);
+    if(!needed) return;
+    const el = document.getElementById(fieldId(type, kind, item.key));
     if(el && String(el.value).trim() === ''){
-      out.push({label: ch.label || ch.key, el});
+      out.push({label: item.label || item.key, el});
     }
   });
   return out;
@@ -4522,7 +4783,12 @@ function stepNextLabel(){
   const steps = visitStepCardsFor(currentVisibleSection);
   const cap = currentVisibleSection.charAt(0).toUpperCase() + currentVisibleSection.slice(1);
   const nextEntry = steps[currentVisitStep];       // the step after this one
-  if(!nextEntry) return '';                        // last step — save lives on the card
+  if(!nextEntry){
+    // Final step — the bar becomes the save action
+    if(currentVisibleSection === 'pool') return 'Save pool reading';
+    if(currentVisibleSection === 'spa') return 'Save spa reading';
+    return 'Save reading';
+  }
   const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
   if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
   if(id === 'visit' + cap + 'Section') return 'Chemical Readings \u2192';
@@ -4542,6 +4808,22 @@ function syncStepChrome(){
     nextBtn.textContent = label;
     bar.style.display = 'block';
     document.body.classList.add('has-step-bar');
+
+    // On the save step, follow whether the after photo requirement is met
+    const total = visitStepCardsFor(currentVisibleSection).length;
+    if(currentVisitStep >= total){
+      const saveId = currentVisibleSection === 'pool' ? 'btnSaveReading'
+        : (currentVisibleSection === 'spa' ? 'btnSaveSpaReading' : 'btnSaveFountainReading');
+      const src = document.getElementById(saveId);
+      const ready = src ? !src.disabled : true;
+      nextBtn.disabled = !ready;
+      nextBtn.style.opacity = ready ? '' : '0.4';
+      nextBtn.title = ready ? '' : 'Take an after photo first';
+    } else {
+      nextBtn.disabled = false;
+      nextBtn.style.opacity = '';
+      nextBtn.title = '';
+    }
   } else {
     bar.style.display = 'none';
     document.body.classList.remove('has-step-bar');
@@ -4594,7 +4876,19 @@ function syncStepChrome(){
 
 document.getElementById('stepBarNext').addEventListener('click', ()=>{
   const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
-  if(currentVisitStep >= total) return;
+
+  const photoMsg = missingRequiredPhoto();
+  if(photoMsg){ showToast(photoMsg); return; }
+
+  // On the last step the bar saves instead of advancing
+  if(currentVisitStep >= total){
+    const saveId = currentVisibleSection === 'pool' ? 'btnSaveReading'
+      : (currentVisibleSection === 'spa' ? 'btnSaveSpaReading' : 'btnSaveFountainReading');
+    const btn = document.getElementById(saveId);
+    if(btn && !btn.disabled) btn.click();
+    else if(btn) showToast('Take an after photo first');
+    return;
+  }
   const missing = missingReadingFields();
   if(missing.length){
     showToast(missing.length === 1
@@ -4962,6 +5256,7 @@ async function finalizeVisitSend(){
   const customer = customers.find(c => c.id === customerId);
   if(customer){
     customer.lastServicedDate = todayDateStr();
+    customer.lastServicedAt = new Date().toISOString();
     if(elapsedMs !== null) customer.lastServiceDurationMs = elapsedMs;
     await saveCustomers();
   }
@@ -4970,14 +5265,19 @@ async function finalizeVisitSend(){
   document.getElementById('reportCustomerSelect').value = customerId;
   syncReportCustomerSearchField();
   await renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadings);
-  await attemptAutoSend(customerId, 'combined');
 
-  // Back to the route rather than parking on the report
+  // Back to the route straight away. The email goes out in the background so a
+  // weak signal can't strand the tech on the after-photos page.
   renderHomeList();
   renderServicedList();
   switchView('home');
   const who = customer ? customer.name : 'Customer';
-  showToast(who + ' done — report sent');
+  showToast(who + ' done — sending report');
+
+  Promise.resolve()
+    .then(()=> attemptAutoSend(customerId, 'combined'))
+    .then(()=> showToast('Report sent for ' + who))
+    .catch(()=> showToast("Couldn't send " + who + "'s report — it's saved, try again from the report tab"));
 }
 
 async function renderReport(customerId, readingId){
@@ -5470,6 +5770,7 @@ async function init(){
   document.getElementById('settingTechniciansTab').checked = appSettings.showTechniciansTab !== false;
   document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
   document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
+  document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
   applyTechniciansTabVisibility();
   chemConfig = loadChemConfig();
   renderAllConfigFields();
