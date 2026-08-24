@@ -338,7 +338,8 @@ textarea{min-height:52px;resize:vertical;}
   box-shadow:0 -4px 14px rgba(15,46,46,0.08);
   display:none;
 }
-.step-bar .btn{width:100%;padding:14px 18px;font-size:15.5px;}
+.step-bar #stepBarNext{padding:14px 18px;font-size:15.5px;}
+.step-bar #btnPushToTalk{width:62px !important;flex:0 0 62px !important;padding:0 !important;}
 body.has-step-bar{padding-bottom:146px;}
 .step-back{
   flex-shrink:0;background:none;border:1px solid var(--line);
@@ -710,7 +711,7 @@ select#customerSelect{font-weight:600;}
 <div class="step-bar" id="stepBar">
   <div style="display:flex;align-items:stretch;gap:8px;">
     <button class="btn btn-primary" id="stepBarNext" type="button" style="flex:1;">Next</button>
-    <button class="btn" id="btnPushToTalk" type="button" title="Tap to speak readings"
+    <button class="btn" id="btnPushToTalk" type="button" title="Hold and speak the readings"
       style="flex:0 0 62px;padding:0;display:none;align-items:center;justify-content:center;background:#E7F0F6;border:1.5px solid #A8CBE0;border-radius:10px;cursor:pointer;">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B6FA4" stroke-width="2" stroke-linecap="round">
         <rect x="9" y="2" width="6" height="11" rx="3"></rect>
@@ -3793,9 +3794,16 @@ function syncStepChrome(){
   if(mic){
     const canSpeak = !!currentVisibleSection
       && currentVisibleSection !== 'equipment'
-      && appSettings.pushToTalkEnabled !== false
-      && pttSupported();
+      && appSettings.pushToTalkEnabled !== false;
     mic.style.display = canSpeak ? 'flex' : 'none';
+    // Show it dimmed rather than hiding it, so an unsupported browser can say so
+    if(canSpeak && !pttSupported()){
+      mic.style.opacity = '0.4';
+      mic.title = 'This browser does not support voice entry';
+    } else {
+      mic.style.opacity = '';
+      mic.title = 'Hold and speak the readings';
+    }
     // Sit on whichever side of the step button was chosen
     const row = mic.parentElement;
     const nextBtn = document.getElementById('stepBarNext');
@@ -3883,9 +3891,69 @@ function syncStepChrome(){
 // current section wherever they live, so you can speak them from any step.
 let pttRecognition = null;
 let pttListening = false;
+let pttHeardSoFar = '';
 
 function pttSupported(){
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+
+// What people actually say out loud, mapped to the standard item keys.
+// Custom items still match on their own label, so nothing is lost.
+const SPOKEN_ALIASES = {
+  chlorine:   ['free chlorine', 'free chloride', 'free cl', 'chlorine level', 'chlorine reading',
+               'chlorine', 'chloride', 'chlorin', 'chlorene', 'clorine', 'chlor', 'f c', 'fc'],
+  ph:         ['ph level', 'ph reading', 'ph balance', 'p h level', 'p h reading',
+               'ph', 'p h', 'pee h', 'p age', 'peach', 'ph value'],
+  alkalinity: ['total alkalinity', 'total alkaline', 'alkalinity level', 'alkalinity reading',
+               'alkalinity', 'alkaline', 'alkalinty', 'alkalinety', 'alk', 'total alk',
+               't a', 'ta level'],
+  cya:        ['cyanuric acid', 'cyanuric', 'c y a', 'cya', 'stabilizer', 'stabiliser',
+               'conditioner', 'cyanic acid', 'cynuric', 'sigh anuric', 'stab', 'cyan uric'],
+  tds:        ['total dissolved solids', 't d s', 'tds', 'dissolved solids',
+               'total solids', 'tee d s', 'dissolved solid', 'solids'],
+  calcium:    ['calcium hardness', 'calcium hardness level', 'calcium', 'hardness',
+               'hardness level', 'c h', 'calcium level', 'cal hardness', 'water hardness'],
+  acid:       ['muriatic acid', 'muriatic', 'hydrochloric acid', 'hydrochloric',
+               'acid', 'acid added', 'm a', 'mureatic', 'meriatic', 'muratic', 'acid demand'],
+  tabs:       ['chlorine tabs', 'chlorine tablets', 'chlorine tab', 'tablets', 'tablet',
+               'tabs', 'tab', 'pucks', 'puck', 'sticks', 'stick', 'three inch tabs',
+               'trichlor tabs'],
+  shock:      ['calcium hypochlorite', 'cal hypo', 'cal hypochlorite', 'shock treatment',
+               'shock', 'shocked', 'di chlor', 'dichlor', 'tri chlor', 'trichlor',
+               'granular shock', 'pool shock', 'shock added'],
+  soda:       ['soda ash', 'sodium carbonate', 'ph up', 'ph increaser', 'ph riser',
+               'soda', 'ash', 'sodash', 'increaser'],
+  bicarb:     ['sodium bicarbonate', 'sodium bicarb', 'bicarbonate', 'bicarb',
+               'baking soda', 'alkalinity up', 'alk up', 'alkalinity increaser',
+               'buffer', 'bi carb'],
+  algaecide:  ['algaecide', 'algecide', 'algicide', 'algae cide', 'algae side',
+               'algae killer', 'algae treatment', 'algae', 'algy side', 'skillet',
+               'sixty percent', 'polyquat'],
+  phosphate:  ['phosphate remover', 'phosphate free', 'phosphates', 'phosphate',
+               'phos free', 'phosfree', 'p r ten thousand', 'pr ten thousand',
+               'p r 10000', 'pr 10000', 'p o four', 'po4', 'phosphate treatment',
+               'remover'],
+  salt:       ['salt level', 'salt reading', 'sodium chloride', 'salt cell reading',
+               'salt', 'saline', 'salinity'],
+  chlorinator:['liquid chlorine', 'sodium hypochlorite', 'liquid chlor', 'bleach',
+               'liquid', 'chlorine liquid', 'jugs', 'gallons of chlorine', 'hypochlorite']
+};
+
+// Every phrase that should match one configured item
+function spokenPhrasesFor(item){
+  const out = [];
+  if(item.label) out.push(item.label.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim());
+  const key = (item.key || '').toLowerCase();
+  Object.keys(SPOKEN_ALIASES).forEach(canon=>{
+    // Match on the item's key, or on its label containing the canonical word
+    const labelHas = (item.label || '').toLowerCase().indexOf(canon) !== -1;
+    if(key === canon || key.indexOf(canon) !== -1 || labelHas){
+      SPOKEN_ALIASES[canon].forEach(p => out.push(p));
+    }
+  });
+  // Longest first so "total alkalinity" beats "alkalinity"
+  return Array.from(new Set(out.filter(Boolean))).sort((a,b)=> b.length - a.length);
 }
 
 function parseSpokenReadings(transcript){
@@ -3904,20 +3972,34 @@ function parseSpokenReadings(transcript){
 
   const targets = [];
   (lists.chemicals || []).forEach(i=>{
-    if(i.label) targets.push({label:i.label, id:fieldId(type,'chem',i.key)});
+    if(i.label) targets.push({label:i.label, id:fieldId(type,'chem',i.key), phrases:spokenPhrasesFor(i)});
   });
   (lists.dosages || []).forEach(i=>{
-    if(i.label) targets.push({label:i.label, id:fieldId(type,'dose',i.key)});
+    if(i.label) targets.push({label:i.label, id:fieldId(type,'dose',i.key), phrases:spokenPhrasesFor(i)});
   });
 
-  // Longest labels first so "total alkalinity" wins over "alkalinity"
-  targets.sort((a,b)=> b.label.length - a.label.length);
+  // Try the most specific phrase across all items first, so "total alkalinity"
+  // is never mistaken for a shorter match
+  targets.sort((a,b)=>{
+    const al = a.phrases[0] ? a.phrases[0].length : 0;
+    const bl = b.phrases[0] ? b.phrases[0].length : 0;
+    return bl - al;
+  });
 
   const applied = [];
+  const used = [];
   targets.forEach(t=>{
-    const name = t.label.toLowerCase().replace(/[^a-z0-9 ]/g, '');
-    if(!name || said.indexOf(name) === -1) return;
-    const after = said.slice(said.indexOf(name) + name.length, said.indexOf(name) + name.length + 30);
+    let at = -1, name = '';
+    for(const p of t.phrases){
+      const i = said.indexOf(p);
+      // Don't reuse a stretch of speech already claimed by another item
+      if(i !== -1 && !used.some(u => i < u.end && i + p.length > u.start)){
+        at = i; name = p; break;
+      }
+    }
+    if(at === -1) return;
+    used.push({start: at, end: at + name.length});
+    const after = said.slice(at + name.length, at + name.length + 30);
     // "7.4", "7 point 4", or a spelled-out number
     let m = after.match(/^[^0-9a-z]*(\d+(?:\.\d+)?)/);
     let value = m ? m[1] : null;
@@ -3950,32 +4032,39 @@ function setPttState(on){
 }
 
 function startPushToTalk(){
-  if(!pttSupported()){ showToast('This phone does not support voice entry'); return; }
-  if(pttListening){ stopPushToTalk(); return; }
+  if(!pttSupported()){
+    showToast('Voice entry needs Chrome on Android, or Safari on iPhone');
+    return;
+  }
+  if(pttListening) return;
 
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   pttRecognition = new Rec();
-  pttRecognition.continuous = false;     // one utterance, then stop
+  // Held down, so keep listening through pauses until the finger lifts
+  pttRecognition.continuous = true;
   pttRecognition.interimResults = false;
   pttRecognition.lang = 'en-US';
 
+  pttHeardSoFar = '';
   pttRecognition.onresult = (e)=>{
-    let said = '';
-    for(let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript + ' ';
-    const applied = parseSpokenReadings(said);
-    if(applied.length){
-      showToast('Got ' + applied.join(', '));
-    } else {
-      showToast('Didn\'t catch a reading in that');
+    for(let i = e.resultIndex; i < e.results.length; i++){
+      if(e.results[i].isFinal) pttHeardSoFar += e.results[i][0].transcript + ' ';
     }
   };
   pttRecognition.onerror = ()=>{ setPttState(false); };
-  pttRecognition.onend = ()=>{ setPttState(false); };
+  pttRecognition.onend = ()=>{
+    setPttState(false);
+    // Everything heard during the hold is applied in one go on release
+    const applied = parseSpokenReadings(pttHeardSoFar);
+    if(applied.length) showToast('Got ' + applied.join(', '));
+    else if(pttHeardSoFar.trim()) showToast('Didn\'t catch a reading in that');
+    pttHeardSoFar = '';
+  };
 
   try{
     pttRecognition.start();
     setPttState(true);
-    showToast('Listening — say the reading');
+    showToast('Listening — keep holding');
   }catch(e){
     setPttState(false);
   }
@@ -3988,10 +4077,40 @@ function stopPushToTalk(){
   setPttState(false);
 }
 
-document.getElementById('btnPushToTalk').addEventListener('click', (e)=>{
-  e.preventDefault();
-  startPushToTalk();
-});
+(function wirePushToTalk(){
+  const mic = document.getElementById('btnPushToTalk');
+  if(!mic) return;
+
+  // Stops the browser turning a long press into a text selection or callout
+  mic.style.touchAction = 'none';
+  mic.style.webkitUserSelect = 'none';
+  mic.style.userSelect = 'none';
+  mic.style.webkitTouchCallout = 'none';
+
+  mic.addEventListener('touchstart', (e)=>{
+    e.preventDefault();
+    startPushToTalk();
+  }, {passive:false});
+
+  ['touchend','touchcancel'].forEach(ev=>{
+    mic.addEventListener(ev, (e)=>{
+      e.preventDefault();
+      stopPushToTalk();
+    }, {passive:false});
+  });
+
+  // Mouse equivalent so it behaves the same on a desktop
+  mic.addEventListener('mousedown', (e)=>{
+    e.preventDefault();
+    startPushToTalk();
+  });
+  document.addEventListener('mouseup', ()=>{
+    if(pttListening) stopPushToTalk();
+  });
+
+  // A click would fire after touchend and restart it, so swallow it
+  mic.addEventListener('click', (e)=> e.preventDefault());
+})();
 
 // Never keep listening once the screen goes off or a visit ends
 document.addEventListener('visibilitychange', ()=>{
