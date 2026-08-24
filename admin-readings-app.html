@@ -432,10 +432,16 @@ select#customerSelect{font-weight:600;}
   <div class="view active" id="view-home">
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;flex:1;">
           <h2 style="margin:0;" id="homeDayHeading">Today</h2>
-          <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
-          <span id="homeJobCount" style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:700;color:var(--gold);"></span>
+          <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px;">
+            <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
+            <span id="homeStopLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
+          </span>
+          <span style="display:inline-flex;align-items:baseline;gap:6px;">
+            <span id="homeJobCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);"></span>
+            <span id="homeJobLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
+          </span>
         </div>
         <span id="voiceModeIndicator" style="display:none;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
@@ -526,6 +532,17 @@ select#customerSelect{font-weight:600;}
     <div class="card" id="visitPoolPhotoSection" style="display:none;">
       <h2>After photos</h2>
       <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <div id="gatePhotoBlock" style="display:none;margin-bottom:16px;padding:14px;border:1.5px solid #E8B5A8;border-radius:11px;background:#FBEAE6;text-align:center;">
+        <div style="font-size:14px;font-weight:700;color:#B8492E;margin-bottom:4px;">Closed gate photo required</div>
+        <p style="font-size:12px;color:#8C4429;margin:0 0 12px;">Photograph the gate closed or locked before submitting.</p>
+        <button type="button" class="btn" id="btnTakeGatePhoto" style="width:auto;padding:14px 28px;font-size:16px;background:#B8492E;color:#fff;border:1.5px solid #B8492E;margin:0 auto;">Take gate photo</button>
+        <input type="file" accept="image/*" capture="environment" id="inGatePhoto" style="display:none;">
+        <div id="gatePhotoWrap" style="display:none;margin-top:12px;">
+          <img id="gatePhotoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Gate photo">
+          <button type="button" class="btn btn-ghost" id="btnRemoveGatePhoto" style="width:auto;margin-top:8px;color:var(--rust);border-color:#EFC9BC;">Remove</button>
+        </div>
+      </div>
+
       <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
       <div id="photoPreviewWrap" style="display:none;margin-bottom:12px;">
         <img id="photoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
@@ -542,7 +559,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inNotes" placeholder="Added 2 lbs shock, backwashed filter..."></textarea>
       </div>
-      <button class="btn btn-primary" id="btnSaveReading" style="display:none;">Save pool reading</button>
+      <button class="btn btn-primary" id="btnSaveReading" style="display:none;">Submit service report</button>
     </div>
 
     <!-- SPA SECTION -->
@@ -588,7 +605,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inSpaNotes" placeholder="Drained and refilled, cleaned filter..."></textarea>
       </div>
-      <button class="btn btn-primary" id="btnSaveSpaReading" style="display:none;">Save spa reading</button>
+      <button class="btn btn-primary" id="btnSaveSpaReading" style="display:none;">Submit service report</button>
     </div>
 
     <!-- FOUNTAIN SECTION -->
@@ -633,7 +650,7 @@ select#customerSelect{font-weight:600;}
         <label>Service notes (optional)</label>
         <textarea id="inFountainNotes" placeholder="Cleaned basin, cleared debris from pump..."></textarea>
       </div>
-      <button class="btn btn-primary" id="btnSaveFountainReading" style="display:none;">Save reading</button>
+      <button class="btn btn-primary" id="btnSaveFountainReading" style="display:none;">Submit service report</button>
     </div>
 
   </div>
@@ -832,6 +849,35 @@ select#customerSelect{font-weight:600;}
     <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Voice entry button</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingPushToTalk" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 12px;">Shows a microphone next to the step button. Tap it and speak readings or dosages — "chlorine three, pH seven point four" — and they fill in wherever they belong. It only listens while you're speaking, so there's no constant chiming.</p>
+        <label style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">Microphone position</label>
+        <div class="btn-row" id="micSideRow">
+          <button type="button" class="btn btn-ghost" data-micside="left" style="flex:1;">Left of button</button>
+          <button type="button" class="btn btn-ghost" data-micside="right" style="flex:1;">Right of button</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Require a closed gate photo</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireGatePhoto">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
           <h2 style="margin:0;">Require a reason for skipped services</h2>
           <label class="toggle-switch">
             <input type="checkbox" id="settingRequireSkipReason">
@@ -915,7 +961,16 @@ select#customerSelect{font-weight:600;}
 </div>
 
 <div class="step-bar" id="stepBar">
-  <button class="btn btn-primary" id="stepBarNext" type="button">Next</button>
+  <div style="display:flex;align-items:stretch;gap:8px;">
+    <button class="btn btn-primary" id="stepBarNext" type="button" style="flex:1;">Next</button>
+    <button class="btn" id="btnPushToTalk" type="button" title="Tap to speak readings"
+      style="flex:0 0 62px;padding:0;display:none;align-items:center;justify-content:center;background:#E7F0F6;border:1.5px solid #A8CBE0;border-radius:10px;cursor:pointer;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0B6FA4" stroke-width="2" stroke-linecap="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"></rect>
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>
+      </svg>
+    </button>
+  </div>
 </div>
 
 <div class="bottombar">
@@ -1510,18 +1565,50 @@ function buildVoiceFieldsForType(type){
 
 
 // Save stays disabled until an after photo has been taken for that section.
+
+// ---------- Closed gate photo ----------
+// Proof the property was left secure. Only shown when the setting is on.
+// Should the gate photo block appear on this visit at all
+function gatePhotoApplies(){
+  if(appSettings.requireGatePhoto !== true) return false;
+  if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
+  return true;
+}
+
+// Does a missing gate photo block THIS section's submit?
+// The capture button lives on the pool's after-photos card, so only the pool
+// section can be held up by it — otherwise spa and fountain would lock with no
+// way to take the photo.
+function gatePhotoRequired(){
+  if(!gatePhotoApplies()) return false;
+  return currentVisibleSection === 'pool';
+}
+
+function syncGatePhotoBlock(){
+  const block = document.getElementById('gatePhotoBlock');
+  if(!block) return;
+  block.style.display = gatePhotoApplies() ? 'block' : 'none';
+}
+
 function refreshSaveButtons(){
   [['btnSaveReading', poolPhotoController],
    ['btnSaveSpaReading', spaPhotoController],
    ['btnSaveFountainReading', fountainPhotoController]].forEach(([btnId, ctrl])=>{
     const btn = document.getElementById(btnId);
     if(!btn || !ctrl) return;
-    const ready = !!ctrl.getData();
+    const gateOk = !gatePhotoRequired()
+      || (typeof gatePhotoController !== 'undefined' && !!gatePhotoController.getData());
+    const ready = !!ctrl.getData() && gateOk;
     btn.disabled = !ready;
     btn.style.opacity = ready ? '' : '0.4';
     btn.style.cursor = ready ? '' : 'not-allowed';
-    btn.title = ready ? '' : 'Take an after photo first';
+    btn.title = ready
+      ? ''
+      : (!ctrl.getData() ? 'Take an after photo first' : 'Take a closed gate photo first');
   });
+  // The visible control is the fixed bar, so refresh it too — otherwise it
+  // stays greyed out until something else redraws it.
+  if(typeof syncStepChrome === 'function') syncStepChrome();
 }
 
 function refreshDynamicFieldLabels(){
@@ -1859,6 +1946,75 @@ function reorderEquipmentType(draggedType, targetType){
   persistCurrentEquipmentTypeOptions();
 }
 
+
+// ---------- Touch-friendly reordering (shared) ----------
+// HTML5 drag barely fires on phones, so handle touch directly.
+function attachTouchReorder(handle, item, container, itemSelector, onReorder){
+  let dragging = false;
+  function itemsIn(){ return Array.from(container.querySelectorAll(itemSelector)); }
+  function lift(){
+    dragging = true;
+    item.style.opacity = '0.9';
+    item.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
+    item.style.borderRadius = '10px';
+    item.style.position = 'relative';
+    item.style.zIndex = '30';
+    document.body.style.overflow = 'hidden';
+  }
+  function drop(){
+    dragging = false;
+    item.style.opacity = '';
+    item.style.boxShadow = '';
+    item.style.borderRadius = '';
+    item.style.position = '';
+    item.style.zIndex = '';
+    document.body.style.overflow = '';
+    const keys = itemsIn().map(el => el.dataset.reorderKey).filter(k => k !== undefined);
+    if(keys.length && onReorder) onReorder(keys);
+  }
+  function moveTo(clientX, clientY){
+    const others = itemsIn().filter(el => el !== item);
+    for(const other of others){
+      const b = other.getBoundingClientRect();
+      if(clientX > b.left && clientX < b.right && clientY > b.top && clientY < b.bottom){
+        const wide = b.width > b.height;
+        const past = wide ? clientX > b.left + b.width / 2 : clientY > b.top + b.height / 2;
+        if(past) other.after(item); else other.before(item);
+        return;
+      }
+    }
+  }
+  handle.style.touchAction = 'none';
+  handle.style.webkitUserSelect = 'none';
+  handle.style.userSelect = 'none';
+  handle.style.cursor = 'grab';
+  handle.addEventListener('touchstart', (e)=>{
+    if(e.touches.length !== 1) return;
+    e.preventDefault(); lift();
+  }, {passive:false});
+  handle.addEventListener('touchmove', (e)=>{
+    if(!dragging) return;
+    e.preventDefault();
+    moveTo(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive:false});
+  handle.addEventListener('touchend', (e)=>{
+    if(!dragging) return;
+    e.preventDefault(); drop();
+  }, {passive:false});
+  handle.addEventListener('touchcancel', ()=>{ if(dragging) drop(); });
+  handle.addEventListener('mousedown', (e)=>{
+    e.preventDefault(); lift();
+    const onMove = (ev)=>{ if(dragging) moveTo(ev.clientX, ev.clientY); };
+    const onUp = ()=>{
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if(dragging) drop();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 function renderEquipmentTypeOrderList(){
   const container = document.getElementById('icEquipmentTypeOrderList');
   if(!container) return;
@@ -1871,15 +2027,21 @@ function renderEquipmentTypeOrderList(){
     const row = document.createElement('div');
     row.className = 'cust-row';
     row.style.gap = '8px';
-    row.style.cursor = 'grab';
-    row.draggable = true;
+    row.dataset.reorderKey = type;
 
     const handle = document.createElement('div');
-    handle.textContent = '⠿';
+    handle.textContent = '\u2261';
+    handle.title = 'Drag to reorder';
     handle.style.color = 'var(--muted)';
-    handle.style.fontSize = '16px';
+    handle.style.fontSize = '19px';
     handle.style.flexShrink = '0';
-    handle.style.userSelect = 'none';
+    handle.style.padding = '0 8px 0 2px';
+    attachTouchReorder(handle, row, container, '[data-reorder-key]', (keys)=>{
+      currentEquipmentTypeOptions = keys.slice();
+      persistCurrentEquipmentTypeOptions();
+      renderEquipmentTypeOrderList();
+      renderEquipmentTypeList();
+    });
 
     const label = document.createElement('div');
     label.style.flex = '1';
@@ -2009,6 +2171,25 @@ function openEquipmentNotesModal(item){
   });
   overlay.querySelector('#equipmentNotesCancel').addEventListener('click', cleanup);
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+}
+
+
+// Full-size photo viewer, used when tapping an equipment thumbnail
+function openHistoryPhotoModal(dataUrl, caption){
+  if(!dataUrl) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '400';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:92vw;max-height:90vh;display:flex;flex-direction:column;gap:10px;">
+      ${caption ? '<div style="font-size:13px;font-weight:600;">' + caption + '</div>' : ''}
+      <img src="${dataUrl}" alt="Photo" style="max-width:100%;max-height:70vh;object-fit:contain;border-radius:10px;border:1px solid var(--line);display:block;">
+      <button class="btn btn-primary" id="histPhotoClose" style="width:100%;">Close</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  const done = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#histPhotoClose').addEventListener('click', done);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) done(); });
 }
 
 function openEquipmentPhotoModal(item){
@@ -2348,17 +2529,26 @@ const fountainPhotoController = makePhotoController({
   previewWrap: 'photoPreviewWrapFountain', previewImg: 'photoPreviewFountain', removeBtn: 'btnRemovePhotoFountain'
 });
 
+const gatePhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
+  takeBtn: 'btnTakeGatePhoto', fileInput: 'inGatePhoto',
+  previewWrap: 'gatePhotoWrap', previewImg: 'gatePhotoPreview', removeBtn: 'btnRemoveGatePhoto'
+});
+
 const poolBeforePhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhotoBefore', fileInput: 'inPhotoBefore',
   previewWrap: 'photoPreviewWrapBefore', previewImg: 'photoPreviewBefore', removeBtn: 'btnRemovePhotoBefore'
 });
 
 const spaBeforePhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhotoBeforeSpa', fileInput: 'inPhotoBeforeSpa',
   previewWrap: 'photoPreviewWrapBeforeSpa', previewImg: 'photoPreviewBeforeSpa', removeBtn: 'btnRemovePhotoBeforeSpa'
 });
 
 const fountainBeforePhotoController = makePhotoController({
+  onChange: ()=> refreshSaveButtons(),
   takeBtn: 'btnTakePhotoBeforeFountain', fileInput: 'inPhotoBeforeFountain',
   previewWrap: 'photoPreviewWrapBeforeFountain', previewImg: 'photoPreviewBeforeFountain', removeBtn: 'btnRemovePhotoBeforeFountain'
 });
@@ -2462,6 +2652,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     photo: poolPhotoController.getData() || null,
     beforePhoto: beforeControllerFor('pool').getData() || null,
     isFilterClean: isFilterCleanVisit,
+    gatePhoto: gatePhotoController.getData() || null,
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
   };
@@ -2491,6 +2682,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
   });
   document.getElementById('inNotes').value = '';
   poolPhotoController.clear();
+  gatePhotoController.clear();
   beforeControllerFor('pool').clear();
   ['chkBackwashed','chkSaltCell'].forEach(id=>{
     const el = document.getElementById(id);
@@ -3444,9 +3636,13 @@ function renderHomeList(){
   const totalStops = remaining + (weekOffset === 0 ? doneToday : 0);
 
   const stopEl = document.getElementById('homeStopCount');
+  const stopLabelEl = document.getElementById('homeStopLabel');
   if(stopEl){
-    stopEl.textContent = totalStops ? remaining + '/' + totalStops : '';
-    stopEl.title = totalStops ? remaining + ' of ' + totalStops + ' stops left' : '';
+    stopEl.textContent = totalStops ? remaining + ' of ' + totalStops : '';
+    stopEl.title = totalStops ? remaining + ' of ' + totalStops + ' stops left today' : '';
+  }
+  if(stopLabelEl){
+    stopLabelEl.textContent = totalStops ? 'stops left' : '';
   }
 
   // Work orders and filter cleans landing on this day count as jobs
@@ -3458,11 +3654,23 @@ function renderHomeList(){
     .filter(j => j.status === 'scheduled' && j.date === selectedDayISO)
     .forEach(j => jobIds.add(j.customerId));
   const jobCount = todaysCustomers.filter(cust => jobIds.has(cust.id)).length;
+  // Jobs already completed today still count toward the total
+  const jobsDone = customers.filter(cust =>
+    cust.active !== false &&
+    cust.lastServicedDate === today &&
+    jobIds.has(cust.id)
+  ).length;
+  const jobsTotal = jobCount + (weekOffset === 0 ? jobsDone : 0);
+
   const jobEl = document.getElementById('homeJobCount');
+  const jobLabelEl = document.getElementById('homeJobLabel');
   if(jobEl){
-    jobEl.textContent = jobCount ? jobCount + (jobCount === 1 ? ' job' : ' jobs') : '';
-    jobEl.title = jobCount ? 'Filter cleans and work orders scheduled today' : '';
+    jobEl.textContent = jobCount + ' of ' + jobsTotal;
+    jobEl.title = jobsTotal
+      ? jobCount + ' of ' + jobsTotal + ' filter cleans and work orders left today'
+      : 'No filter cleans or work orders scheduled today';
   }
+  if(jobLabelEl) jobLabelEl.textContent = 'jobs';
 
   const dateInfo = document.getElementById('homeDateInfo');
   const stopText = todaysCustomers.length === 1 ? '1 route stop' : todaysCustomers.length + ' route stops';
@@ -4317,7 +4525,7 @@ let pendingVisit = null;
 // sectionId is 'pool', 'spa', or a fountain's id
 
 // Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
-const DEFAULT_SETTINGS = { voiceModeEnabled: false, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showTechniciansTab: true };
+const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, requireBeforePhotos: false, requireAfterPhotos: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showTechniciansTab: true };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 // Voice entry has been removed — the browser chimed on every restart and that
 // sound can't be muted from a web app.
@@ -4345,6 +4553,37 @@ function applyVoiceModeSetting(){
 }
 
 document.getElementById('btnAdminLogout').addEventListener('click', adminLogout);
+
+
+function renderMicSideButtons(){
+  const side = appSettings.micSide === 'left' ? 'left' : 'right';
+  document.querySelectorAll('#micSideRow [data-micside]').forEach(b=>{
+    b.className = b.dataset.micside === side ? 'btn btn-primary' : 'btn btn-ghost';
+  });
+}
+
+document.querySelectorAll('#micSideRow [data-micside]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    appSettings.micSide = btn.dataset.micside;
+    saveSettings();
+    renderMicSideButtons();
+    if(typeof syncStepChrome === 'function') syncStepChrome();
+    showToast('Microphone moved to the ' + btn.dataset.micside);
+  });
+});
+
+document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
+  appSettings.pushToTalkEnabled = e.target.checked;
+  saveSettings();
+  if(typeof syncStepChrome === 'function') syncStepChrome();
+  showToast(appSettings.pushToTalkEnabled ? 'Voice entry button on' : 'Voice entry button off');
+});
+
+document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
+  appSettings.requireGatePhoto = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireGatePhoto ? 'Gate photo now required' : 'Gate photo no longer required');
+});
 
 document.getElementById('settingRequireSkipReason').addEventListener('change', (e)=>{
   appSettings.requireSkipReason = e.target.checked;
@@ -4761,7 +5000,7 @@ function applyVisitStep(){
   const steps = visitStepCardsFor(currentVisibleSection);
   if(!steps) return;
   document.querySelectorAll('[data-final-step-label]').forEach(btn=>{
-    btn.textContent = appSettings.showAfterPhotos !== false ? 'After photos →' : 'Save reading →';
+    btn.textContent = appSettings.showAfterPhotos !== false ? 'After photos →' : 'Submit service report →';
   });
   steps.forEach((entry, i)=>{
     const ids = Array.isArray(entry) ? entry : [entry];
@@ -4785,9 +5024,9 @@ function stepNextLabel(){
   const nextEntry = steps[currentVisitStep];       // the step after this one
   if(!nextEntry){
     // Final step — the bar becomes the save action
-    if(currentVisibleSection === 'pool') return 'Save pool reading';
-    if(currentVisibleSection === 'spa') return 'Save spa reading';
-    return 'Save reading';
+    if(currentVisibleSection === 'pool') return 'Submit service report';
+    if(currentVisibleSection === 'spa') return 'Submit service report';
+    return 'Submit service report';
   }
   const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
   if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
@@ -4802,6 +5041,24 @@ function syncStepChrome(){
   const bar = document.getElementById('stepBar');
   const nextBtn = document.getElementById('stepBarNext');
   if(!bar || !nextBtn) return;
+
+  // Mic shows whenever a reading or dosage could be spoken
+  const mic = document.getElementById('btnPushToTalk');
+  if(mic){
+    const canSpeak = !!currentVisibleSection
+      && currentVisibleSection !== 'equipment'
+      && appSettings.pushToTalkEnabled !== false
+      && pttSupported();
+    mic.style.display = canSpeak ? 'flex' : 'none';
+    // Sit on whichever side of the step button was chosen
+    const row = mic.parentElement;
+    const nextBtn = document.getElementById('stepBarNext');
+    if(row && nextBtn){
+      const onLeft = appSettings.micSide === 'left';
+      if(onLeft && row.firstElementChild !== mic) row.insertBefore(mic, nextBtn);
+      if(!onLeft && row.lastElementChild !== mic) row.appendChild(mic);
+    }
+  }
 
   const label = stepNextLabel();
   if(currentVisibleSection && label){
@@ -4874,6 +5131,127 @@ function syncStepChrome(){
   }
 }
 
+
+// ---------- Push to talk ----------
+// One tap, one listen, one chime. Fills chemical readings and dosages for the
+// current section wherever they live, so you can speak them from any step.
+let pttRecognition = null;
+let pttListening = false;
+
+function pttSupported(){
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function parseSpokenReadings(transcript){
+  const said = (transcript || '').toLowerCase();
+  const type = currentVisibleSection;
+  if(!type || type === 'equipment') return [];
+
+  const cid = currentVisitCustomerId;
+  const lists = cid
+    ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+    : chemConfig[type];
+  if(!lists) return [];
+
+  const words = {zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7,
+                 eight:8, nine:9, ten:10, eleven:11, twelve:12};
+
+  const targets = [];
+  (lists.chemicals || []).forEach(i=>{
+    if(i.label) targets.push({label:i.label, id:fieldId(type,'chem',i.key)});
+  });
+  (lists.dosages || []).forEach(i=>{
+    if(i.label) targets.push({label:i.label, id:fieldId(type,'dose',i.key)});
+  });
+
+  // Longest labels first so "total alkalinity" wins over "alkalinity"
+  targets.sort((a,b)=> b.label.length - a.label.length);
+
+  const applied = [];
+  targets.forEach(t=>{
+    const name = t.label.toLowerCase().replace(/[^a-z0-9 ]/g, '');
+    if(!name || said.indexOf(name) === -1) return;
+    const after = said.slice(said.indexOf(name) + name.length, said.indexOf(name) + name.length + 30);
+    // "7.4", "7 point 4", or a spelled-out number
+    let m = after.match(/^[^0-9a-z]*(\d+(?:\.\d+)?)/);
+    let value = m ? m[1] : null;
+    if(!value){
+      const pm = after.match(/^[^0-9a-z]*(\d+)\s*point\s*(\d+)/);
+      if(pm) value = pm[1] + '.' + pm[2];
+    }
+    if(!value){
+      const wm = after.match(/^[^a-z]*([a-z]+)/);
+      if(wm && words[wm[1]] !== undefined) value = String(words[wm[1]]);
+    }
+    if(value === null) return;
+    const el = document.getElementById(t.id);
+    if(!el) return;
+    el.value = value;
+    el.dispatchEvent(new Event('input', {bubbles:true}));
+    applied.push(t.label + ' ' + value);
+  });
+  return applied;
+}
+
+function setPttState(on){
+  const btn = document.getElementById('btnPushToTalk');
+  if(!btn) return;
+  pttListening = on;
+  btn.style.background = on ? '#0B6FA4' : '#E7F0F6';
+  btn.style.borderColor = on ? '#0B6FA4' : '#A8CBE0';
+  const svg = btn.querySelector('svg');
+  if(svg) svg.setAttribute('stroke', on ? '#fff' : '#0B6FA4');
+}
+
+function startPushToTalk(){
+  if(!pttSupported()){ showToast('This phone does not support voice entry'); return; }
+  if(pttListening){ stopPushToTalk(); return; }
+
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  pttRecognition = new Rec();
+  pttRecognition.continuous = false;     // one utterance, then stop
+  pttRecognition.interimResults = false;
+  pttRecognition.lang = 'en-US';
+
+  pttRecognition.onresult = (e)=>{
+    let said = '';
+    for(let i = 0; i < e.results.length; i++) said += e.results[i][0].transcript + ' ';
+    const applied = parseSpokenReadings(said);
+    if(applied.length){
+      showToast('Got ' + applied.join(', '));
+    } else {
+      showToast('Didn\'t catch a reading in that');
+    }
+  };
+  pttRecognition.onerror = ()=>{ setPttState(false); };
+  pttRecognition.onend = ()=>{ setPttState(false); };
+
+  try{
+    pttRecognition.start();
+    setPttState(true);
+    showToast('Listening — say the reading');
+  }catch(e){
+    setPttState(false);
+  }
+}
+
+function stopPushToTalk(){
+  if(pttRecognition){
+    try{ pttRecognition.stop(); }catch(e){}
+  }
+  setPttState(false);
+}
+
+document.getElementById('btnPushToTalk').addEventListener('click', (e)=>{
+  e.preventDefault();
+  startPushToTalk();
+});
+
+// Never keep listening once the screen goes off or a visit ends
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden && pttListening) stopPushToTalk();
+});
+
 document.getElementById('stepBarNext').addEventListener('click', ()=>{
   const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
 
@@ -4886,7 +5264,9 @@ document.getElementById('stepBarNext').addEventListener('click', ()=>{
       : (currentVisibleSection === 'spa' ? 'btnSaveSpaReading' : 'btnSaveFountainReading');
     const btn = document.getElementById(saveId);
     if(btn && !btn.disabled) btn.click();
-    else if(btn) showToast('Take an after photo first');
+    else if(btn) showToast(gatePhotoRequired() && !gatePhotoController.getData()
+      ? 'Take a closed gate photo first'
+      : 'Take an after photo first');
     return;
   }
   const missing = missingReadingFields();
@@ -5164,6 +5544,8 @@ async function openVisit(customerId){
   document.getElementById('visitCustomerName').textContent = customer.name;
 
   isFilterCleanVisit = detectFilterCleanVisit(customerId);
+  gatePhotoController.clear();
+  syncGatePhotoBlock();
 
   // A filter clean gets its own wording, and skips the equipment toggles
   const beforeCard = document.getElementById('visitPoolBeforePhotoSection');
@@ -5268,6 +5650,15 @@ async function finalizeVisitSend(){
 
   // Back to the route straight away. The email goes out in the background so a
   // weak signal can't strand the tech on the after-photos page.
+  // Clear the visit identity before leaving, otherwise switchView captures a
+  // fresh draft on the way out and the finished visit resumes next time.
+  currentVisitCustomerId = null;
+  currentVisibleSection = null;
+  currentVisitStep = 1;
+  visitStepBySection = {};
+  fountainDraftValues = {};
+  visitDraft = {customerId: null, values: {}, section: null, step: 1};
+
   renderHomeList();
   renderServicedList();
   switchView('home');
@@ -5771,6 +6162,9 @@ async function init(){
   document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
   document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
   document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
+  document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+  document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
+  renderMicSideButtons();
   applyTechniciansTabVisibility();
   chemConfig = loadChemConfig();
   renderAllConfigFields();

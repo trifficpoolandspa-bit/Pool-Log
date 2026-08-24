@@ -250,7 +250,8 @@ input::placeholder{color:#A9BCB9;}
   content:'';position:absolute;top:100%;left:18px;
   border:6px solid transparent;border-top-color:var(--ink);
 }
-.access-row:hover .access-tip{opacity:1;visibility:visible;transform:translateY(0);}
+.access-row:hover .access-tip,
+.access-row.tip-open .access-tip{opacity:1;visibility:visible;transform:translateY(0);}
 .profile-meta-label{
   display:block;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;
   color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px;
@@ -697,6 +698,14 @@ input::placeholder{color:#A9BCB9;}
 
       <div id="customBodyList" style="display:none;"></div>
 
+      <div id="customExistingWrap" style="margin-top:18px;padding-top:14px;border-top:1px solid var(--line);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;">Customers with a custom setup</span>
+          <button class="btn btn-ghost" id="btnClearAllCustom" style="width:auto;padding:6px 11px;font-size:12px;color:var(--rust);border-color:#EFC9BC;">Clear all</button>
+        </div>
+        <div id="customExistingList"></div>
+      </div>
+
       <div class="btn-row" id="customActionRow" style="display:none;margin-top:16px;align-items:center;gap:10px;flex-wrap:wrap;">
         <button class="btn btn-ghost" id="btnUndoCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;">Undo changes</button>
         <button class="btn btn-ghost" id="btnDeleteCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;color:var(--rust);border-color:#EFC9BC;">Delete</button>
@@ -939,13 +948,38 @@ input::placeholder{color:#A9BCB9;}
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Voice entry button</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingPushToTalk" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 12px;">Shows a microphone next to the step button in the field apps. Technicians tap it and speak readings or dosages — "chlorine three, pH seven point four" — and the values fill in wherever they belong. It only listens while they speak.</p>
+      <label style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;">Microphone position</label>
+      <div class="btn-row" id="micSideRow">
+        <button type="button" class="btn btn-ghost" data-micside="left" style="flex:1;">Left of button</button>
+        <button type="button" class="btn btn-ghost" data-micside="right" style="flex:1;">Right of button</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require a closed gate photo</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireGatePhoto">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report. Proof the property was left secure.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Require after photos</h2>
         <label class="toggle-switch">
           <input type="checkbox" id="settingRequireAfterPhotos">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can save the reading. Has no effect while the After photos step is switched off below.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can submit the service report. Has no effect while the After photos step is switched off below.</p>
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -1274,8 +1308,26 @@ function saveRoutes(){
   lsSet('routes', routes);
 }
 
-function saveRouteOrders(){
+function saveRouteOrders(dayJustChanged){
   lsSet('routeOrders', routeOrders);
+
+  // A technician dragging on their phone saves an override that would otherwise
+  // shadow this order forever. Setting the order here is the admin's decision,
+  // so clear those overrides for the day being changed.
+  if(dayJustChanged){
+    const fro = lsGet('fieldRouteOrder') || {};
+    let touched = false;
+    Object.keys(fro).forEach(k=>{
+      // Keys look like "day:Monday", "date:2026-08-20", or an older bare day name
+      if(k === dayJustChanged
+         || k.startsWith('day:' + dayJustChanged)
+         || k.startsWith('date:')){
+        delete fro[k];
+        touched = true;
+      }
+    });
+    if(touched) lsSet('fieldRouteOrder', fro);
+  }
 }
 
 function routeKeyFor(c){
@@ -1338,7 +1390,7 @@ function reorderCustomer(day, routeKey, draggedId, targetId, placeBelow){
 
   order.splice(toIndex, 0, draggedId);
   dayOrders[routeKey] = order;
-  saveRouteOrders();
+  saveRouteOrders(day);
   renderRouteOrderList();
   renderRouteMapPins();
 }
@@ -1354,7 +1406,7 @@ function nudgeRouteCustomer(day, routeKey, customerId, delta){
   order.splice(i, 1);
   order.splice(j, 0, customerId);
   dayOrders[routeKey] = order;
-  saveRouteOrders();
+  saveRouteOrders(day);
   renderRouteOrderList();
   renderRouteMapPins();
 }
@@ -1375,16 +1427,23 @@ function renderRouteOrderList(){
     const row = document.createElement('div');
     row.className = 'cust-row';
     row.style.gap = '8px';
-    row.style.cursor = 'grab';
-    row.draggable = true;
     row.dataset.customerId = c.id;
+    row.dataset.reorderKey = c.id;
 
     const handle = document.createElement('div');
-    handle.textContent = '⠿';
+    handle.textContent = '\u2261';
+    handle.title = 'Drag to reorder';
     handle.style.color = 'var(--muted)';
-    handle.style.fontSize = '16px';
+    handle.style.fontSize = '19px';
     handle.style.flexShrink = '0';
-    handle.style.userSelect = 'none';
+    handle.style.padding = '0 8px 0 2px';
+    attachTouchReorder(handle, row, container, '[data-reorder-key]', (keys)=>{
+      const dayOrders = dayOrdersFor(selectedMapDay);
+      dayOrders[selectedRoute] = keys.slice();
+      saveRouteOrders(selectedMapDay);
+      renderRouteOrderList();
+      renderRouteMapPins();
+    });
 
     const badge = document.createElement('div');
     badge.style.width = '24px';
@@ -1814,6 +1873,17 @@ const DEFAULT_CHEM_CONFIG = {
 // HTML5 drag events barely fire on phones, so this handles touch directly.
 // Use it for every draggable list — pass the grab handle, the row it moves,
 // its container, and a callback that receives the new order of keys.
+
+// Tooltips are hover-based, which doesn't exist on a phone — a tap on the row
+// shows them instead, and tapping elsewhere puts them away.
+document.addEventListener('touchstart', (e)=>{
+  const row = e.target.closest('.access-row');
+  document.querySelectorAll('.access-row.tip-open').forEach(r=>{
+    if(r !== row) r.classList.remove('tip-open');
+  });
+  if(row && row.querySelector('.access-tip')) row.classList.add('tip-open');
+}, {passive:true});
+
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   let dragging = false;
 
@@ -1991,7 +2061,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: true, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 function saveSettings(){
@@ -2037,6 +2107,35 @@ document.getElementById('settingShowDosageSuggestions').addEventListener('change
 function applyPoolGallonsFieldVisibility(){
   document.getElementById('poolGallonsField').style.display = appSettings.showPoolSizeInProfile ? 'block' : 'none';
 }
+
+
+function renderMicSideButtons(){
+  const side = appSettings.micSide === 'left' ? 'left' : 'right';
+  document.querySelectorAll('#micSideRow [data-micside]').forEach(b=>{
+    b.className = b.dataset.micside === side ? 'btn btn-primary' : 'btn btn-ghost';
+  });
+}
+
+document.querySelectorAll('#micSideRow [data-micside]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    appSettings.micSide = btn.dataset.micside;
+    saveSettings();
+    renderMicSideButtons();
+    showToast('Microphone moved to the ' + btn.dataset.micside);
+  });
+});
+
+document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
+  appSettings.pushToTalkEnabled = e.target.checked;
+  saveSettings();
+  showToast(appSettings.pushToTalkEnabled ? 'Voice entry button on' : 'Voice entry button off');
+});
+
+document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
+  appSettings.requireGatePhoto = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireGatePhoto ? 'Gate photo now required' : 'Gate photo no longer required');
+});
 
 document.getElementById('settingRequireAfterPhotos').addEventListener('change', (e)=>{
   appSettings.requireAfterPhotos = e.target.checked;
@@ -4448,7 +4547,7 @@ function openQuickButtonsModal(item){
 
     const list = document.createElement('div');
     list.style.display = 'flex';
-    list.style.flexWrap = 'wrap';
+    list.style.flexDirection = 'column';
     list.style.gap = '6px';
     list.style.marginBottom = '10px';
 
@@ -4463,14 +4562,13 @@ function openQuickButtonsModal(item){
 
     (item.buttons || []).forEach((val, idx)=>{
       const chip = document.createElement('div');
-      chip.style.display = 'inline-flex';
+      chip.style.display = 'flex';
       chip.style.alignItems = 'center';
-      chip.style.gap = '6px';
-      chip.style.padding = '5px 8px 5px 10px';
-      chip.style.borderRadius = '9px';
+      chip.style.gap = '10px';
+      chip.style.padding = '9px 10px';
+      chip.style.borderRadius = '10px';
       chip.style.border = '1px solid var(--line)';
       chip.style.background = '#fff';
-      chip.style.cursor = 'grab';
 
       const pal = btnPalette(val);
       chip.style.background = pal.fill;
@@ -4479,16 +4577,18 @@ function openQuickButtonsModal(item){
       const grip = document.createElement('span');
       grip.textContent = '\u2261';
       grip.title = 'Drag to reorder';
-      grip.style.cssText = 'flex-shrink:0;font-size:15px;color:' + pal.text
-        + ';opacity:0.55;padding:0 2px;';
+      grip.style.cssText = 'flex-shrink:0;font-size:20px;color:' + pal.text
+        + ';opacity:0.6;padding:4px 10px 4px 4px;align-self:stretch;'
+        + 'display:flex;align-items:center;';
       chip.appendChild(grip);
 
       const numInput = document.createElement('input');
       numInput.type = 'number';
       numInput.step = 'any';
       numInput.value = btnValue(val);
-      numInput.style.width = '58px';
-      numInput.style.padding = '2px 4px';
+      numInput.style.flex = '1 1 auto';
+      numInput.style.minWidth = '0';
+      numInput.style.padding = '4px 6px';
       numInput.style.border = 'none';
       numInput.style.background = 'transparent';
       numInput.style.color = pal.text;
@@ -4511,8 +4611,8 @@ function openQuickButtonsModal(item){
       const swatch = document.createElement('button');
       swatch.type = 'button';
       swatch.title = 'Change colour';
-      swatch.style.cssText = 'width:18px;height:18px;flex-shrink:0;padding:0;border-radius:50%;'
-        + 'border:1.5px solid rgba(0,0,0,0.18);cursor:pointer;background:' + pal.solid + ';';
+      swatch.style.cssText = 'width:26px;height:26px;flex-shrink:0;padding:0;border-radius:50%;'
+        + 'border:2px solid rgba(0,0,0,0.18);cursor:pointer;background:' + pal.solid + ';';
       swatch.addEventListener('click', (e)=>{
         e.stopPropagation();
         openColorPicker(item, idx, renderBody);
@@ -4523,13 +4623,10 @@ function openQuickButtonsModal(item){
       del.type = 'button';
       del.textContent = '×';
       del.setAttribute('aria-label', 'Remove this button');
-      del.style.border = 'none';
-      del.style.background = 'none';
-      del.style.color = 'var(--rust)';
-      del.style.fontSize = '14px';
-      del.style.lineHeight = '1';
-      del.style.cursor = 'pointer';
-      del.style.padding = '0 2px';
+      del.style.cssText = 'flex-shrink:0;width:32px;height:32px;padding:0;'
+        + 'border:1px solid #EFC9BC;border-radius:8px;background:#fff;'
+        + 'color:var(--rust);font-size:17px;line-height:1;cursor:pointer;'
+        + 'display:flex;align-items:center;justify-content:center;';
       del.addEventListener('click', ()=>{
         item.buttons.splice(idx, 1);
         saveActiveConfig();
@@ -4776,6 +4873,8 @@ function saveCustomConfig(){
   const note = document.getElementById('customSaveNote');
   if(note) note.textContent = 'Saved automatically at ' +
     new Date().toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+  // Keep the "who has a custom setup" list current as edits are made
+  if(typeof renderExistingCustomSetups === 'function') renderExistingCustomSetups();
 }
 
 
@@ -4799,6 +4898,85 @@ function saveCustomConfig(){
   if(removed) lsSet('customChemConfig', customConfig);
   lsSet('customSetupsTidied', true);
 })();
+
+
+// Shows exactly who has a custom setup, so nothing is customised invisibly
+function renderExistingCustomSetups(){
+  const box = document.getElementById('customExistingList');
+  const wrap = document.getElementById('customExistingWrap');
+  if(!box || !wrap) return;
+
+  const entries = [];
+  Object.keys(customConfig).forEach(cid=>{
+    const cust = customers.find(x => x.id === cid);
+    if(!cust) return;
+    const bodies = Object.keys(customConfig[cid] || {});
+    if(bodies.length) entries.push({cust, bodies});
+  });
+
+  if(entries.length === 0){
+    box.innerHTML = '<div style="font-size:12.5px;color:var(--muted);">Nobody has a custom setup — everyone uses the standard lists.</div>';
+    return;
+  }
+
+  entries.sort((a,b)=> sortKeyName(a.cust.name).localeCompare(sortKeyName(b.cust.name)));
+  box.innerHTML = '';
+  entries.forEach(({cust, bodies})=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);';
+
+    const left = document.createElement('div');
+    left.style.minWidth = '0';
+    const names = bodies.map(k=>{
+      if(k === 'pool') return 'Pool';
+      if(k === 'spa') return 'Spa';
+      const f = (cust.fountains || []).find(x => x.id === k);
+      return f ? f.name : 'Extra';
+    });
+    left.innerHTML = '<div style="font-size:13.5px;font-weight:600;">' + displayName(cust.name) +
+      '</div><div style="font-size:11.5px;color:var(--muted);">' + names.join(', ') + '</div>';
+    row.appendChild(left);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn btn-ghost';
+    del.style.cssText = 'width:auto;flex-shrink:0;padding:5px 10px;font-size:11.5px;color:var(--rust);border-color:#EFC9BC;';
+    del.textContent = 'Remove';
+    del.addEventListener('click', async ()=>{
+      const ok = await confirmDialog('Remove the custom setup for ' + cust.name +
+        '? They will go back to the standard lists.');
+      if(!ok) return;
+      delete customConfig[cust.id];
+      saveCustomConfig();
+      renderExistingCustomSetups();
+      renderChemConfigLists();
+      showToast('Custom setup removed');
+    });
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+document.getElementById('btnClearAllCustom').addEventListener('click', async ()=>{
+  const count = Object.keys(customConfig).filter(cid => customers.some(x => x.id === cid)).length;
+  if(count === 0){ showToast('Nothing to clear'); return; }
+  const ok = await confirmDialog('Remove every custom setup? ' + count +
+    (count === 1 ? ' customer goes' : ' customers go') +
+    ' back to the standard Pool, Spa, and Extra lists. This cannot be undone.');
+  if(!ok) return;
+  customConfig = {};
+  saveCustomConfig();
+  customCustomerId = null;
+  customBodyKey = null;
+  const searchEl = document.getElementById('customCustSearch');
+  if(searchEl) searchEl.value = '';
+  const clearEl = document.getElementById('customCustClear');
+  if(clearEl) clearEl.style.display = 'none';
+  renderCustomBodies();
+  renderExistingCustomSetups();
+  renderChemConfigLists();
+  showToast('All custom setups cleared');
+});
 
 function bodiesForCustomer(cust){
   const out = [];
@@ -4948,21 +5126,19 @@ function renderCustomCustSuggest(term){
 
 document.getElementById('customCustSearch').addEventListener('focus', (e)=>{
   if(customCustHideTimer){ clearTimeout(customCustHideTimer); customCustHideTimer = null; }
-  renderCustomCustSuggest(e.target.value);
+  // Clear a chosen name so the full list shows, without touching the tap
+  // itself — calling preventDefault here would stop the keyboard opening.
+  if(e.target.value){
+    e.target.value = '';
+    const clr = document.getElementById('customCustClear');
+    if(clr) clr.style.display = 'none';
+  }
+  renderCustomCustSuggest('');
 });
 
 // Tapping a field that already holds a name clears it and shows everyone,
 // so you can either scroll the list or start typing a different name.
-document.getElementById('customCustSearch').addEventListener('mousedown', (e)=>{
-  const inp = e.currentTarget;
-  if(!inp.value) return;
-  e.preventDefault();
-  if(customCustHideTimer){ clearTimeout(customCustHideTimer); customCustHideTimer = null; }
-  inp.value = '';
-  document.getElementById('customCustClear').style.display = 'none';
-  inp.focus();
-  renderCustomCustSuggest('');
-});
+
 document.getElementById('customCustSearch').addEventListener('input', (e)=>{
   document.getElementById('customCustClear').style.display = e.target.value ? 'flex' : 'none';
   renderCustomCustSuggest(e.target.value);
@@ -4978,9 +5154,11 @@ document.getElementById('customCustClear').addEventListener('click', ()=>{
   customBodyKey = null;
   document.getElementById('customCustClear').style.display = 'none';
   renderCustomBodies();
+  renderExistingCustomSetups();
   renderChemConfigLists();
-  inp.focus();
-  renderCustomCustSuggest('');
+  // Leave it empty and closed — no focus, no list, no keyboard
+  hideCustomCustSuggest();
+  inp.blur();
 });
 
 // ---------- Undo and delete ----------
@@ -5131,6 +5309,7 @@ document.querySelectorAll('#chemConfigTypeControl .history-type-btn').forEach(bt
       if(noteEl) noteEl.textContent = '';
       hideCustomCustSuggest();
       renderCustomBodies();
+      renderExistingCustomSetups();
     }
     renderChemConfigLists();
   });
@@ -5420,8 +5599,6 @@ async function deleteTechnician(t){
   showToast('Technician deleted');
 }
 
-let draggedTechId = null;
-
 function renderTechnicianList(){
   const container = document.getElementById('technicianList');
   const countEl = document.getElementById('techCount');
@@ -5435,46 +5612,33 @@ function renderTechnicianList(){
     .forEach(t=>{
       const assignedCount = customers.filter(c => c.technicianId === t.id && c.active !== false).length;
       const row = document.createElement('div');
-      row.draggable = true;
-      row.addEventListener('dragstart', ()=>{
-        draggedTechId = t.id;
-        row.style.opacity = '0.4';
-      });
-      row.addEventListener('dragend', ()=>{
-        row.style.opacity = '1';
-        draggedTechId = null;
-        container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
-      });
-      row.addEventListener('dragover', (e)=>{
-        e.preventDefault();
-        if(draggedTechId && draggedTechId !== t.id){
-          row.style.borderTop = '2px solid var(--gold)';
-        }
-      });
-      row.addEventListener('dragleave', ()=>{ row.style.borderTop = ''; });
-      row.addEventListener('drop', (e)=>{
-        e.preventDefault();
-        row.style.borderTop = '';
-        if(!draggedTechId || draggedTechId === t.id) return;
-        const from = technicians.findIndex(x => x.id === draggedTechId);
-        const to = technicians.findIndex(x => x.id === t.id);
-        if(from === -1 || to === -1) return;
-        const moved = technicians.splice(from, 1)[0];
-        technicians.splice(to, 0, moved);
-        saveTechnicians();
-        renderTechnicianList();
-        populateTechnicianSelect();
-      });
       row.className = 'cust-row';
+      row.dataset.reorderKey = t.id;
       const metaParts = [];
       if(t.phone) metaParts.push(t.phone);
       if(t.email) metaParts.push(t.email);
       if(t.username) metaParts.push('@' + t.username);
       metaParts.push(assignedCount + (assignedCount === 1 ? ' customer assigned' : ' customers assigned'));
-      row.innerHTML = `<div class="cust-left"><span class="tech-handle" style="color:var(--muted);font-size:16px;cursor:grab;flex-shrink:0;user-select:none;margin-right:2px;">⠿</span><div class="cust-avatar">${initialOf(t.name)}</div><div class="cust-info"><div class="cust-name">${t.name}</div><div class="cust-meta">${metaParts.join(' · ')}</div></div></div>`;
+      row.innerHTML = `<div class="cust-left"><span class="tech-handle" title="Drag to reorder" style="color:var(--muted);font-size:19px;flex-shrink:0;padding:0 8px 0 2px;">&#8801;</span><div class="cust-avatar">${initialOf(t.name)}</div><div class="cust-info"><div class="cust-name">${t.name}</div><div class="cust-meta">${metaParts.join(' · ')}</div></div></div>`;
+      const grip = row.querySelector('.tech-handle');
+      if(grip){
+        attachTouchReorder(grip, row, container, '[data-reorder-key]', (keys)=>{
+          const byId = {};
+          technicians.forEach(x => { byId[x.id] = x; });
+          technicians = keys.map(k => byId[k]).filter(Boolean);
+          saveTechnicians();
+          renderTechnicianList();
+          populateTechnicianSelect();
+        });
+      }
+
       const nameArea = row.querySelector('.cust-left');
       nameArea.style.cursor = 'pointer';
-      nameArea.addEventListener('click', ()=> openTechDetail(t));
+      nameArea.addEventListener('click', (e)=>{
+        // Don't open the profile when the grip was the target
+        if(e.target.closest('.tech-handle')) return;
+        openTechDetail(t);
+      });
       const rightWrap = document.createElement('div');
       rightWrap.style.display = 'flex';
       rightWrap.style.gap = '8px';
@@ -7079,15 +7243,21 @@ function renderEquipmentTypeOrderList(){
     const row = document.createElement('div');
     row.className = 'cust-row';
     row.style.gap = '8px';
-    row.style.cursor = 'grab';
-    row.draggable = true;
+    row.dataset.reorderKey = type;
 
     const handle = document.createElement('div');
-    handle.textContent = '⠿';
+    handle.textContent = '\u2261';
+    handle.title = 'Drag to reorder';
     handle.style.color = 'var(--muted)';
-    handle.style.fontSize = '16px';
+    handle.style.fontSize = '19px';
     handle.style.flexShrink = '0';
-    handle.style.userSelect = 'none';
+    handle.style.padding = '0 8px 0 2px';
+    attachTouchReorder(handle, row, container, '[data-reorder-key]', (keys)=>{
+      currentEquipmentTypeOptions = keys.slice();
+      persistCurrentEquipmentTypeOptions();
+      renderEquipmentTypeOrderList();
+      renderEquipmentTypeList();
+    });
 
     const label = document.createElement('div');
     label.style.flex = '1';
@@ -8564,6 +8734,9 @@ renderEquipmentTypeList();
 document.getElementById('settingShowPoolSize').checked = appSettings.showPoolSizeInProfile;
 document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
 document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
+document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
+renderMicSideButtons();
 document.getElementById('settingShowDosageSuggestions').checked = appSettings.showDosageSuggestions;
 document.getElementById('settingBeforePhotos').checked = appSettings.showBeforePhotos !== false;
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
