@@ -246,6 +246,8 @@ textarea{min-height:52px;resize:vertical;}
 .empty i{font-size:13px;}
 
 @keyframes briefIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:translateY(0);}}
+
+.reorder-placeholder{pointer-events:none;}
 .cust-row{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
   display:flex;justify-content:space-between;align-items:center;
   padding:15px 4px 15px 12px;border-bottom:1px solid var(--line);cursor:pointer;
@@ -730,6 +732,8 @@ select#customerSelect{font-weight:600;}
 <div class="toast" id="toast"></div>
 
 <script>
+const STORAGE_PREFIX = 'poollog:';
+let storageWarningShown = false;
 const DEFAULT_CHEM_CONFIG = {
   pool: {
     chemicals: [
@@ -1068,7 +1072,6 @@ document.querySelectorAll('.tab').forEach(t=>{
   });
 });
 
-const STORAGE_PREFIX = 'poollog:';
 
 function lsGet(key){
   try{
@@ -1079,13 +1082,50 @@ function lsGet(key){
   }
 }
 
+// Storage is capped by the browser. When it fills, setItem throws — and this
+// used to swallow that quietly, so saves appeared to work but changed nothing.
+// Now it says so loudly, because silent data loss is far worse than an alert.
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
     return true;
   }catch(e){
+    const full = e && (e.name === 'QuotaExceededError'
+      || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+      || e.code === 22 || e.code === 1014);
+    console.error('Could not save "' + key + '":', e);
+
+    if(full && !storageWarningShown){
+      storageWarningShown = true;
+      if(typeof alertDialog === 'function'){
+        alertDialog(
+          'The browser has run out of storage, so nothing new can be saved right now. ' +
+          'Anything you change will be lost until space is freed up. ' +
+          'Download a backup, then clear old visit photos — they take up the most room.',
+          'Storage is full');
+      } else {
+        alert('Storage is full — changes are not being saved. Download a backup and clear old photos.');
+      }
+      setTimeout(()=>{ storageWarningShown = false; }, 30000);
+    } else if(!full && typeof showToast === 'function'){
+      showToast("Couldn't save — see the browser console for details");
+    }
     return false;
   }
+}
+
+// How close storage is to full, so it can be shown before it becomes a problem
+function storageUsage(){
+  let bytes = 0;
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(STORAGE_PREFIX)){
+        bytes += k.length + (localStorage.getItem(k) || '').length;
+      }
+    }
+  }catch(e){}
+  return bytes;
 }
 
 function lsListKeys(prefix){
@@ -1243,8 +1283,14 @@ function buildVoiceFieldsForType(type){
 // ---------- Closed gate photo ----------
 // Proof the property was left secure. Only shown when the setting is on.
 // Should the gate photo block appear on this visit at all
+// A technician can be held to a stricter rule than the app-wide setting
+function techRequires(flag){
+  return !!(currentUser && currentUser[flag] === true);
+}
+
 function gatePhotoApplies(){
-  if(appSettings.requireGatePhoto !== true) return false;
+  const required = appSettings.requireGatePhoto === true || techRequires('requireGatePhoto');
+  if(!required) return false;
   if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
   return true;
 }
@@ -1264,21 +1310,41 @@ function syncGatePhotoBlock(){
   block.style.display = gatePhotoApplies() ? 'block' : 'none';
 }
 
+// Is an after photo actually required for this body of water? Only if the
+// global setting, this section's own tick, or the technician says so —
+// never just because the section exists.
+function afterPhotoRequiredFor(type){
+  if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
+  if(appSettings.showAfterPhotos === false) return false;
+  if(appSettings.requireAfterPhotos === true) return true;
+  if(techRequires('requireAfterPhoto')) return true;
+
+  const cid = currentVisitCustomerId;
+  const lists = cid
+    ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+    : chemConfig[type];
+  return !!(lists && lists.requireAfterPhoto === true);
+}
+
 function refreshSaveButtons(){
-  [['btnSaveReading', poolPhotoController],
-   ['btnSaveSpaReading', spaPhotoController],
-   ['btnSaveFountainReading', fountainPhotoController]].forEach(([btnId, ctrl])=>{
+  [['btnSaveReading', poolPhotoController, 'pool'],
+   ['btnSaveSpaReading', spaPhotoController, 'spa'],
+   ['btnSaveFountainReading', fountainPhotoController, 'fountain']].forEach(([btnId, ctrl, type])=>{
     const btn = document.getElementById(btnId);
     if(!btn || !ctrl) return;
+
+    const needsAfter = afterPhotoRequiredFor(type);
+    const afterOk = !needsAfter || !!ctrl.getData();
     const gateOk = !gatePhotoRequired()
       || (typeof gatePhotoController !== 'undefined' && !!gatePhotoController.getData());
-    const ready = !!ctrl.getData() && gateOk;
+
+    const ready = afterOk && gateOk;
     btn.disabled = !ready;
     btn.style.opacity = ready ? '' : '0.4';
     btn.style.cursor = ready ? '' : 'not-allowed';
     btn.title = ready
       ? ''
-      : (!ctrl.getData() ? 'Take an after photo first' : 'Take a closed gate photo first');
+      : (!afterOk ? 'Take an after photo first' : 'Take a closed gate photo first');
   });
   // The visible control is the fixed bar, so refresh it too — otherwise it
   // stays greyed out until something else redraws it.
@@ -1486,6 +1552,92 @@ function makeVisitVoiceController(){
 
 const visitVoiceController = makeVisitVoiceController();
 
+
+// ---------- In-app camera ----------
+// A file input hands off to the phone's camera app, which always makes you
+// confirm with "Use Photo". Showing the preview in-app means one tap: shutter
+// captures the frame and closes. Falls back to the file input if the camera
+// can't be opened.
+function captureFromCamera(maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      reject(new Error('no camera'));
+      return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:#000;'
+      + 'display:flex;flex-direction:column;';
+    overlay.innerHTML = `
+      <video id="camPreview" autoplay playsinline muted
+        style="flex:1;width:100%;object-fit:cover;background:#000;"></video>
+      <div style="flex:0 0 auto;padding:18px 20px calc(18px + env(safe-area-inset-bottom));
+                  display:flex;align-items:center;justify-content:space-between;gap:16px;background:#000;">
+        <button type="button" id="camCancel"
+          style="flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;border-radius:10px;
+                 background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;">Cancel</button>
+        <button type="button" id="camShutter" aria-label="Take photo"
+          style="flex:0 0 auto;width:74px;height:74px;border-radius:50%;border:5px solid rgba(255,255,255,0.35);
+                 background:#fff;cursor:pointer;"></button>
+        <button type="button" id="camFlip"
+          style="flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;border-radius:10px;
+                 background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;">Flip</button>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const video = overlay.querySelector('#camPreview');
+    let stream = null;
+    let facing = 'environment';
+    let done = false;
+
+    function stop(){
+      if(stream) stream.getTracks().forEach(t => t.stop());
+      if(overlay.parentNode) document.body.removeChild(overlay);
+    }
+
+    async function open(){
+      try{
+        if(stream) stream.getTracks().forEach(t => t.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {facingMode: facing, width:{ideal:1600}, height:{ideal:1200}},
+          audio: false
+        });
+        video.srcObject = stream;
+      }catch(err){
+        stop();
+        if(!done){ done = true; reject(err); }
+      }
+    }
+
+    overlay.querySelector('#camFlip').addEventListener('click', ()=>{
+      facing = facing === 'environment' ? 'user' : 'environment';
+      open();
+    });
+
+    overlay.querySelector('#camCancel').addEventListener('click', ()=>{
+      if(done) return;
+      done = true;
+      stop();
+      resolve(null);          // cancelled, not an error
+    });
+
+    overlay.querySelector('#camShutter').addEventListener('click', ()=>{
+      if(done || !video.videoWidth) return;
+      done = true;
+      const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(video.videoWidth * scale);
+      canvas.height = Math.round(video.videoHeight * scale);
+      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL('image/jpeg', quality);
+      stop();
+      resolve(data);
+    });
+
+    open();
+  });
+}
+
 function resizeImageFile(file, maxDim, quality){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
@@ -1541,7 +1693,15 @@ function makePhotoController(ids){
     if(ids.onChange) ids.onChange();
   }
 
-  takeBtn.addEventListener('click', ()=>{ fileInput.click(); });
+  takeBtn.addEventListener('click', async ()=>{
+    try{
+      const data = await captureFromCamera(1400, 0.62);
+      if(data) showPreview(data);      // null means they cancelled
+    }catch(err){
+      // No camera, permission refused, or an older browser — use the file input
+      fileInput.click();
+    }
+  });
 
   fileInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
@@ -1881,107 +2041,14 @@ function websiteOrderForDay(day){
 }
 
 
-// ---------- Touch drag for route reordering ----------
-// HTML5 drag events barely work on phones, so this handles touch directly:
-// the row lifts under your finger and the others slide out of the way.
+// The route list uses the same smooth reordering as everything else, so the
+// feel is identical wherever a list can be rearranged.
 function attachTouchDrag(handle, row, container){
-  let dragging = false;
-  let startY = 0;
-  let originalNext = null;
-
-  function rowsIn(){
-    return Array.from(container.querySelectorAll('.cust-row'));
-  }
-
-  function lift(){
-    dragging = true;
-    originalNext = row.nextSibling;
-    row.style.transition = 'none';
-    row.style.opacity = '0.92';
-    row.style.background = '#fff';
-    row.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
-    row.style.borderRadius = '10px';
-    row.style.position = 'relative';
-    row.style.zIndex = '30';
-    document.body.style.overflow = 'hidden';
-  }
-
-  function drop(){
-    dragging = false;
-    row.style.opacity = '';
-    row.style.background = '';
-    row.style.boxShadow = '';
-    row.style.borderRadius = '';
-    row.style.position = '';
-    row.style.zIndex = '';
-    row.style.transform = '';
-    document.body.style.overflow = '';
-
-    // Hold the new order and let the tech decide how long it should stick.
-    // Applied to this date straight away so the list stays as they left it.
-    const ids = rowsIn().map(r => r.dataset.custId).filter(Boolean);
-    if(ids.length){
-      fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = ids;
-      saveFieldRouteOrder();
-      showOrderBanner(ids);
-    }
-  }
-
-  function moveTo(clientY){
-    // Find the row under the finger and slot ourselves in beside it
-    const others = rowsIn().filter(r => r !== row);
-    for(const other of others){
-      const b = other.getBoundingClientRect();
-      if(clientY > b.top && clientY < b.bottom){
-        const below = clientY > b.top + b.height / 2;
-        if(below) other.after(row); else other.before(row);
-        return;
-      }
-    }
-  }
-
-  handle.addEventListener('touchstart', (e)=>{
-    if(e.touches.length !== 1) return;
-    e.preventDefault();
-    startY = e.touches[0].clientY;
-    lift();
-  }, {passive:false});
-
-  handle.addEventListener('touchmove', (e)=>{
-    if(!dragging) return;
-    e.preventDefault();
-    const y = e.touches[0].clientY;
-    row.style.transform = 'translateY(' + (y - startY) * 0.15 + 'px)';
-    moveTo(y);
-  }, {passive:false});
-
-  handle.addEventListener('touchend', (e)=>{
-    if(!dragging) return;
-    e.preventDefault();
-    drop();
-  }, {passive:false});
-
-  handle.addEventListener('touchcancel', ()=>{
-    if(dragging) drop();
-  });
-
-  // Mouse dragging for desktop, same behaviour
-  handle.addEventListener('mousedown', (e)=>{
-    e.preventDefault();
-    startY = e.clientY;
-    lift();
-    const onMove = (ev)=>{
-      if(!dragging) return;
-      row.style.transform = 'translateY(' + (ev.clientY - startY) * 0.15 + 'px)';
-      moveTo(ev.clientY);
-    };
-    const onUp = ()=>{
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if(dragging) drop();
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+  attachTouchReorder(handle, row, container, '.cust-row', (ids)=>{
+    if(!ids.length) return;
+    fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = ids;
+    saveFieldRouteOrder();
+    showOrderBanner(ids);
   });
 }
 
@@ -2279,6 +2346,7 @@ function renderHomeList(){
 
     if(canReorder){
       row.dataset.custId = c.id;
+      row.dataset.reorderKey = c.id;
 
       // Grab handle — touch-action:none stops the browser hijacking the gesture
       const handle = document.createElement('div');
@@ -2291,30 +2359,6 @@ function renderHomeList(){
       attachTouchDrag(handle, row, container);
       row.insertBefore(handle, row.firstChild);
 
-      row.draggable = true;
-      row.addEventListener('dragstart', ()=>{
-        draggedRouteCustomerId = c.id;
-        row.style.opacity = '0.4';
-      });
-      row.addEventListener('dragend', ()=>{
-        row.style.opacity = '1';
-        draggedRouteCustomerId = null;
-        container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
-      });
-      row.addEventListener('dragover', (e)=>{
-        e.preventDefault();
-        if(draggedRouteCustomerId && draggedRouteCustomerId !== c.id){
-          row.style.borderTop = '2px solid var(--gold)';
-        }
-      });
-      row.addEventListener('dragleave', ()=>{ row.style.borderTop = ''; });
-      row.addEventListener('drop', (e)=>{
-        e.preventDefault();
-        row.style.borderTop = '';
-        if(draggedRouteCustomerId && draggedRouteCustomerId !== c.id){
-          moveRouteCustomer(selectedHomeDay, draggedRouteCustomerId, c.id, todaysCustomers);
-        }
-      });
     }
     const rightWrap = document.createElement('div');
     rightWrap.style.display = 'flex';
@@ -3194,73 +3238,167 @@ function reorderEquipmentType(draggedType, targetType){
 }
 
 
-// ---------- Touch-friendly reordering (shared) ----------
-// HTML5 drag barely fires on phones, so handle touch directly.
+// ---------- Smooth drag reordering ----------
+// The dragged row is lifted out of the flow and follows the finger exactly,
+// while a placeholder holds its gap and the other rows glide out of the way.
+// Reordering only happens when the finger passes a neighbour's midpoint, so
+// nothing jitters back and forth.
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   let dragging = false;
-  function itemsIn(){ return Array.from(container.querySelectorAll(itemSelector)); }
-  function lift(){
+  let placeholder = null;
+  let startX = 0, startY = 0;
+  let offsetX = 0, offsetY = 0;
+  let lastX = 0, lastY = 0;
+  let frame = null;
+  let edgeTimer = null;
+
+  function siblings(){
+    return Array.from(container.querySelectorAll(itemSelector))
+      .filter(el => el !== item && el !== placeholder);
+  }
+
+  function lift(clientX, clientY){
+    const rect = item.getBoundingClientRect();
     dragging = true;
-    item.style.opacity = '0.9';
-    item.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
-    item.style.borderRadius = '10px';
-    item.style.position = 'relative';
-    item.style.zIndex = '30';
-    document.body.style.overflow = 'hidden';
+    startX = clientX; startY = clientY;
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+    lastX = clientX; lastY = clientY;
+
+    // A placeholder keeps the gap so nothing collapses underneath
+    placeholder = document.createElement('div');
+    placeholder.className = 'reorder-placeholder';
+    placeholder.style.cssText = 'width:' + rect.width + 'px;height:' + rect.height + 'px;'
+      + 'border-radius:10px;background:rgba(31,138,140,0.08);'
+      + 'border:1.5px dashed rgba(31,138,140,0.45);box-sizing:border-box;'
+      + 'flex:0 0 auto;';
+    item.parentNode.insertBefore(placeholder, item);
+
+    // Lift the row out of the flow so moving it costs nothing
+    item.style.position = 'fixed';
+    item.style.left = rect.left + 'px';
+    item.style.top = rect.top + 'px';
+    item.style.width = rect.width + 'px';
+    item.style.margin = '0';
+    item.style.zIndex = '400';
+    item.style.pointerEvents = 'none';
+    item.style.transition = 'box-shadow .15s ease, transform .15s ease';
+    item.style.boxShadow = '0 10px 26px rgba(15,46,46,0.28)';
+    item.style.transform = 'scale(1.02)';
+    item.style.background = item.style.background || '#fff';
+
+    // Neighbours glide rather than jump
+    siblings().forEach(el => { el.style.transition = 'transform .18s ease'; });
   }
-  function drop(){
-    dragging = false;
-    item.style.opacity = '';
-    item.style.boxShadow = '';
-    item.style.borderRadius = '';
-    item.style.position = '';
-    item.style.zIndex = '';
-    document.body.style.overflow = '';
-    const keys = itemsIn().map(el => el.dataset.reorderKey).filter(k => k !== undefined);
-    if(keys.length && onReorder) onReorder(keys);
-  }
-  function moveTo(clientX, clientY){
-    const others = itemsIn().filter(el => el !== item);
-    for(const other of others){
+
+  function render(){
+    frame = null;
+    if(!dragging) return;
+    item.style.transform = 'translate(' + (lastX - startX) + 'px,' + (lastY - startY) + 'px) scale(1.02)';
+
+    // Move the placeholder once the finger clears a neighbour's midpoint
+    for(const other of siblings()){
       const b = other.getBoundingClientRect();
-      if(clientX > b.left && clientX < b.right && clientY > b.top && clientY < b.bottom){
-        const wide = b.width > b.height;
-        const past = wide ? clientX > b.left + b.width / 2 : clientY > b.top + b.height / 2;
-        if(past) other.after(item); else other.before(item);
-        return;
-      }
+      const horizontal = b.width > b.height * 1.6;
+      const overIt = lastX > b.left && lastX < b.right && lastY > b.top && lastY < b.bottom;
+      if(!overIt) continue;
+      const past = horizontal
+        ? lastX > b.left + b.width / 2
+        : lastY > b.top + b.height / 2;
+      const ref = past ? other.nextSibling : other;
+      if(ref !== placeholder) container.insertBefore(placeholder, ref);
+      break;
     }
   }
+
+  function schedule(){
+    if(frame === null) frame = requestAnimationFrame(render);
+  }
+
+  function startEdgeScroll(){
+    if(edgeTimer) return;
+    edgeTimer = setInterval(()=>{
+      if(!dragging) return;
+      const zone = 90;
+      const top = lastY;
+      const bottom = window.innerHeight - lastY;
+      let dy = 0;
+      if(top < zone) dy = -Math.ceil((zone - top) / 5);
+      else if(bottom < zone) dy = Math.ceil((zone - bottom) / 5);
+      if(dy){ window.scrollBy(0, dy); schedule(); }
+    }, 16);
+  }
+
+  function drop(){
+    if(!dragging) return;
+    dragging = false;
+    if(frame !== null){ cancelAnimationFrame(frame); frame = null; }
+    if(edgeTimer){ clearInterval(edgeTimer); edgeTimer = null; }
+
+    // Put the row back where the placeholder ended up
+    if(placeholder && placeholder.parentNode){
+      placeholder.parentNode.insertBefore(item, placeholder);
+      placeholder.parentNode.removeChild(placeholder);
+    }
+    placeholder = null;
+
+    ['position','left','top','width','margin','zIndex','pointerEvents',
+     'transition','boxShadow','transform'].forEach(p => { item.style[p] = ''; });
+    siblings().forEach(el => { el.style.transition = ''; });
+
+    const keys = Array.from(container.querySelectorAll(itemSelector))
+      .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
+    if(keys.length && onReorder) onReorder(keys);
+  }
+
   handle.style.touchAction = 'none';
   handle.style.webkitUserSelect = 'none';
   handle.style.userSelect = 'none';
   handle.style.cursor = 'grab';
+
   handle.addEventListener('touchstart', (e)=>{
     if(e.touches.length !== 1) return;
-    e.preventDefault(); lift();
+    e.preventDefault();
+    const t = e.touches[0];
+    lift(t.clientX, t.clientY);
+    startEdgeScroll();
   }, {passive:false});
+
   handle.addEventListener('touchmove', (e)=>{
     if(!dragging) return;
     e.preventDefault();
-    moveTo(e.touches[0].clientX, e.touches[0].clientY);
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    schedule();
   }, {passive:false});
-  handle.addEventListener('touchend', (e)=>{
-    if(!dragging) return;
-    e.preventDefault(); drop();
-  }, {passive:false});
-  handle.addEventListener('touchcancel', ()=>{ if(dragging) drop(); });
+
+  ['touchend','touchcancel'].forEach(ev=>{
+    handle.addEventListener(ev, (e)=>{
+      if(!dragging) return;
+      e.preventDefault();
+      drop();
+    }, {passive:false});
+  });
+
   handle.addEventListener('mousedown', (e)=>{
-    e.preventDefault(); lift();
-    const onMove = (ev)=>{ if(dragging) moveTo(ev.clientX, ev.clientY); };
+    e.preventDefault();
+    lift(e.clientX, e.clientY);
+    startEdgeScroll();
+    const onMove = (ev)=>{
+      if(!dragging) return;
+      lastX = ev.clientX; lastY = ev.clientY;
+      schedule();
+    };
     const onUp = ()=>{
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      if(dragging) drop();
+      drop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
 }
+
 
 function renderEquipmentTypeOrderList(){
   const container = document.getElementById('icEquipmentTypeOrderList');
@@ -3643,8 +3781,12 @@ function missingRequiredPhoto(){
   const here = steps[idx] ? stepId(steps[idx]) : '';
 
   // Required either everywhere (Settings) or just for this section
-  const beforeNeeded = appSettings.requireBeforePhotos === true || lists.requireBeforePhoto === true;
-  const afterNeeded = appSettings.requireAfterPhotos === true || lists.requireAfterPhoto === true;
+  const beforeNeeded = appSettings.requireBeforePhotos === true
+    || lists.requireBeforePhoto === true
+    || techRequires('requireBeforePhoto');
+  const afterNeeded = appSettings.requireAfterPhotos === true
+    || lists.requireAfterPhoto === true
+    || techRequires('requireAfterPhoto');
 
   if(here === 'visit' + cap + 'BeforePhotoSection'
      && appSettings.showBeforePhotos !== false
@@ -3968,7 +4110,61 @@ function parseSpokenReadings(transcript){
   if(!lists) return [];
 
   const words = {zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7,
-                 eight:8, nine:9, ten:10, eleven:11, twelve:12};
+                 eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13,
+                 fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18,
+                 nineteen:19, twenty:20, thirty:30, forty:40, fifty:50, sixty:60,
+                 seventy:70, eighty:80, ninety:90, hundred:100, thousand:1000,
+                 oh:0, o:0, a:1, none:0, zip:0};
+
+  // Pulls a number out of the words right after a chemical name. Handles
+  // "3", "7.5", "seven point five", "twenty eight hundred", "a half".
+  function readNumber(text){
+    const t = text.trim();
+    if(!t) return null;
+
+    // Digits first, including decimals written as digits
+    let m = t.match(/^[^0-9a-z]*(\d+(?:\.\d+)?)/);
+    if(m){
+      let val = m[1];
+      // "7 point 5" written half in digits
+      const pt = t.match(/^[^0-9a-z]*\d+\s*(?:point|decimal)\s*(\d+)/);
+      if(pt) val = m[1] + '.' + pt[1];
+      return val;
+    }
+
+    const parts = t.split(/[^a-z0-9.]+/).filter(Boolean);
+    if(!parts.length) return null;
+
+    // Whole part, allowing "twenty eight" and "eight hundred"
+    let whole = null, i = 0;
+    while(i < parts.length){
+      const w = parts[i];
+      if(words[w] === undefined) break;
+      const n = words[w];
+      if(whole === null) whole = n;
+      else if(n === 100 || n === 1000) whole = whole * n;
+      else if(whole % 10 === 0 && n < 10) whole = whole + n;
+      else break;
+      i++;
+      if(i > 3) break;
+    }
+    if(whole === null) return null;
+
+    // Optional decimal: "point five", "and a half"
+    if(parts[i] === 'point' || parts[i] === 'decimal'){
+      const digits = [];
+      let j = i + 1;
+      while(j < parts.length && words[parts[j]] !== undefined && words[parts[j]] < 10){
+        digits.push(words[parts[j]]); j++;
+        if(digits.length >= 2) break;
+      }
+      if(digits.length) return whole + '.' + digits.join('');
+    }
+    if(parts[i] === 'and' && parts[i+1] === 'a' && parts[i+2] === 'half') return whole + '.5';
+    if(parts[i] === 'half') return whole + '.5';
+
+    return String(whole);
+  }
 
   const targets = [];
   (lists.chemicals || []).forEach(i=>{
@@ -3978,8 +4174,8 @@ function parseSpokenReadings(transcript){
     if(i.label) targets.push({label:i.label, id:fieldId(type,'dose',i.key), phrases:spokenPhrasesFor(i)});
   });
 
-  // Try the most specific phrase across all items first, so "total alkalinity"
-  // is never mistaken for a shorter match
+  // Most specific phrase first, so "total alkalinity" is never mistaken for
+  // "alkalinity" and "phosphate" is never mistaken for "ph"
   targets.sort((a,b)=>{
     const al = a.phrases[0] ? a.phrases[0].length : 0;
     const bl = b.phrases[0] ? b.phrases[0].length : 0;
@@ -3988,36 +4184,35 @@ function parseSpokenReadings(transcript){
 
   const applied = [];
   const used = [];
+
+  function overlaps(start, end){
+    return used.some(u => start < u.end && end > u.start);
+  }
+
   targets.forEach(t=>{
-    let at = -1, name = '';
     for(const p of t.phrases){
-      const i = said.indexOf(p);
-      // Don't reuse a stretch of speech already claimed by another item
-      if(i !== -1 && !used.some(u => i < u.end && i + p.length > u.start)){
-        at = i; name = p; break;
+      // Whole words only — otherwise "ph" matches inside "phosphate"
+      const rx = new RegExp('(^|[^a-z0-9])' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)', 'g');
+      let m;
+      while((m = rx.exec(said)) !== null){
+        const start = m.index + m[1].length;
+        const end = start + p.length;
+        if(overlaps(start, end)){ rx.lastIndex = end; continue; }
+
+        const value = readNumber(said.slice(end, end + 40));
+        if(value === null){ rx.lastIndex = end; continue; }
+
+        const el = document.getElementById(t.id);
+        if(!el) return;
+        el.value = value;
+        el.dispatchEvent(new Event('input', {bubbles:true}));
+        used.push({start, end});
+        applied.push(t.label + ' ' + value);
+        return;   // one value per field
       }
     }
-    if(at === -1) return;
-    used.push({start: at, end: at + name.length});
-    const after = said.slice(at + name.length, at + name.length + 30);
-    // "7.4", "7 point 4", or a spelled-out number
-    let m = after.match(/^[^0-9a-z]*(\d+(?:\.\d+)?)/);
-    let value = m ? m[1] : null;
-    if(!value){
-      const pm = after.match(/^[^0-9a-z]*(\d+)\s*point\s*(\d+)/);
-      if(pm) value = pm[1] + '.' + pm[2];
-    }
-    if(!value){
-      const wm = after.match(/^[^a-z]*([a-z]+)/);
-      if(wm && words[wm[1]] !== undefined) value = String(words[wm[1]]);
-    }
-    if(value === null) return;
-    const el = document.getElementById(t.id);
-    if(!el) return;
-    el.value = value;
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-    applied.push(t.label + ' ' + value);
   });
+
   return applied;
 }
 
@@ -4132,6 +4327,7 @@ document.getElementById('stepBarNext').addEventListener('click', ()=>{
     else if(btn) showToast(gatePhotoRequired() && !gatePhotoController.getData()
       ? 'Take a closed gate photo first'
       : 'Take an after photo first');
+
     return;
   }
   const missing = missingReadingFields();
@@ -4589,7 +4785,20 @@ function buildReadingSection(reading, chemList, prodList){
     productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Chemicals Added</h3><table class="report-table">${prows}</table>`;
   }
 
-  return {rowsHtml, rowsText, productsHtml, productsText};
+  // Equipment servicing — only listed when it was actually done
+  const doneItems = [];
+  if(reading.filterBackwashed) doneItems.push('Filter backwashed');
+  if(reading.saltCellCleaned) doneItems.push('Salt cell cleaned');
+
+  let servicedHtml = '';
+  let servicedText = '';
+  if(doneItems.length){
+    const srows = doneItems.map(d => `<tr><td>${d}</td><td>Yes</td></tr>`).join('');
+    servicedHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Service performed</h3><table class="report-table">${srows}</table>`;
+    servicedText = doneItems.join('\n') + '\n';
+  }
+
+  return {rowsHtml, rowsText, productsHtml, productsText, servicedHtml, servicedText};
 }
 
 async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadingRefs){
@@ -4636,11 +4845,12 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
       <h3 style="font-size:13px;color:var(--teal-deep);margin:${i === 0 ? '6px' : '20px'} 0 6px;">${s.label}</h3>
       <table class="report-table">${s.rowsHtml}</table>
       ${s.productsHtml}
+      ${s.servicedHtml || ''}
       ${s.reading.notes ? `<div class="report-notes">${s.reading.notes}<div style="font-size:11px;color:var(--muted);margin-top:6px;">Internal only — not emailed to the customer.</div></div>` : ''}
       ${photoHtml}
     `;
     // Notes are internal only — deliberately excluded from the emailed report
-    sectionsText += `\n${s.label.toUpperCase()}\n${s.rowsText}${s.productsText ? '\nPRODUCTS ADDED\n'+s.productsText : ''}\n`;
+    sectionsText += `\n${s.label.toUpperCase()}\n${s.rowsText}${s.productsText ? '\nCHEMICALS ADDED\n'+s.productsText : ''}${s.servicedText ? '\nSERVICE PERFORMED\n'+s.servicedText : ''}\n`;
   });
 
   const durationMs = customer.lastServiceDurationMs;

@@ -203,6 +203,8 @@ input::placeholder{color:#A9BCB9;}
 .section-head h2{margin-bottom:0;}
 .section-count{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;white-space:nowrap;}
 
+
+.reorder-placeholder{pointer-events:none;}
 .cust-row{
   display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:12px 4px;border-bottom:1px solid var(--line);
@@ -917,6 +919,15 @@ input::placeholder{color:#A9BCB9;}
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">More settings will show up on this page as they're added.</p>
     </div>
     <div class="card">
+      <h2>Storage</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Everything lives in this browser's storage, which browsers cap at roughly 5&ndash;10&nbsp;MB. Photos take up the most room by far. When it fills, nothing new can be saved.</p>
+      <div style="height:12px;border-radius:6px;background:var(--surface-alt);overflow:hidden;">
+        <div id="storageBarFill" style="height:100%;width:0;background:var(--teal-mid);transition:width .3s ease;"></div>
+      </div>
+      <p id="storageBarText" style="font-size:12px;color:var(--muted);margin:8px 0 0;"></p>
+    </div>
+
+    <div class="card">
       <h2>Backup &amp; restore</h2>
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Download a snapshot of everything — customers, technicians, readings, equipment, routes, and settings. Keep it somewhere safe. If data is ever changed or deleted by mistake, restoring a backup puts it all back.</p>
       <div class="btn-row">
@@ -1127,6 +1138,7 @@ input::placeholder{color:#A9BCB9;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+let storageWarningShown = false;
 const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 function lsGet(key){
@@ -1137,13 +1149,50 @@ function lsGet(key){
     return null;
   }
 }
+// Storage is capped by the browser. When it fills, setItem throws — and this
+// used to swallow that quietly, so saves appeared to work but changed nothing.
+// Now it says so loudly, because silent data loss is far worse than an alert.
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
     return true;
   }catch(e){
+    const full = e && (e.name === 'QuotaExceededError'
+      || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+      || e.code === 22 || e.code === 1014);
+    console.error('Could not save "' + key + '":', e);
+
+    if(full && !storageWarningShown){
+      storageWarningShown = true;
+      if(typeof alertDialog === 'function'){
+        alertDialog(
+          'The browser has run out of storage, so nothing new can be saved right now. ' +
+          'Anything you change will be lost until space is freed up. ' +
+          'Download a backup, then clear old visit photos — they take up the most room.',
+          'Storage is full');
+      } else {
+        alert('Storage is full — changes are not being saved. Download a backup and clear old photos.');
+      }
+      setTimeout(()=>{ storageWarningShown = false; }, 30000);
+    } else if(!full && typeof showToast === 'function'){
+      showToast("Couldn't save — see the browser console for details");
+    }
     return false;
   }
+}
+
+// How close storage is to full, so it can be shown before it becomes a problem
+function storageUsage(){
+  let bytes = 0;
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith(STORAGE_PREFIX)){
+        bytes += k.length + (localStorage.getItem(k) || '').length;
+      }
+    }
+  }catch(e){}
+  return bytes;
 }
 
 let customers = lsGet('customers') || [];
@@ -1884,50 +1933,118 @@ document.addEventListener('touchstart', (e)=>{
   if(row && row.querySelector('.access-tip')) row.classList.add('tip-open');
 }, {passive:true});
 
+
+// ---------- Smooth drag reordering ----------
+// The dragged row is lifted out of the flow and follows the finger exactly,
+// while a placeholder holds its gap and the other rows glide out of the way.
+// Reordering only happens when the finger passes a neighbour's midpoint, so
+// nothing jitters back and forth.
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   let dragging = false;
+  let placeholder = null;
+  let startX = 0, startY = 0;
+  let offsetX = 0, offsetY = 0;
+  let lastX = 0, lastY = 0;
+  let frame = null;
+  let edgeTimer = null;
 
-  function itemsIn(){
-    return Array.from(container.querySelectorAll(itemSelector));
+  function siblings(){
+    return Array.from(container.querySelectorAll(itemSelector))
+      .filter(el => el !== item && el !== placeholder);
   }
 
-  function lift(){
+  function lift(clientX, clientY){
+    const rect = item.getBoundingClientRect();
     dragging = true;
-    item.style.opacity = '0.9';
-    item.style.boxShadow = '0 6px 18px rgba(15,46,46,0.22)';
-    item.style.borderRadius = '10px';
-    item.style.position = 'relative';
-    item.style.zIndex = '30';
-    document.body.style.overflow = 'hidden';
+    startX = clientX; startY = clientY;
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+    lastX = clientX; lastY = clientY;
+
+    // A placeholder keeps the gap so nothing collapses underneath
+    placeholder = document.createElement('div');
+    placeholder.className = 'reorder-placeholder';
+    placeholder.style.cssText = 'width:' + rect.width + 'px;height:' + rect.height + 'px;'
+      + 'border-radius:10px;background:rgba(31,138,140,0.08);'
+      + 'border:1.5px dashed rgba(31,138,140,0.45);box-sizing:border-box;'
+      + 'flex:0 0 auto;';
+    item.parentNode.insertBefore(placeholder, item);
+
+    // Lift the row out of the flow so moving it costs nothing
+    item.style.position = 'fixed';
+    item.style.left = rect.left + 'px';
+    item.style.top = rect.top + 'px';
+    item.style.width = rect.width + 'px';
+    item.style.margin = '0';
+    item.style.zIndex = '400';
+    item.style.pointerEvents = 'none';
+    item.style.transition = 'box-shadow .15s ease, transform .15s ease';
+    item.style.boxShadow = '0 10px 26px rgba(15,46,46,0.28)';
+    item.style.transform = 'scale(1.02)';
+    item.style.background = item.style.background || '#fff';
+
+    // Neighbours glide rather than jump
+    siblings().forEach(el => { el.style.transition = 'transform .18s ease'; });
+  }
+
+  function render(){
+    frame = null;
+    if(!dragging) return;
+    item.style.transform = 'translate(' + (lastX - startX) + 'px,' + (lastY - startY) + 'px) scale(1.02)';
+
+    // Move the placeholder once the finger clears a neighbour's midpoint
+    for(const other of siblings()){
+      const b = other.getBoundingClientRect();
+      const horizontal = b.width > b.height * 1.6;
+      const overIt = lastX > b.left && lastX < b.right && lastY > b.top && lastY < b.bottom;
+      if(!overIt) continue;
+      const past = horizontal
+        ? lastX > b.left + b.width / 2
+        : lastY > b.top + b.height / 2;
+      const ref = past ? other.nextSibling : other;
+      if(ref !== placeholder) container.insertBefore(placeholder, ref);
+      break;
+    }
+  }
+
+  function schedule(){
+    if(frame === null) frame = requestAnimationFrame(render);
+  }
+
+  function startEdgeScroll(){
+    if(edgeTimer) return;
+    edgeTimer = setInterval(()=>{
+      if(!dragging) return;
+      const zone = 90;
+      const top = lastY;
+      const bottom = window.innerHeight - lastY;
+      let dy = 0;
+      if(top < zone) dy = -Math.ceil((zone - top) / 5);
+      else if(bottom < zone) dy = Math.ceil((zone - bottom) / 5);
+      if(dy){ window.scrollBy(0, dy); schedule(); }
+    }, 16);
   }
 
   function drop(){
+    if(!dragging) return;
     dragging = false;
-    item.style.opacity = '';
-    item.style.boxShadow = '';
-    item.style.borderRadius = '';
-    item.style.position = '';
-    item.style.zIndex = '';
-    document.body.style.overflow = '';
-    const keys = itemsIn().map(el => el.dataset.reorderKey).filter(k => k !== undefined);
-    if(keys.length && onReorder) onReorder(keys);
-  }
+    if(frame !== null){ cancelAnimationFrame(frame); frame = null; }
+    if(edgeTimer){ clearInterval(edgeTimer); edgeTimer = null; }
 
-  // Works for stacked rows and for chips laid out side by side
-  function moveTo(clientX, clientY){
-    const others = itemsIn().filter(el => el !== item);
-    for(const other of others){
-      const b = other.getBoundingClientRect();
-      const inside = clientX > b.left && clientX < b.right
-                  && clientY > b.top && clientY < b.bottom;
-      if(!inside) continue;
-      const wide = b.width > b.height;   // chip in a row vs a full-width row
-      const past = wide
-        ? clientX > b.left + b.width / 2
-        : clientY > b.top + b.height / 2;
-      if(past) other.after(item); else other.before(item);
-      return;
+    // Put the row back where the placeholder ended up
+    if(placeholder && placeholder.parentNode){
+      placeholder.parentNode.insertBefore(item, placeholder);
+      placeholder.parentNode.removeChild(placeholder);
     }
+    placeholder = null;
+
+    ['position','left','top','width','margin','zIndex','pointerEvents',
+     'transition','boxShadow','transform'].forEach(p => { item.style[p] = ''; });
+    siblings().forEach(el => { el.style.transition = ''; });
+
+    const keys = Array.from(container.querySelectorAll(itemSelector))
+      .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
+    if(keys.length && onReorder) onReorder(keys);
   }
 
   handle.style.touchAction = 'none';
@@ -1938,37 +2055,46 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   handle.addEventListener('touchstart', (e)=>{
     if(e.touches.length !== 1) return;
     e.preventDefault();
-    lift();
+    const t = e.touches[0];
+    lift(t.clientX, t.clientY);
+    startEdgeScroll();
   }, {passive:false});
 
   handle.addEventListener('touchmove', (e)=>{
     if(!dragging) return;
     e.preventDefault();
-    moveTo(e.touches[0].clientX, e.touches[0].clientY);
+    lastX = e.touches[0].clientX;
+    lastY = e.touches[0].clientY;
+    schedule();
   }, {passive:false});
 
-  handle.addEventListener('touchend', (e)=>{
-    if(!dragging) return;
-    e.preventDefault();
-    drop();
-  }, {passive:false});
+  ['touchend','touchcancel'].forEach(ev=>{
+    handle.addEventListener(ev, (e)=>{
+      if(!dragging) return;
+      e.preventDefault();
+      drop();
+    }, {passive:false});
+  });
 
-  handle.addEventListener('touchcancel', ()=>{ if(dragging) drop(); });
-
-  // Mouse works the same way, so desktop behaves identically
   handle.addEventListener('mousedown', (e)=>{
     e.preventDefault();
-    lift();
-    const onMove = (ev)=>{ if(dragging) moveTo(ev.clientX, ev.clientY); };
+    lift(e.clientX, e.clientY);
+    startEdgeScroll();
+    const onMove = (ev)=>{
+      if(!dragging) return;
+      lastX = ev.clientX; lastY = ev.clientY;
+      schedule();
+    };
     const onUp = ()=>{
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      if(dragging) drop();
+      drop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
 }
+
 
 const QUICK_BUTTON_COLORS = {
   blue:   {label:'Blue',   fill:'#E7F0F6', border:'#A8CBE0', text:'#0B6FA4', solid:'#0B6FA4'},
@@ -4869,12 +4995,24 @@ let customCustHideTimer = null;
 let customSnapshot = null;
 
 function saveCustomConfig(){
-  lsSet('customChemConfig', customConfig);
+  const ok = lsSet('customChemConfig', customConfig);
   const note = document.getElementById('customSaveNote');
-  if(note) note.textContent = 'Saved automatically at ' +
-    new Date().toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
-  // Keep the "who has a custom setup" list current as edits are made
+  if(note){
+    if(ok){
+      // Read it straight back — a save that didn't land shouldn't claim it did
+      const check = lsGet('customChemConfig') || {};
+      const stored = customCustomerId && check[customCustomerId];
+      note.style.color = 'var(--muted)';
+      note.textContent = 'Saved at ' + new Date().toLocaleTimeString(undefined,
+        {hour:'numeric', minute:'2-digit'})
+        + (stored ? '' : ' — nothing to save yet');
+    } else {
+      note.style.color = 'var(--rust)';
+      note.textContent = 'NOT SAVED — storage is full';
+    }
+  }
   if(typeof renderExistingCustomSetups === 'function') renderExistingCustomSetups();
+  return ok;
 }
 
 
@@ -4901,6 +5039,48 @@ function saveCustomConfig(){
 
 
 // Shows exactly who has a custom setup, so nothing is customised invisibly
+
+// Load one customer's custom setup into the editors above
+function openCustomSetup(cust, bodies){
+  customCustomerId = cust.id;
+  customBodyKey = (bodies && bodies[0]) || null;
+  customWorking = null;
+  customWorkingFor = null;
+
+  const searchEl = document.getElementById('customCustSearch');
+  if(searchEl) searchEl.value = displayName(cust.name);
+  const clearEl = document.getElementById('customCustClear');
+  if(clearEl) clearEl.style.display = 'flex';
+  hideCustomCustSuggest();
+
+  renderCustomBodies();
+  takeCustomSnapshot();
+  renderChemConfigLists();
+  renderExistingCustomSetups();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// Put the editors away without touching what was saved
+function closeCustomSetup(){
+  customCustomerId = null;
+  customBodyKey = null;
+  customWorking = null;
+  customWorkingFor = null;
+  customSnapshot = null;
+
+  const searchEl = document.getElementById('customCustSearch');
+  if(searchEl) searchEl.value = '';
+  const clearEl = document.getElementById('customCustClear');
+  if(clearEl) clearEl.style.display = 'none';
+  const noteEl = document.getElementById('customSaveNote');
+  if(noteEl) noteEl.textContent = '';
+  hideCustomCustSuggest();
+
+  renderCustomBodies();
+  renderChemConfigLists();
+  renderExistingCustomSetups();
+}
+
 function renderExistingCustomSetups(){
   const box = document.getElementById('customExistingList');
   const wrap = document.getElementById('customExistingWrap');
@@ -4922,8 +5102,21 @@ function renderExistingCustomSetups(){
   entries.sort((a,b)=> sortKeyName(a.cust.name).localeCompare(sortKeyName(b.cust.name)));
   box.innerHTML = '';
   entries.forEach(({cust, bodies})=>{
+    const isOpen = customCustomerId === cust.id;
+
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);';
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer;';
+
+    // Anywhere on the row opens or closes this customer's setup, but it isn't
+    // styled as a button — the name alone carries the visual cue.
+    row.addEventListener('click', (e)=>{
+      if(e.target.closest('button')) return;   // leave Remove alone
+      if(customCustomerId === cust.id){
+        closeCustomSetup();
+        return;
+      }
+      openCustomSetup(cust, bodies);
+    });
 
     const left = document.createElement('div');
     left.style.minWidth = '0';
@@ -4933,8 +5126,10 @@ function renderExistingCustomSetups(){
       const f = (cust.fountains || []).find(x => x.id === k);
       return f ? f.name : 'Extra';
     });
-    left.innerHTML = '<div style="font-size:13.5px;font-weight:600;">' + displayName(cust.name) +
-      '</div><div style="font-size:11.5px;color:var(--muted);">' + names.join(', ') + '</div>';
+    left.innerHTML = '<div style="font-size:13.5px;font-weight:' + (isOpen ? '700' : '600')
+      + ';color:var(--teal-deep);">' + displayName(cust.name) + (isOpen ? ' \u2039' : '')
+      + '</div><div style="font-size:11.5px;color:var(--muted);">' + names.join(', ') + '</div>';
+
     row.appendChild(left);
 
     const del = document.createElement('button');
@@ -5839,7 +6034,21 @@ function renderTechProfile(techId){
   checkRow('Equipment photo access', 'canPhotoEquipment',
     'Lets this technician photograph their customers\' equipment from the field app. Photos save to the customer\'s profile.');
 
-  function checkRow(label, field, tip){
+  // Photo requirements for this technician specifically
+  const phHead = document.createElement('div');
+  phHead.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;"
+    + 'color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:16px 0 4px;';
+  phHead.textContent = 'Photos this technician must take';
+  meta.appendChild(phHead);
+
+  checkRow('Require after photo', 'requireAfterPhoto',
+    'This technician cannot submit a service report until an after photo is taken.', true);
+  checkRow('Require before photo', 'requireBeforePhoto',
+    'This technician must take a before photo on each body of water before moving on.');
+  checkRow('Require closed gate photo', 'requireGatePhoto',
+    'This technician must photograph the closed or locked gate before submitting.');
+
+  function checkRow(label, field, tip, defaultOn){
     const el = document.createElement('label');
     el.className = 'profile-meta-row access-row';
     el.style.cssText += 'display:flex;align-items:center;gap:10px;cursor:pointer;';
@@ -5854,7 +6063,8 @@ function renderTechProfile(techId){
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.style.cssText = 'margin:0;';
-    cb.checked = !!tech[field];
+    // Some requirements start on for a new technician
+    cb.checked = defaultOn ? tech[field] !== false : tech[field] === true;
     cb.addEventListener('change', ()=>{
       tech[field] = cb.checked;
       saveTechField();
@@ -6429,6 +6639,23 @@ document.getElementById('btnMultiReport').addEventListener('click', openMultiRep
 
 
 // ---------- Backup & restore ----------
+
+// Rough gauge — browsers don't report the real cap, so 5MB is the safe assumption
+function renderStorageMeter(){
+  const fill = document.getElementById('storageBarFill');
+  const text = document.getElementById('storageBarText');
+  if(!fill || !text) return;
+  const bytes = storageUsage();
+  const cap = 5 * 1024 * 1024;
+  const pct = Math.min(100, Math.round((bytes / cap) * 100));
+  fill.style.width = pct + '%';
+  fill.style.background = pct > 85 ? 'var(--rust)' : (pct > 65 ? 'var(--gold)' : 'var(--teal-mid)');
+  const mb = (bytes / (1024 * 1024)).toFixed(2);
+  text.textContent = mb + ' MB used — about ' + pct + '% of the usual limit'
+    + (pct > 85 ? '. Download a backup and clear old photos soon.' : '');
+  text.style.color = pct > 85 ? 'var(--rust)' : 'var(--muted)';
+}
+
 function collectBackup(){
   const data = {};
   for(let i = 0; i < localStorage.length; i++){
@@ -7563,6 +7790,7 @@ function switchView(view){
   document.querySelectorAll('.tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.view === view);
   });
+  if(view === 'settings') renderStorageMeter();
   if(view === 'chemconfig'){
     selectedChemConfigType = 'pool';
     document.querySelectorAll('#chemConfigTypeControl .history-type-btn').forEach(b=>{
