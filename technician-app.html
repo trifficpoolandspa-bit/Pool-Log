@@ -1004,6 +1004,28 @@ function showToast(msg){
   setTimeout(()=>t.classList.remove('show'), 1800);
 }
 
+
+// Message-only dialog for when something simply can't proceed
+function alertDialog(message, title){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.style.zIndex = '420';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:420px;">
+        ${title ? '<h3 style="font-size:15px;margin:0 0 8px;">' + title + '</h3>' : ''}
+        <p>${message}</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="fieldAlertOk" style="flex:1;">OK</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const done = ()=>{ document.body.removeChild(overlay); resolve(); };
+    overlay.querySelector('#fieldAlertOk').addEventListener('click', done);
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) done(); });
+  });
+}
+
 function confirmDialog(message, confirmLabel){
   confirmLabel = confirmLabel || 'Delete';
   return new Promise((resolve)=>{
@@ -1040,9 +1062,24 @@ function hideStepBar(){
 
 let currentViewName = 'home';
 
+
+// Swallow the delayed click a phone fires after a tap, when the view has
+// changed underneath it in the meantime.
+let viewChangedAt = 0;
+function viewJustChanged(){
+  return Date.now() - viewChangedAt < 400;
+}
+document.addEventListener('click', (e)=>{
+  if(viewJustChanged()){
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);   // capture phase, so it runs before any row handler
+
 function switchView(view, opts){
   opts = opts || {};
   currentViewName = view;
+  viewChangedAt = Date.now();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
   // Always land at the top rather than wherever the last page was scrolled to
@@ -1050,6 +1087,7 @@ function switchView(view, opts){
   document.querySelectorAll('.tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.view === view);
   });
+  armBackButton();
   if(view !== 'visit'){
     captureVisitDraft();
     hideStepBar();
@@ -1288,8 +1326,22 @@ function techRequires(flag){
   return !!(currentUser && currentUser[flag] === true);
 }
 
+// A customer configured to need a gate photo still needs one when the
+// app-wide setting is switched off.
+function customerWantsGatePhoto(){
+  const cid = currentVisitCustomerId;
+  if(!cid) return false;
+  const custom = lsGet('customChemConfig') || {};
+  const forCust = custom[cid];
+  if(!forCust) return false;
+  // Any body of water asking for it means the visit needs one
+  return Object.keys(forCust).some(k => forCust[k] && forCust[k].requireGatePhoto === true);
+}
+
 function gatePhotoApplies(){
-  const required = appSettings.requireGatePhoto === true || techRequires('requireGatePhoto');
+  const required = appSettings.requireGatePhoto === true
+    || techRequires('requireGatePhoto')
+    || customerWantsGatePhoto();
   if(!required) return false;
   if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
   return true;
@@ -1301,13 +1353,48 @@ function gatePhotoApplies(){
 // way to take the photo.
 function gatePhotoRequired(){
   if(!gatePhotoApplies()) return false;
-  return currentVisibleSection === 'pool';
+  return isLastSectionOfVisit();
+}
+
+// The gate is locked on the way out, so the photo belongs on the last body of
+// water being serviced — not always the pool.
+function isLastSectionOfVisit(){
+  if(!pendingVisit || !currentVisibleSection) return false;
+  if(currentVisibleSection === 'equipment') return false;
+
+  // Every fountain is its own section with its own id, while
+  // currentVisibleSection just says 'fountain' — so use the fountain id.
+  const here = currentVisibleSection === 'fountain'
+    ? currentVisitFountainId
+    : currentVisibleSection;
+  if(!here) return false;
+
+  const needed = pendingVisit.neededSections || [];
+  if(needed.indexOf(here) === -1) return false;
+
+  // Last if every other needed section has already been saved
+  return needed.every(s => s === here || pendingVisit.doneSections[s] !== undefined);
 }
 
 function syncGatePhotoBlock(){
   const block = document.getElementById('gatePhotoBlock');
   if(!block) return;
-  block.style.display = gatePhotoApplies() ? 'block' : 'none';
+
+  const show = gatePhotoApplies() && isLastSectionOfVisit();
+  block.style.display = show ? 'block' : 'none';
+  if(!show) return;
+
+  // Move it into whichever section's after-photos card is showing, so it sits
+  // with the last report rather than staying on the pool
+  const cardId = currentVisibleSection === 'pool' ? 'visitPoolPhotoSection'
+    : (currentVisibleSection === 'spa' ? 'visitSpaPhotoSection' : 'visitFountainPhotoSection');
+  const card = document.getElementById(cardId);
+  if(card && block.parentNode !== card){
+    // Sit just under the card's heading and hint text
+    const hint = card.querySelector('.voice-hint');
+    if(hint && hint.nextSibling) card.insertBefore(block, hint.nextSibling);
+    else card.insertBefore(block, card.firstChild);
+  }
 }
 
 // Is an after photo actually required for this body of water? Only if the
@@ -1570,7 +1657,7 @@ function captureFromCamera(maxDim, quality){
       + 'display:flex;flex-direction:column;';
     overlay.innerHTML = `
       <video id="camPreview" autoplay playsinline muted
-        style="flex:1;width:100%;object-fit:cover;background:#000;"></video>
+        style="flex:1;width:100%;min-height:0;object-fit:contain;background:#000;"></video>
       <div style="flex:0 0 auto;padding:18px 20px calc(18px + env(safe-area-inset-bottom));
                   display:flex;align-items:center;justify-content:space-between;gap:16px;background:#000;">
         <button type="button" id="camCancel"
@@ -1595,17 +1682,78 @@ function captureFromCamera(maxDim, quality){
       if(overlay.parentNode) document.body.removeChild(overlay);
     }
 
+    // Phones with more than one rear camera label the ultra-wide as such.
+    // Picking it gets the whole pool in frame without walking backwards.
+    async function widestRearCameraId(){
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const wide = cams.find(d=>{
+          const l = (d.label || '').toLowerCase();
+          return l.includes('ultra') || l.includes('0.5') || l.includes('wide angle');
+        });
+        return wide ? wide.deviceId : null;
+      }catch(e){ return null; }
+    }
+
+    // Zoom all the way out if the camera exposes a zoom range
+    async function zoomOut(track){
+      try{
+        if(!track.getCapabilities) return;
+        const caps = track.getCapabilities();
+        if(caps.zoom && typeof caps.zoom.min === 'number'){
+          await track.applyConstraints({advanced: [{zoom: caps.zoom.min}]});
+        }
+      }catch(e){ /* not supported — the default view is what we get */ }
+    }
+
     async function open(){
       try{
         if(stream) stream.getTracks().forEach(t => t.stop());
+
+        // Labels are only readable once permission has been granted, so the
+        // first open uses facingMode and later ones can name the wide lens.
+        let wideId = facing === 'environment' ? await widestRearCameraId() : null;
+
+        const base = {width:{ideal:1920}, height:{ideal:1440}};
         stream = await navigator.mediaDevices.getUserMedia({
-          video: {facingMode: facing, width:{ideal:1600}, height:{ideal:1200}},
+          video: wideId
+            ? Object.assign({deviceId: {exact: wideId}}, base)
+            : Object.assign({facingMode: facing}, base),
           audio: false
         });
+
+        const track = stream.getVideoTracks()[0];
+        if(track) await zoomOut(track);
+
+        // If this was the first open, the wide lens may only now be nameable
+        if(!wideId && facing === 'environment'){
+          const found = await widestRearCameraId();
+          const current = track && track.getSettings ? track.getSettings().deviceId : null;
+          if(found && found !== current){
+            stream.getTracks().forEach(t => t.stop());
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: Object.assign({deviceId: {exact: found}}, base), audio: false
+            });
+            const t2 = stream.getVideoTracks()[0];
+            if(t2) await zoomOut(t2);
+          }
+        }
+
         video.srcObject = stream;
       }catch(err){
-        stop();
-        if(!done){ done = true; reject(err); }
+        // A named lens can be refused — fall back to the plain rear camera
+        try{
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {facingMode: facing}, audio: false
+          });
+          video.srcObject = stream;
+          const t = stream.getVideoTracks()[0];
+          if(t) await zoomOut(t);
+        }catch(err2){
+          stop();
+          if(!done){ done = true; reject(err2); }
+        }
       }
     }
 
@@ -2493,7 +2641,15 @@ function renderHomeList(){
       const startBtn = document.createElement('button');
       startBtn.className = 'btn btn-primary';
       startBtn.style.cssText = 'flex:1;padding:10px 14px;font-size:14px;';
-      startBtn.textContent = 'Start visit \u2192';
+      // Only today's route can be worked, so say so rather than letting them
+      // press it and be turned away
+      const isToday = viewingToday();
+      startBtn.textContent = isToday ? 'Start visit \u2192' : 'Not today\u2019s route';
+      if(!isToday){
+        startBtn.style.opacity = '0.45';
+        startBtn.style.cursor = 'not-allowed';
+        startBtn.title = 'Service reports can only be logged on the day the work is done';
+      }
       startBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
         openVisit(c.id);
@@ -2541,9 +2697,12 @@ function renderServicedList(){
     });
     row.appendChild(reserviceBtn);
 
-    // Tapping the row pulls up today's report for that customer
+    // Tapping the row pulls up today's report for that customer.
+    // Guarded so a leftover click from a previous screen can't trigger it.
     row.style.cursor = 'pointer';
-    row.addEventListener('click', async ()=>{
+    row.addEventListener('click', async (ev)=>{
+      if(viewJustChanged()) return;
+      if(currentViewName !== 'serviced') return;
       const sel = document.getElementById('reportCustomerSelect');
       if(sel){
         populateCustomerSelect(sel, 'Add a customer first');
@@ -3899,6 +4058,7 @@ function applyVisitStep(){
       if(el) el.style.display = visible ? 'block' : 'none';
     });
   });
+  syncGatePhotoBlock();
   refreshSaveButtons();
   syncStepChrome();
   armBackButton();
@@ -4082,18 +4242,17 @@ const SPOKEN_ALIASES = {
                'liquid', 'chlorine liquid', 'jugs', 'gallons of chlorine', 'hypochlorite']
 };
 
-// Every phrase that should match one configured item
+// Every phrase that should match one configured item.
+// Aliases attach on an EXACT key match only. Matching loosely against the
+// label made "Chlorine tabs" claim the word "chlorine" and "Cyanuric acid"
+// claim "muriatic acid", so the wrong field kept winning.
 function spokenPhrasesFor(item){
   const out = [];
   if(item.label) out.push(item.label.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim());
+
   const key = (item.key || '').toLowerCase();
-  Object.keys(SPOKEN_ALIASES).forEach(canon=>{
-    // Match on the item's key, or on its label containing the canonical word
-    const labelHas = (item.label || '').toLowerCase().indexOf(canon) !== -1;
-    if(key === canon || key.indexOf(canon) !== -1 || labelHas){
-      SPOKEN_ALIASES[canon].forEach(p => out.push(p));
-    }
-  });
+  if(SPOKEN_ALIASES[key]) SPOKEN_ALIASES[key].forEach(p => out.push(p));
+
   // Longest first so "total alkalinity" beats "alkalinity"
   return Array.from(new Set(out.filter(Boolean))).sort((a,b)=> b.length - a.length);
 }
@@ -4122,6 +4281,26 @@ function parseSpokenReadings(transcript){
     const t = text.trim();
     if(!t) return null;
 
+    // A decimal said without a leading zero: "point one", "point two five",
+    // ".5" — nobody says "zero point one" out loud.
+    const bare = t.match(/^[^0-9a-z]*(?:point|decimal)\s+(.+)$/);
+    if(bare){
+      const digits = [];
+      const words0to9 = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,
+                         oh:0,o:0};
+      const after = bare[1].split(/[^a-z0-9]+/).filter(Boolean);
+      for(const w of after){
+        if(/^\d+$/.test(w)){ digits.push(w); }
+        else if(words0to9[w] !== undefined){ digits.push(words0to9[w]); }
+        else break;
+        if(digits.join('').length >= 2) break;
+      }
+      if(digits.length) return '0.' + digits.join('');
+    }
+    // ".5" with no whole part
+    const dotFirst = t.match(/^[^0-9a-z]*\.(\d+)/);
+    if(dotFirst) return '0.' + dotFirst[1];
+
     // Digits first, including decimals written as digits
     let m = t.match(/^[^0-9a-z]*(\d+(?:\.\d+)?)/);
     if(m){
@@ -4135,6 +4314,12 @@ function parseSpokenReadings(transcript){
     const parts = t.split(/[^a-z0-9.]+/).filter(Boolean);
     if(!parts.length) return null;
 
+    // Fractions said on their own: "half", "a half", "a quarter"
+    const lead = parts[0] === 'a' || parts[0] === 'an' ? 1 : 0;
+    if(parts[lead] === 'half') return '0.5';
+    if(parts[lead] === 'quarter') return '0.25';
+    if(parts[lead] === 'third') return '0.33';
+
     // Whole part, allowing "twenty eight" and "eight hundred"
     let whole = null, i = 0;
     while(i < parts.length){
@@ -4143,10 +4328,15 @@ function parseSpokenReadings(transcript){
       const n = words[w];
       if(whole === null) whole = n;
       else if(n === 100 || n === 1000) whole = whole * n;
-      else if(whole % 10 === 0 && n < 10) whole = whole + n;
+      // "twenty eight" -> 28
+      else if(whole % 10 === 0 && whole < 100 && n < 10) whole = whole + n;
+      // "two fifty" -> 250, "three twenty" -> 320. Techs say hardness and
+      // salt this way; the hundreds are implied.
+      else if(whole < 10 && n >= 20 && n < 100 && n % 10 === 0) whole = whole * 100 + n;
+      // "eleven hundred" style already handled above; "two thousand eight hundred"
       else break;
       i++;
-      if(i > 3) break;
+      if(i > 4) break;
     }
     if(whole === null) return null;
 
@@ -4168,29 +4358,32 @@ function parseSpokenReadings(transcript){
 
   const targets = [];
   (lists.chemicals || []).forEach(i=>{
-    if(i.label) targets.push({label:i.label, id:fieldId(type,'chem',i.key), phrases:spokenPhrasesFor(i)});
+    if(i.label) targets.push({label:i.label, key:i.key, id:fieldId(type,'chem',i.key), phrases:spokenPhrasesFor(i)});
   });
   (lists.dosages || []).forEach(i=>{
-    if(i.label) targets.push({label:i.label, id:fieldId(type,'dose',i.key), phrases:spokenPhrasesFor(i)});
+    if(i.label) targets.push({label:i.label, key:i.key, id:fieldId(type,'dose',i.key), phrases:spokenPhrasesFor(i)});
   });
 
-  // Most specific phrase first, so "total alkalinity" is never mistaken for
-  // "alkalinity" and "phosphate" is never mistaken for "ph"
-  targets.sort((a,b)=>{
-    const al = a.phrases[0] ? a.phrases[0].length : 0;
-    const bl = b.phrases[0] ? b.phrases[0].length : 0;
-    return bl - al;
+  // Every phrase from every field, longest first. Sorting across all fields
+  // rather than within each one is what stops "acid" claiming the word inside
+  // "cyanuric acid" before "cyanuric acid" itself gets a chance.
+  const candidates = [];
+  targets.forEach(t=>{
+    t.phrases.forEach(p => candidates.push({phrase: p, target: t}));
   });
+  candidates.sort((a,b)=> b.phrase.length - a.phrase.length);
 
   const applied = [];
   const used = [];
+  const filled = {};
 
   function overlaps(start, end){
     return used.some(u => start < u.end && end > u.start);
   }
 
-  targets.forEach(t=>{
-    for(const p of t.phrases){
+  candidates.forEach(({phrase: p, target: t})=>{
+    if(filled[t.id]) return;         // that field already has a value
+    {
       // Whole words only — otherwise "ph" matches inside "phosphate"
       const rx = new RegExp('(^|[^a-z0-9])' + p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z0-9]|$)', 'g');
       let m;
@@ -4199,14 +4392,27 @@ function parseSpokenReadings(transcript){
         const end = start + p.length;
         if(overlaps(start, end)){ rx.lastIndex = end; continue; }
 
-        const value = readNumber(said.slice(end, end + 40));
+        let value = readNumber(said.slice(end, end + 40));
         if(value === null){ rx.lastIndex = end; continue; }
+
+        // pH is always one decimal place, so "seven four" means 7.4 —
+        // nobody reads a pH of 7 and then says a stray 4.
+        if(t.key === 'ph' && value.indexOf('.') === -1){
+          const after = said.slice(end, end + 40);
+          const two = after.match(/^[^0-9a-z]*(?:\d|zero|one|two|three|four|five|six|seven|eight|nine)\s+(\d|zero|one|two|three|four|five|six|seven|eight|nine)\b/);
+          if(two){
+            const digits = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9};
+            const second = digits[two[1]] !== undefined ? digits[two[1]] : two[1];
+            if(Number(value) <= 14) value = value + '.' + second;
+          }
+        }
 
         const el = document.getElementById(t.id);
         if(!el) return;
         el.value = value;
         el.dispatchEvent(new Event('input', {bubbles:true}));
         used.push({start, end});
+        filled[t.id] = true;
         applied.push(t.label + ' ' + value);
         return;   // one value per field
       }
@@ -4529,39 +4735,67 @@ function armBackButton(){
   try{ history.pushState({poollog:true}, ''); }catch(e){}
 }
 
+let backPromptOpen = false;
+
 window.addEventListener('popstate', async ()=>{
+  // Put an entry back straight away, before anything else can go wrong.
+  // Without this the stack empties and the next Back closes the app.
+  armBackButton();
+
   if(currentViewName === 'visit'){
     if(currentVisitStep > 1){
       goToVisitStep(currentVisitStep - 1);
-      armBackButton();
       return;
     }
-    // On the first step, back means leaving — same warning as the on-screen button
-    if(hasUnsavedSectionData()){
-      armBackButton();
-      const ok = await confirmDialog(
-        "This will remove all readings taken. Are you sure you'd like to cancel the report?",
+
+    // Leaving a visit always asks first — whether or not anything was typed,
+    // and whether or not a photo was taken. Backing out of a report by
+    // accident should never be possible.
+    if(backPromptOpen) return;
+    backPromptOpen = true;
+    let ok = false;
+    try{
+      ok = await confirmDialog(
+        "Are you sure you'd like to cancel the report? Anything entered will be lost.",
         'Cancel report');
-      if(!ok) return;
-      discardVisitInProgress();
-    } else {
-      armBackButton();
+    } finally {
+      backPromptOpen = false;
     }
+    if(!ok){
+      armBackButton();     // they stayed, so keep an entry ready
+      return;
+    }
+    discardVisitInProgress();
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
     switchView('home');
     return;
   }
 
   // Anywhere else, back returns to the route rather than closing the app
-  if(currentViewName !== 'home'){
-    armBackButton();
-    switchView('home');
-  }
+  if(currentViewName !== 'home') switchView('home');
 });
 
 armBackButton();
 
+
+// Is the day currently being viewed actually today? Visits can only be logged
+// against the real date — browsing ahead or back is for planning, not working.
+function viewingToday(){
+  const d = dateForWeekday(selectedHomeDay);
+  if(!d) return false;
+  return d.toDateString() === new Date().toDateString();
+}
+
 async function openVisit(customerId){
+  if(!viewingToday()){
+    const d = dateForWeekday(selectedHomeDay);
+    const when = d ? d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'}) : selectedHomeDay;
+    await alertDialog(
+      'This route is for ' + when + ', not today. Service reports can only be logged on the day the work is done.',
+      'Not today\u2019s route');
+    return;
+  }
+
   if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
     const confirmed = await confirmDialog('You have unsaved readings for this visit. Switching customers will discard them. Continue?', 'Discard & switch');
     if(!confirmed) return;

@@ -726,6 +726,10 @@ input::placeholder{color:#A9BCB9;}
         <input type="checkbox" id="chkRequireAfterPhoto" style="margin:0;">
         <span>Require an after photo</span>
       </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
+        <input type="checkbox" id="chkRequireGatePhoto" style="margin:0;">
+        <span>Require a closed gate photo</span>
+      </label>
       <p id="photoRequireNote" style="display:none;font-size:11.5px;color:var(--rust);margin:8px 0 0;"></p>
     </div>
 
@@ -947,7 +951,32 @@ input::placeholder{color:#A9BCB9;}
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, pool volume (in gallons) can be entered when adding or editing a customer, and shows on their profile right under their technician. When off, the field is hidden entirely.</p>
     </div>
-    <div class="card">
+
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Photos</div>
+
+<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Before photos step</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingBeforePhotos" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps starts with a Before photos step so techs can capture the pool before any work is done. Turning this off removes that step entirely.</p>
+    </div>
+
+<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">After photos step</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingAfterPhotos" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps ends with an After photos step so techs can capture the pool once the work is done. Turning this off removes that step entirely.</p>
+    </div>
+
+<div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Require before photos</h2>
         <label class="toggle-switch">
@@ -957,7 +986,33 @@ input::placeholder{color:#A9BCB9;}
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take a before photo on every pool, spa, and extra body of water before moving on. Has no effect while the Before photos step is switched off below.</p>
     </div>
-    <div class="card">
+
+<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require after photos</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireAfterPhotos">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can submit the service report. Has no effect while the After photos step is switched off below.</p>
+    </div>
+
+<div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require a closed gate photo</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireGatePhoto">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report. Proof the property was left secure.</p>
+    </div>
+
+    
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Field app</div>
+
+<div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Voice entry button</h2>
         <label class="toggle-switch">
@@ -972,26 +1027,8 @@ input::placeholder{color:#A9BCB9;}
         <button type="button" class="btn btn-ghost" data-micside="right" style="flex:1;">Right of button</button>
       </div>
     </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require a closed gate photo</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireGatePhoto">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report. Proof the property was left secure.</p>
-    </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require after photos</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireAfterPhotos">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can submit the service report. Has no effect while the After photos step is switched off below.</p>
-    </div>
+    
+    
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Require a reason for skipped services</h2>
@@ -1022,26 +1059,8 @@ input::placeholder{color:#A9BCB9;}
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can drag customers into a different order on their Today list in the field apps. Turning this off locks the route order for everyone.</p>
     </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Before photos step</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingBeforePhotos" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps starts with a Before photos step so techs can capture the pool before any work is done. Turning this off removes that step entirely.</p>
-    </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">After photos step</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingAfterPhotos" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps ends with an After photos step so techs can capture the pool once the work is done. Turning this off removes that step entirely.</p>
-    </div>
+    
+    
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Dosage suggestion buttons</h2>
@@ -5409,6 +5428,8 @@ function renderPhotoRequirements(){
 
   beforeBox.checked = lists.requireBeforePhoto === true;
   afterBox.checked = lists.requireAfterPhoto === true;
+  const gateBox = document.getElementById('chkRequireGatePhoto');
+  if(gateBox) gateBox.checked = lists.requireGatePhoto === true;
 
   // If the step itself is switched off in Settings, the requirement can't apply
   const beforeOff = appSettings.showBeforePhotos === false;
@@ -5418,6 +5439,8 @@ function renderPhotoRequirements(){
   beforeBox.parentElement.style.opacity = beforeOff ? '0.45' : '';
   afterBox.parentElement.style.opacity = afterOff ? '0.45' : '';
 
+  // The gate photo has no on/off step of its own, so this tick always applies
+  // even when the app-wide gate setting is switched off.
   const off = [];
   if(beforeOff) off.push('Before photos');
   if(afterOff) off.push('After photos');
@@ -5436,6 +5459,16 @@ document.getElementById('chkRequireBeforePhoto').addEventListener('change', (e)=
   lists.requireBeforePhoto = e.target.checked;
   saveActiveConfig();
   showToast(e.target.checked ? 'Before photo now required here' : 'Before photo no longer required here');
+});
+
+document.getElementById('chkRequireGatePhoto').addEventListener('change', (e)=>{
+  const lists = activeConfigLists();
+  if(!lists) return;
+  lists.requireGatePhoto = e.target.checked;
+  saveActiveConfig();
+  showToast(e.target.checked
+    ? 'Gate photo now required here, regardless of the app-wide setting'
+    : 'Gate photo no longer required here');
 });
 
 document.getElementById('chkRequireAfterPhoto').addEventListener('change', (e)=>{
