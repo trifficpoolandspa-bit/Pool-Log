@@ -333,16 +333,20 @@ textarea{min-height:52px;resize:vertical;}
 .ob-temp{background:#fff;color:#8C5A0F;}
 .ob-close{background:#fff;color:#B8492E;border-color:#EFC0B4 !important;}
 .step-bar{
-  position:fixed;bottom:62px;left:0;right:0;z-index:40;
+  /* Clear of the tab bar with room to spare — a thumb on the step button used
+     to land within a few pixels of the tabs underneath. */
+  position:fixed;bottom:calc(74px + env(safe-area-inset-bottom));
+  left:0;right:0;z-index:40;
   max-width:720px;margin:0 auto;
   background:#fff;border-top:1px solid var(--line);
-  padding:10px 14px;
+  border-radius:14px 14px 0 0;
+  padding:10px 14px 14px;
   box-shadow:0 -4px 14px rgba(15,46,46,0.08);
   display:none;
 }
 .step-bar #stepBarNext{padding:14px 18px;font-size:15.5px;}
 .step-bar #btnPushToTalk{width:62px !important;flex:0 0 62px !important;padding:0 !important;}
-body.has-step-bar{padding-bottom:146px;}
+body.has-step-bar{padding-bottom:calc(168px + env(safe-area-inset-bottom));}
 .step-back{
   flex-shrink:0;background:none;border:1px solid var(--line);
   color:var(--teal-deep);border-radius:9px;
@@ -354,9 +358,10 @@ body.has-step-bar{padding-bottom:146px;}
 #visitSectionButtons::-webkit-scrollbar{display:none;}
 #visitSectionButtons > button{flex:0 0 auto;}
 .bottombar{
-  position:fixed;bottom:0;left:0;right:0;
+  position:fixed;bottom:0;left:0;right:0;z-index:45;
   background:#fff;border-top:1px solid var(--line);
   display:flex;max-width:720px;margin:0 auto;
+  padding-bottom:env(safe-area-inset-bottom);
 }
 .bottombar .tab{padding:12px 4px 10px;font-size:11.5px;}
 .bottombar .tab i{display:block;font-size:19px;margin-bottom:2px;}
@@ -696,12 +701,39 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="techRouteCard" style="display:none;">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <h2 id="techRouteName" style="margin:0;">Technician</h2>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:baseline;gap:12px;flex:1;min-width:0;">
+          <h2 id="techRouteDayName" style="margin:0;">Thursday</h2>
+          <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:14px;flex-wrap:wrap;">
+            <span style="display:inline-flex;align-items:baseline;gap:6px;">
+              <span id="techRouteLeft" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
+              <span id="techRouteLeftLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);">stops left</span>
+            </span>
+            <span style="display:inline-flex;align-items:baseline;gap:6px;">
+              <span id="techRouteJobs" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);"></span>
+              <span id="techRouteJobsLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);">jobs left</span>
+            </span>
+          </span>
+        </div>
         <button class="btn btn-ghost" id="btnBackToTechList" style="width:auto;">← All technicians</button>
       </div>
-      <p id="techRouteMeta" style="font-size:12.5px;color:var(--muted);margin:6px 0 14px;"></p>
-      <div class="btn-row" id="techDayFilter" style="flex-wrap:wrap;margin-bottom:12px;"></div>
+      <p id="techRouteName" style="font-size:13.5px;font-weight:600;color:var(--teal-deep);margin:6px 0 0;">Technician</p>
+      <p id="techRouteMeta" style="display:none;"></p>
+
+      <div style="display:flex;align-items:center;gap:8px;margin:10px 0 14px;">
+        <button id="techPrevDay" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">&lsaquo;</button>
+        <span id="techDayLabel" style="flex:1 1 auto;font-size:14px;color:var(--muted);font-weight:600;text-align:center;"></span>
+        <button id="techNextDay" class="btn btn-ghost" style="width:auto;padding:6px 13px;font-size:17px;line-height:1;">&rsaquo;</button>
+        <button id="techPickDay" title="Jump to a date" style="width:auto;flex-shrink:0;padding:7px 10px;line-height:0;background:var(--teal-pale);border:1.5px solid var(--teal-mid);border-radius:9px;cursor:pointer;">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--teal-deep)" stroke-width="2" stroke-linecap="round">
+            <rect x="3" y="5" width="18" height="16" rx="2.5"></rect>
+            <path d="M3 10h18M8 3v4M16 3v4"></path>
+          </svg>
+        </button>
+        <input type="date" id="techPickDayInput" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none;">
+      </div>
+
+      <div class="btn-row" id="techDayFilter" style="display:none;"></div>
       <div id="techRouteList"></div>
     </div>
   </div>
@@ -863,6 +895,73 @@ select#customerSelect{font-weight:600;}
         <button class="btn btn-ghost" id="btnAdminLogout" style="width:auto;">Sign out</button>
       </div>
     </div>
+
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Photos</div>
+
+<div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Before photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingBeforePhotos" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit starts with a Before photos step so you can capture the pool before any work is done. Turning this off removes that step entirely.</p>
+      </div>
+    </div>
+<div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">After photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingAfterPhotos" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit ends with an After photos step so you can capture the pool once the work is done. Turning this off removes that step entirely.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Require before photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireBeforePhotos">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take a before photo on every pool, spa, and extra body of water before moving on. Has no effect while the Before photos step is switched off.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Require after photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireAfterPhotos">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can submit the service report. Has no effect while the After photos step is switched off.</p>
+      </div>
+    </div>
+<div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Require a closed gate photo</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireGatePhoto">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report.</p>
+      </div>
+    </div>
+
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Field app</div>
+
+
     <input type="checkbox" id="settingVoiceMode" style="display:none;">
     <div class="card">
       <div class="field">
@@ -881,18 +980,7 @@ select#customerSelect{font-weight:600;}
         </div>
       </div>
     </div>
-    <div class="card">
-      <div class="field">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <h2 style="margin:0;">Require a closed gate photo</h2>
-          <label class="toggle-switch">
-            <input type="checkbox" id="settingRequireGatePhoto">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report.</p>
-      </div>
-    </div>
+    
     <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
@@ -941,30 +1029,8 @@ select#customerSelect{font-weight:600;}
         <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">Turn this off if you don't have technicians — it hides the Technicians tab from the menu entirely.</p>
       </div>
     </div>
-    <div class="card">
-      <div class="field">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <h2 style="margin:0;">Before photos</h2>
-          <label class="toggle-switch">
-            <input type="checkbox" id="settingBeforePhotos" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit starts with a Before photos step so you can capture the pool before any work is done. Turning this off removes that step entirely.</p>
-      </div>
-    </div>
-    <div class="card">
-      <div class="field">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <h2 style="margin:0;">After photos</h2>
-          <label class="toggle-switch">
-            <input type="checkbox" id="settingAfterPhotos" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit ends with an After photos step so you can capture the pool once the work is done. Turning this off removes that step entirely.</p>
-      </div>
-    </div>
+    
+    
   </div>
 
 </main>
@@ -1003,6 +1069,8 @@ select#customerSelect{font-weight:600;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+let stepBarPressedAt = 0;
+const PHOTO_KEEP_VISITS = 4;
 let storageWarningShown = false;
 const DEFAULT_CHEM_CONFIG = {
   pool: {
@@ -1127,6 +1195,77 @@ function fieldId(type, kind, key){
   return type + '_' + kind + '_' + key;
 }
 
+
+// ---------- Reading-to-dosage rules ----------
+// A chemical can carry rules like "when this is 5, put 1 tab in". They fill the
+// dosage automatically; anything the tech types by hand is never overwritten.
+const manuallyEditedDoses = {};
+
+function matchesDoseRule(readingValue, rule){
+  const v = parseFloat(readingValue);
+  if(isNaN(v)) return false;
+  const a = parseFloat(rule.value);
+  const b = parseFloat(rule.value2);
+  switch(rule.op){
+    case 'eq':      return !isNaN(a) && v === a;
+    case 'lte':     return !isNaN(a) && v <= a;
+    case 'gte':     return !isNaN(a) && v >= a;
+    case 'lt':      return !isNaN(a) && v < a;
+    case 'gt':      return !isNaN(a) && v > a;
+    case 'between': return !isNaN(a) && !isNaN(b)
+                      && v >= Math.min(a, b) && v <= Math.max(a, b);
+    default:        return false;
+  }
+}
+
+function applyDoseRules(type){
+  const cid = currentVisitCustomerId;
+  const lists = cid
+    ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+    : chemConfig[type];
+  if(!lists) return;
+
+  (lists.chemicals || []).forEach(chem=>{
+    const rules = chem.doseRules || [];
+    if(!rules.length) return;
+    const readEl = document.getElementById(fieldId(type, 'chem', chem.key));
+    if(!readEl) return;
+    const reading = readEl.value;
+
+    rules.forEach(rule=>{
+      if(!rule || !rule.doseKey) return;
+      const doseEl = document.getElementById(fieldId(type, 'dose', rule.doseKey));
+      if(!doseEl) return;
+      // Never overwrite something typed or tapped by hand
+      if(manuallyEditedDoses[doseEl.id]) return;
+
+      if(matchesDoseRule(reading, rule)){
+        const val = String(rule.amount ?? '');
+        if(doseEl.value !== val){
+          doseEl.value = val;
+          doseEl.dataset.autoFilled = 'true';
+          doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+        }
+      } else if(doseEl.dataset.autoFilled === 'true'){
+        // The reading changed and no longer matches, so clear what we put there
+        doseEl.value = '';
+        delete doseEl.dataset.autoFilled;
+        doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+      }
+    });
+  });
+}
+
+function markDoseEditedByHand(el){
+  if(!el) return;
+  if(el.dataset.autoFilled === 'true'){ delete el.dataset.autoFilled; }
+  manuallyEditedDoses[el.id] = true;
+}
+
+function resetDoseRuleTracking(){
+  Object.keys(manuallyEditedDoses).forEach(k => delete manuallyEditedDoses[k]);
+}
+
 function renderConfigFields(containerId, list, type, kind, onInput){
   const container = document.getElementById(containerId);
   if(!container) return;
@@ -1146,14 +1285,37 @@ function renderConfigFields(containerId, list, type, kind, onInput){
     const showSuggestions = appSettings.showDosageSuggestions !== false
       && configuredButtons && configuredButtons.length > 0;
     if(onInput) input.addEventListener('input', onInput);
-    wrap.appendChild(label);
 
+    if(kind === 'chem'){
+      input.addEventListener('input', ()=> applyDoseRules(type));
+    } else {
+      // Anything the tech enters themselves takes precedence over a rule
+      input.addEventListener('input', (ev)=>{
+        if(ev && ev.autoFill) return;
+        markDoseEditedByHand(input);
+      });
+    }
+
+    // Label on the left, a narrow entry box on the right — readings are two or
+    // three characters, so a full-width field wastes most of the screen.
     const inputRow = document.createElement('div');
     inputRow.style.display = 'flex';
     inputRow.style.alignItems = 'center';
     inputRow.style.gap = '8px';
-    input.style.flex = '1';
+
+    label.style.flex = '1 1 auto';
+    label.style.minWidth = '0';
+    label.style.margin = '0';
+    label.style.overflow = 'hidden';
+    label.style.textOverflow = 'ellipsis';
+    label.style.whiteSpace = 'nowrap';
+    inputRow.appendChild(label);
+
+    input.style.setProperty('flex', '0 0 96px', 'important');
+    input.style.setProperty('width', '96px', 'important');
     input.style.minWidth = '0';
+    input.style.textAlign = 'center';
+    input.placeholder = '';
     inputRow.appendChild(input);
 
     const clearBtn = document.createElement('button');
@@ -1435,6 +1597,10 @@ function switchView(view, opts){
 
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click', ()=>{
+    // Ignore a tab tapped right after the step button — the two sit close
+    // together and that is a mis-tap, not a decision
+    if(Date.now() - stepBarPressedAt < 500) return;
+
     // A visit left part-finished resumes rather than dumping you on the list
     if(t.dataset.view === 'home' && visitDraft.customerId){
       openVisit(visitDraft.customerId);
@@ -1457,6 +1623,54 @@ function lsGet(key){
 // Storage is capped by the browser. When it fills, setItem throws — and this
 // used to swallow that quietly, so saves appeared to work but changed nothing.
 // Now it says so loudly, because silent data loss is far worse than an alert.
+
+// ---------- Keeping storage under control ----------
+// Photos are by far the largest thing stored, and browsers cap this at a few
+// megabytes. Readings are kept forever; their photos are not. Only the most
+// recent visits keep their images — older readings keep every number, note and
+// service record, just without the pictures.
+
+function stripPhotosFromOldReadings(keepCount){
+  const keep = keepCount || PHOTO_KEEP_VISITS;
+  let removed = 0;
+  let keys = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(STORAGE_PREFIX) === 0
+         && (k.indexOf('readings:') !== -1 || k.indexOf('Readings:') !== -1)){
+        keys.push(k.slice(STORAGE_PREFIX.length));
+      }
+    }
+  }catch(e){ return 0; }
+
+  keys.forEach(key=>{
+    const list = lsGet(key);
+    if(!Array.isArray(list) || list.length <= keep) return;
+    // Newest first, so anything past the cut loses its images
+    const sorted = list.slice().sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')));
+    let changed = false;
+    sorted.forEach((r, i)=>{
+      if(i < keep) return;
+      ['photo','beforePhoto','gatePhoto'].forEach(p=>{
+        if(r[p]){ r[p] = null; r.photosCleared = true; removed++; changed = true; }
+      });
+    });
+    if(changed){
+      try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(sorted)); }catch(e){}
+    }
+  });
+  return removed;
+}
+
+// Called when a save fails: free space, then let the caller try again
+function makeRoomForSave(){
+  let freed = stripPhotosFromOldReadings(PHOTO_KEEP_VISITS);
+  if(freed === 0) freed = stripPhotosFromOldReadings(2);
+  if(freed === 0) freed = stripPhotosFromOldReadings(1);
+  return freed;
+}
+
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
@@ -1466,6 +1680,24 @@ function lsSet(key, value){
       || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
       || e.code === 22 || e.code === 1014);
     console.error('Could not save "' + key + '":', e);
+
+    // Clear photos off older visits and try once more before troubling anyone
+    if(full && typeof makeRoomForSave === 'function' && !lsSet._retrying){
+      lsSet._retrying = true;
+      try{
+        const freed = makeRoomForSave();
+        if(freed > 0){
+          try{
+            localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+            lsSet._retrying = false;
+            if(typeof showToast === 'function'){
+              showToast('Freed space by clearing photos from older visits');
+            }
+            return true;
+          }catch(e2){ /* still full — fall through to the warning */ }
+        }
+      } finally { lsSet._retrying = false; }
+    }
 
     if(full && !storageWarningShown){
       storageWarningShown = true;
@@ -2122,7 +2354,10 @@ function reorderEquipmentType(draggedType, targetType){
 // Reordering only happens when the finger passes a neighbour's midpoint, so
 // nothing jitters back and forth.
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
+  const DRAG_THRESHOLD = 8;   // pixels of travel before it counts as a drag
   let dragging = false;
+  let armed = false;          // touched the grip, but not yet moved enough
+  let armX = 0, armY = 0;
   let placeholder = null;
   let startX = 0, startY = 0;
   let offsetX = 0, offsetY = 0;
@@ -2135,8 +2370,12 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
       .filter(el => el !== item && el !== placeholder);
   }
 
+  let orderAtLift = [];
+
   function lift(clientX, clientY){
     const rect = item.getBoundingClientRect();
+    orderAtLift = Array.from(container.querySelectorAll(itemSelector))
+      .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
     dragging = true;
     startX = clientX; startY = clientY;
     offsetX = clientX - rect.left;
@@ -2226,7 +2465,10 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
     const keys = Array.from(container.querySelectorAll(itemSelector))
       .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
-    if(keys.length && onReorder) onReorder(keys);
+    // Only report a change if the order actually differs
+    if(keys.length && onReorder && keys.join('\u0000') !== orderAtLift.join('\u0000')){
+      onReorder(keys);
+    }
   }
 
   handle.style.touchAction = 'none';
@@ -2237,22 +2479,32 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   handle.addEventListener('touchstart', (e)=>{
     if(e.touches.length !== 1) return;
     e.preventDefault();
-    const t = e.touches[0];
-    lift(t.clientX, t.clientY);
-    startEdgeScroll();
+    armed = true;
+    armX = e.touches[0].clientX;
+    armY = e.touches[0].clientY;
   }, {passive:false});
 
   handle.addEventListener('touchmove', (e)=>{
+    const t = e.touches[0];
+    if(armed && !dragging){
+      // Wait for real movement before picking the row up
+      if(Math.abs(t.clientX - armX) < DRAG_THRESHOLD
+         && Math.abs(t.clientY - armY) < DRAG_THRESHOLD) return;
+      e.preventDefault();
+      lift(armX, armY);
+      startEdgeScroll();
+    }
     if(!dragging) return;
     e.preventDefault();
-    lastX = e.touches[0].clientX;
-    lastY = e.touches[0].clientY;
+    lastX = t.clientX;
+    lastY = t.clientY;
     schedule();
   }, {passive:false});
 
   ['touchend','touchcancel'].forEach(ev=>{
     handle.addEventListener(ev, (e)=>{
-      if(!dragging) return;
+      armed = false;
+      if(!dragging) return;   // a tap that never became a drag changes nothing
       e.preventDefault();
       drop();
     }, {passive:false});
@@ -2260,9 +2512,14 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
   handle.addEventListener('mousedown', (e)=>{
     e.preventDefault();
-    lift(e.clientX, e.clientY);
-    startEdgeScroll();
+    armed = true; armX = e.clientX; armY = e.clientY;
     const onMove = (ev)=>{
+      if(armed && !dragging){
+        if(Math.abs(ev.clientX - armX) < DRAG_THRESHOLD
+           && Math.abs(ev.clientY - armY) < DRAG_THRESHOLD) return;
+        lift(armX, armY);
+        startEdgeScroll();
+      }
       if(!dragging) return;
       lastX = ev.clientX; lastY = ev.clientY;
       schedule();
@@ -2270,7 +2527,8 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
     const onUp = ()=>{
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      drop();
+      armed = false;
+      if(dragging) drop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -2901,7 +3159,7 @@ function makePhotoController(ids){
 
   takeBtn.addEventListener('click', async ()=>{
     try{
-      const data = await captureFromCamera(1400, 0.62);
+      const data = await captureFromCamera(900, 0.5);
       if(data) showPreview(data);      // null means they cancelled
     }catch(err){
       // No camera, permission refused, or an older browser — use the file input
@@ -3448,17 +3706,19 @@ function openTechRoute(t){
   document.getElementById('techListCard').style.display = 'none';
   document.getElementById('techFormCard').style.display = 'none';
   document.getElementById('techRouteCard').style.display = 'block';
-  document.getElementById('techRouteName').textContent = t.name;
   const bits = [];
   if(t.phone) bits.push(t.phone);
   if(t.email) bits.push(t.email);
-  document.getElementById('techRouteMeta').textContent = bits.join(' · ') || 'No contact details on file';
+  document.getElementById('techRouteName').textContent =
+    t.name + (bits.length ? '  \u00b7  ' + bits.join(' \u00b7 ') : '');
   renderTechDayFilter();
   renderTechRoute();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
+// Replaced by the day stepper above; kept as a no-op so existing calls are safe
 function renderTechDayFilter(){
+  return;
   const container = document.getElementById('techDayFilter');
   container.innerHTML = '';
   DAYS_OF_WEEK.forEach(day=>{
@@ -3482,20 +3742,298 @@ function renderTechDayFilter(){
   });
 }
 
+let techRouteWeekOffset = 0;
+
+function techRouteDate(){
+  const idx = DAYS_OF_WEEK.indexOf(techRouteDay);
+  if(idx === -1) return null;
+  const today = new Date();
+  const start = new Date(today);
+  start.setHours(0,0,0,0);
+  start.setDate(today.getDate() - today.getDay() + (techRouteWeekOffset * 7));
+  const d = new Date(start);
+  d.setDate(start.getDate() + idx);
+  return d;
+}
+
+function techRouteDateISO(){
+  const d = techRouteDate();
+  if(!d) return '';
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+}
+
+function renderTechDayLabel(){
+  const el = document.getElementById('techDayLabel');
+  if(!el) return;
+  const d = techRouteDate();
+  if(!d){ el.textContent = techRouteDay || ''; return; }
+  const today = new Date();
+  const same = (a,b)=> a.toDateString() === b.toDateString();
+  const tom = new Date(today); tom.setDate(today.getDate() + 1);
+  const yest = new Date(today); yest.setDate(today.getDate() - 1);
+  let prefix = '';
+  if(same(d, today)) prefix = 'Today \u00b7 ';
+  else if(same(d, tom)) prefix = 'Tomorrow \u00b7 ';
+  else if(same(d, yest)) prefix = 'Yesterday \u00b7 ';
+  el.textContent = prefix + d.toLocaleDateString(undefined,
+    {weekday:'long', month:'short', day:'numeric'});
+}
+
+
+// Day navigation for a technician's route, matching the route page
+function techStepDay(delta){
+  let i = DAYS_OF_WEEK.indexOf(techRouteDay);
+  if(i === -1) i = new Date().getDay();
+  let next = i + delta;
+  if(next > 6){ next = 0; techRouteWeekOffset += 1; }
+  else if(next < 0){ next = 6; techRouteWeekOffset -= 1; }
+  techRouteDay = DAYS_OF_WEEK[next];
+  renderTechRoute();
+}
+
+document.getElementById('techPrevDay').addEventListener('click', ()=> techStepDay(-1));
+document.getElementById('techNextDay').addEventListener('click', ()=> techStepDay(1));
+
+document.getElementById('techPickDay').addEventListener('click', ()=>{
+  const input = document.getElementById('techPickDayInput');
+  const d = techRouteDate() || new Date();
+  input.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString().slice(0,10);
+  if(typeof input.showPicker === 'function') input.showPicker();
+  else input.click();
+});
+
+document.getElementById('techPickDayInput').addEventListener('change', (e)=>{
+  if(!e.target.value) return;
+  const picked = new Date(e.target.value + 'T12:00:00');
+  const today = new Date();
+  const startThis = new Date(today);
+  startThis.setHours(0,0,0,0);
+  startThis.setDate(today.getDate() - today.getDay());
+  const startPicked = new Date(picked);
+  startPicked.setHours(0,0,0,0);
+  startPicked.setDate(picked.getDate() - picked.getDay());
+  techRouteWeekOffset = Math.round((startPicked - startThis) / (7 * 86400000));
+  techRouteDay = DAYS_OF_WEEK[picked.getDay()];
+  renderTechRoute();
+});
+
 function renderTechRoute(){
+  renderTechDayLabel();
   const container = document.getElementById('techRouteList');
-  const list = customers.filter(c =>
-    c.technicianId === selectedTechId && c.day === techRouteDay && c.active !== false);
+  if(!container) return;
+
+  const iso = techRouteDateISO();
+
+  // One-off moves apply here the same as they do on the route page
+  const reschedules = lsGet('rescheduledVisits') || [];
+  const movedAway = new Set(reschedules.filter(r => r.fromDate === iso).map(r => r.customerId));
+  const movedHere = new Set(reschedules.filter(r => r.toDate === iso).map(r => r.customerId));
+
+  const base = customers.filter(cst =>
+    cst.technicianId === selectedTechId
+    && cst.day === techRouteDay
+    && cst.active !== false
+    && !movedAway.has(cst.id));
+
+  const movedIn = customers.filter(cst =>
+    movedHere.has(cst.id)
+    && cst.technicianId === selectedTechId
+    && cst.active !== false
+    && !base.some(b => b.id === cst.id));
+
+  const all = base.concat(movedIn);
+
+  // Follow the saved order for this technician and day
+  const orderKeyName = 'day:' + techRouteDay + '|' + selectedTechId;
+  const saved = (lsGet('routeOrders') || {})['tech:' + orderKeyName] || [];
+  const ids = all.map(x => x.id);
+  let order = saved.filter(id => ids.includes(id));
+  ids.forEach(id => { if(!order.includes(id)) order.push(id); });
+  const list = order.map(id => all.find(x => x.id === id)).filter(Boolean);
+
+  const dayNameEl = document.getElementById('techRouteDayName');
+  if(dayNameEl){
+    const d = techRouteDate();
+    dayNameEl.textContent = d
+      ? d.toLocaleDateString(undefined, {weekday:'long'})
+      : (techRouteDay || '');
+  }
+
+  const doneCount = list.filter(x => x.lastServicedDate === iso).length;
+  const leftCount = list.length - doneCount;
+
+  // Jobs = work orders and filter cleans scheduled on this date, as opposed to
+  // routine service stops. Counted separately so they can't be overlooked.
+  const jobIds = new Set();
+  (lsGet('scheduledFilterCleans') || [])
+    .filter(s => s.status === 'scheduled' && s.date === iso)
+    .forEach(s => jobIds.add(s.customerId));
+  (lsGet('scheduledWorkOrders') || [])
+    .filter(j => j.status === 'scheduled' && j.date === iso)
+    .forEach(j => jobIds.add(j.customerId));
+
+  const jobList = list.filter(x => jobIds.has(x.id));
+  const jobsDone = jobList.filter(x => x.lastServicedDate === iso).length;
+  const jobsLeft = jobList.length - jobsDone;
+
+  // Both counts always show, even at zero
+  const leftEl = document.getElementById('techRouteLeft');
+  if(leftEl){
+    leftEl.textContent = leftCount + ' of ' + list.length;
+    leftEl.title = leftCount + ' of ' + list.length + ' stops left';
+  }
+  const jobsEl = document.getElementById('techRouteJobs');
+  if(jobsEl){
+    jobsEl.textContent = jobsLeft + ' of ' + jobList.length;
+    jobsEl.title = jobsLeft + ' of ' + jobList.length
+      + ' work orders and filter cleans left';
+  }
+
   if(list.length === 0){
-    container.innerHTML = '<div class="empty">No customers assigned to this technician on ' + techRouteDay + '.</div>';
+    container.innerHTML = '<div class="empty">No customers on this day.</div>';
     return;
   }
+
   container.innerHTML = '';
-  list.forEach(c=>{
+  list.forEach(cst=>{
     const row = document.createElement('div');
     row.className = 'cust-row';
-    row.innerHTML = `<div><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>`;
+    row.dataset.reorderKey = cst.id;
+    row.style.gap = '8px';
+
+    const grip = document.createElement('div');
+    grip.textContent = '\u2261';
+    grip.title = 'Drag to reorder';
+    grip.style.cssText = 'flex-shrink:0;font-size:19px;color:var(--muted);padding:0 8px 0 2px;';
+    attachTouchReorder(grip, row, container, '[data-reorder-key]', (keys)=>{
+      const store = lsGet('routeOrders') || {};
+      store['tech:' + orderKeyName] = keys;
+      lsSet('routeOrders', store);
+      renderTechRoute();
+      showToast('Route order saved');
+    });
+    row.appendChild(grip);
+
+    const left = document.createElement('div');
+    left.style.minWidth = '0';
+    left.style.flex = '1 1 auto';
+    const moved = movedHere.has(cst.id);
+
+    // A visit counts as done when it was serviced on the date being viewed
+    const done = cst.lastServicedDate === iso;
+    if(done){
+      row.style.background = 'var(--surface-alt)';
+      row.style.opacity = '0.85';
+      // A completed stop opens its report
+      row.style.cursor = 'pointer';
+      row.title = 'Open this service report';
+      row.addEventListener('click', async (ev)=>{
+        if(ev.target.closest('button')) return;   // leave Move and the grip alone
+        if(viewJustChanged()) return;
+        const sel = document.getElementById('reportCustomerSelect');
+        if(sel){
+          populateCustomerSelect(sel, 'Add a customer first');
+          sel.value = cst.id;
+        }
+        if(typeof syncReportCustomerSearchField === 'function') syncReportCustomerSearchField();
+        await refreshDateSelector(cst.id);
+
+        // Open the report for the date being viewed, not just the newest one
+        const dateSel = document.getElementById('reportReadingSelect');
+        if(dateSel && Array.from(dateSel.options).some(o => o.value === iso)){
+          dateSel.value = iso;
+          await renderDateReport(cst.id, iso);
+        }
+
+        switchView('report', {skipRefresh: true});
+      });
+    }
+
+    const tag = (bg, text) => ' <span style="background:' + bg
+      + ';color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px;vertical-align:middle;">'
+      + text + '</span>';
+
+    left.innerHTML = '<div class="cust-name"'
+      + (done ? ' style="color:var(--muted);"' : '') + '>' + cst.name
+      + (done ? tag('var(--green)', 'DONE \u203a') : '')
+      + (moved ? tag('var(--gold)', 'MOVED HERE') : '')
+      + '</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+      + (done && cst.lastServicedAt
+          ? 'Completed ' + new Date(cst.lastServicedAt).toLocaleTimeString(undefined,
+              {hour:'numeric', minute:'2-digit'})
+            + (cst.lastServiceDurationMs ? ' \u00b7 ' + formatDuration(cst.lastServiceDurationMs) : '')
+          : (cst.address || 'No address on file'))
+      + '</div>';
+    row.appendChild(left);
+
+    const moveBtn = document.createElement('button');
+    moveBtn.className = 'btn btn-ghost';
+    moveBtn.style.cssText = 'flex:0 0 auto;width:auto;padding:7px 11px;font-size:12px;'
+      + (done ? 'opacity:0.4;pointer-events:none;' : '');
+    moveBtn.textContent = 'Move';
+    moveBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openTechRescheduleModal(cst);
+    });
+    row.appendChild(moveBtn);
+
     container.appendChild(row);
+  });
+}
+
+// Move one customer off this day — once, or for good
+function openTechRescheduleModal(customer){
+  const fromISO = techRouteDateISO();
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;">
+      <h3 style="font-size:15px;margin:0 0 4px;">Move ${customer.name}</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Currently on ${customer.day || 'no day'}. Pick the new date, then choose whether this is a one-off or their new regular day.</p>
+      <div class="field"><label>New date</label><input type="date" id="trDate"></div>
+      <div class="btn-row" style="flex-direction:column;gap:8px;">
+        <button class="btn btn-primary" id="trOnce" style="width:100%;">Just this once</button>
+        <button class="btn btn-ghost" id="trAlways" style="width:100%;">Change their regular day</button>
+        <button class="btn btn-ghost" id="trCancel" style="width:100%;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const dateEl = overlay.querySelector('#trDate');
+  const close = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#trCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  overlay.querySelector('#trOnce').addEventListener('click', ()=>{
+    const toISO = dateEl.value;
+    if(!toISO){ showToast('Pick a date first'); return; }
+    const list = (lsGet('rescheduledVisits') || [])
+      .filter(r => !(r.customerId === customer.id && r.fromDate === fromISO));
+    list.push({
+      id: 'resched_' + Date.now(), customerId: customer.id,
+      fromDate: fromISO, toDate: toISO, createdAt: new Date().toISOString()
+    });
+    lsSet('rescheduledVisits', list);
+    close();
+    renderTechRoute();
+    const d = new Date(toISO + 'T12:00:00');
+    showToast(customer.name + ' moved to ' + d.toLocaleDateString(undefined,
+      {weekday:'long', month:'short', day:'numeric'}));
+  });
+
+  overlay.querySelector('#trAlways').addEventListener('click', async ()=>{
+    const toISO = dateEl.value;
+    if(!toISO){ showToast('Pick a date first'); return; }
+    const newDay = DAYS_OF_WEEK[new Date(toISO + 'T12:00:00').getDay()];
+    const ok = await confirmDialog('Move ' + customer.name + ' to ' + newDay
+      + ' every week from now on?', 'Change day');
+    if(!ok) return;
+    const target = customers.find(x => x.id === customer.id);
+    if(target){ target.day = newDay; saveCustomers(); }
+    close();
+    renderTechRoute();
+    showToast(customer.name + ' now serviced on ' + newDay + 's');
   });
 }
 
@@ -3691,7 +4229,11 @@ document.getElementById('pickDayInput').addEventListener('change', (e)=>{
 });
 
 function todayDateStr(){
-  return new Date().toISOString().slice(0,10);
+  // Must be the LOCAL date. toISOString() is UTC, so anything finished after
+  // 5pm in Arizona was being stamped with tomorrow's date — the visit then
+  // looked incomplete today and reappeared on tomorrow's route.
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
 }
 
 let fieldRouteOrder = lsGet('fieldRouteOrder') || {};
@@ -3823,6 +4365,7 @@ function orderCustomersForDay(day, list){
 
 // ---------- Route order prompt ----------
 let pendingOrderIds = null;
+let orderBeforeDrag = null;
 let adminViewTechId = '';
 
 document.getElementById('adminViewTech').addEventListener('change', (e)=>{
@@ -3876,14 +4419,23 @@ document.getElementById('orderPermBtn').addEventListener('click', async ()=>{
 });
 
 document.getElementById('orderCloseBtn').addEventListener('click', async ()=>{
-  const ok = await confirmDialog('Undo this order change and go back to the usual route?', 'Remove changes');
+  const ok = await confirmDialog('Put the route back the way it was?', 'Remove changes');
   if(!ok) return;
-  // Throw away the one-off order so the route falls back to its usual sequence
-  delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
+
+  // Restore the exact order that was on screen before the drag. Simply
+  // deleting the override would fall back to an older saved order, which is
+  // why a stop from further down could appear to jump up the list.
+  const key = orderKey(selectedHomeDay, isoForDay(selectedHomeDay));
+  if(orderBeforeDrag && orderBeforeDrag.length){
+    fieldRouteOrder[key] = orderBeforeDrag.slice();
+  } else {
+    delete fieldRouteOrder[key];
+  }
   saveFieldRouteOrder();
+  pendingOrderIds = null;
   hideOrderBanner();
   renderHomeList();
-  showToast('Order change removed');
+  showToast('Route put back');
 });
 
 // Move a stop one position — works by tapping, unlike dragging
@@ -3955,6 +4507,10 @@ function renderHomeList(){
 
   const todaysCustomers = orderCustomersForDay(selectedHomeDay,
     baseCustomers.concat(movedInCustomers));
+
+  // Snapshot of the order as shown, so "Remove changes" can put back exactly
+  // what was on screen rather than falling back to an older saved order.
+  if(!pendingOrderIds) orderBeforeDrag = todaysCustomers.map(c => c.id);
 
   // Remaining out of total, counting down as visits are completed.
   // The route list hides finished customers, so count those separately.
@@ -4308,7 +4864,7 @@ function openSkipReasonModal(customer){
       const file = e.target.files[0];
       if(!file) return;
       try{
-        photoData = await resizeImageFile(file, 1000, 0.6);
+        photoData = await resizeImageFile(file, 900, 0.5);
         preview.src = photoData;
         wrap.style.display = 'block';
       }catch(err){ showToast('Could not read that photo'); }
@@ -4896,6 +5452,19 @@ document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
   saveSettings();
   if(typeof syncStepChrome === 'function') syncStepChrome();
   showToast(appSettings.pushToTalkEnabled ? 'Voice entry button on' : 'Voice entry button off');
+});
+
+document.getElementById('settingRequireBeforePhotos').addEventListener('change', (e)=>{
+  appSettings.requireBeforePhotos = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireBeforePhotos ? 'Before photos now required everywhere' : 'Before photos no longer required everywhere');
+});
+
+document.getElementById('settingRequireAfterPhotos').addEventListener('change', (e)=>{
+  appSettings.requireAfterPhotos = e.target.checked;
+  saveSettings();
+  if(typeof refreshSaveButtons === 'function') refreshSaveButtons();
+  showToast(appSettings.requireAfterPhotos ? 'After photos now required everywhere' : 'After photos no longer required everywhere');
 });
 
 document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
@@ -5794,6 +6363,7 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 document.getElementById('stepBarNext').addEventListener('click', ()=>{
+  stepBarPressedAt = Date.now();
   const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
 
   const photoMsg = missingRequiredPhoto();
@@ -6115,6 +6685,7 @@ async function openVisit(customerId){
 
   isFilterCleanVisit = detectFilterCleanVisit(customerId);
   gatePhotoController.clear();
+  resetDoseRuleTracking();
   syncGatePhotoBlock();
 
   // A filter clean gets its own wording, and skips the equipment toggles
@@ -6490,7 +7061,10 @@ async function sendViaEmailJS(customerId, type){
   }
 }
 
-async function attemptAutoSend(customerId, type){
+// manual = true when the tech pressed Email report themselves. Only then may
+// the share sheet or a mail draft open — an automatic send that fails should
+// never hijack the screen.
+async function attemptAutoSend(customerId, type, manual){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
   const custName = actions.dataset.customerName;
@@ -6506,6 +7080,13 @@ async function attemptAutoSend(customerId, type){
     const sent = await sendViaEmailJS(customerId, type);
     if(sent) return;
     // fall through to the manual fallbacks below if sending failed
+  }
+
+  // An automatic send that failed stops here. The report is saved; the tech can
+  // resend deliberately rather than being dropped into a share sheet.
+  if(!manual){
+    showToast('Saved \u2014 the email didn\'t go out. Resend it from the Report tab.');
+    return;
   }
 
   // Prefer native share (can actually attach the photo as a real file)
@@ -6571,7 +7152,7 @@ async function attemptAutoSend(customerId, type){
 
 document.getElementById('btnEmailReport').addEventListener('click', async ()=>{
   const actions = document.getElementById('reportActions');
-  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool', true);
 });
 
 document.getElementById('btnDownloadReport').addEventListener('click', ()=>{
@@ -6604,7 +7185,7 @@ document.getElementById('btnSharePhoto').addEventListener('click', async ()=>{
     showToast('No photo on this reading');
     return;
   }
-  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool', true);
 });
 
 document.getElementById('btnDeleteReport').addEventListener('click', async ()=>{
@@ -6747,6 +7328,8 @@ async function init(){
   document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
   document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
   document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+  document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
+  document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos !== false;
   document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
   renderMicSideButtons();
   applyTechniciansTabVisibility();

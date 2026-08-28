@@ -929,6 +929,10 @@ input::placeholder{color:#A9BCB9;}
         <div id="storageBarFill" style="height:100%;width:0;background:var(--teal-mid);transition:width .3s ease;"></div>
       </div>
       <p id="storageBarText" style="font-size:12px;color:var(--muted);margin:8px 0 0;"></p>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
+      </div>
+      <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Removes photos from all but the four most recent visits per body of water. Readings, notes and service records are kept in full — only the images go.</p>
     </div>
 
     <div class="card">
@@ -1157,6 +1161,7 @@ input::placeholder{color:#A9BCB9;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+const PHOTO_KEEP_VISITS = 4;
 let storageWarningShown = false;
 const DAYS_OF_WEEK = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
@@ -1171,6 +1176,54 @@ function lsGet(key){
 // Storage is capped by the browser. When it fills, setItem throws — and this
 // used to swallow that quietly, so saves appeared to work but changed nothing.
 // Now it says so loudly, because silent data loss is far worse than an alert.
+
+// ---------- Keeping storage under control ----------
+// Photos are by far the largest thing stored, and browsers cap this at a few
+// megabytes. Readings are kept forever; their photos are not. Only the most
+// recent visits keep their images — older readings keep every number, note and
+// service record, just without the pictures.
+
+function stripPhotosFromOldReadings(keepCount){
+  const keep = keepCount || PHOTO_KEEP_VISITS;
+  let removed = 0;
+  let keys = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(STORAGE_PREFIX) === 0
+         && (k.indexOf('readings:') !== -1 || k.indexOf('Readings:') !== -1)){
+        keys.push(k.slice(STORAGE_PREFIX.length));
+      }
+    }
+  }catch(e){ return 0; }
+
+  keys.forEach(key=>{
+    const list = lsGet(key);
+    if(!Array.isArray(list) || list.length <= keep) return;
+    // Newest first, so anything past the cut loses its images
+    const sorted = list.slice().sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')));
+    let changed = false;
+    sorted.forEach((r, i)=>{
+      if(i < keep) return;
+      ['photo','beforePhoto','gatePhoto'].forEach(p=>{
+        if(r[p]){ r[p] = null; r.photosCleared = true; removed++; changed = true; }
+      });
+    });
+    if(changed){
+      try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(sorted)); }catch(e){}
+    }
+  });
+  return removed;
+}
+
+// Called when a save fails: free space, then let the caller try again
+function makeRoomForSave(){
+  let freed = stripPhotosFromOldReadings(PHOTO_KEEP_VISITS);
+  if(freed === 0) freed = stripPhotosFromOldReadings(2);
+  if(freed === 0) freed = stripPhotosFromOldReadings(1);
+  return freed;
+}
+
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
@@ -1180,6 +1233,24 @@ function lsSet(key, value){
       || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
       || e.code === 22 || e.code === 1014);
     console.error('Could not save "' + key + '":', e);
+
+    // Clear photos off older visits and try once more before troubling anyone
+    if(full && typeof makeRoomForSave === 'function' && !lsSet._retrying){
+      lsSet._retrying = true;
+      try{
+        const freed = makeRoomForSave();
+        if(freed > 0){
+          try{
+            localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+            lsSet._retrying = false;
+            if(typeof showToast === 'function'){
+              showToast('Freed space by clearing photos from older visits');
+            }
+            return true;
+          }catch(e2){ /* still full — fall through to the warning */ }
+        }
+      } finally { lsSet._retrying = false; }
+    }
 
     if(full && !storageWarningShown){
       storageWarningShown = true;
@@ -1959,7 +2030,10 @@ document.addEventListener('touchstart', (e)=>{
 // Reordering only happens when the finger passes a neighbour's midpoint, so
 // nothing jitters back and forth.
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
+  const DRAG_THRESHOLD = 8;   // pixels of travel before it counts as a drag
   let dragging = false;
+  let armed = false;          // touched the grip, but not yet moved enough
+  let armX = 0, armY = 0;
   let placeholder = null;
   let startX = 0, startY = 0;
   let offsetX = 0, offsetY = 0;
@@ -1972,8 +2046,12 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
       .filter(el => el !== item && el !== placeholder);
   }
 
+  let orderAtLift = [];
+
   function lift(clientX, clientY){
     const rect = item.getBoundingClientRect();
+    orderAtLift = Array.from(container.querySelectorAll(itemSelector))
+      .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
     dragging = true;
     startX = clientX; startY = clientY;
     offsetX = clientX - rect.left;
@@ -2063,7 +2141,10 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
     const keys = Array.from(container.querySelectorAll(itemSelector))
       .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
-    if(keys.length && onReorder) onReorder(keys);
+    // Only report a change if the order actually differs
+    if(keys.length && onReorder && keys.join('\u0000') !== orderAtLift.join('\u0000')){
+      onReorder(keys);
+    }
   }
 
   handle.style.touchAction = 'none';
@@ -2074,22 +2155,32 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   handle.addEventListener('touchstart', (e)=>{
     if(e.touches.length !== 1) return;
     e.preventDefault();
-    const t = e.touches[0];
-    lift(t.clientX, t.clientY);
-    startEdgeScroll();
+    armed = true;
+    armX = e.touches[0].clientX;
+    armY = e.touches[0].clientY;
   }, {passive:false});
 
   handle.addEventListener('touchmove', (e)=>{
+    const t = e.touches[0];
+    if(armed && !dragging){
+      // Wait for real movement before picking the row up
+      if(Math.abs(t.clientX - armX) < DRAG_THRESHOLD
+         && Math.abs(t.clientY - armY) < DRAG_THRESHOLD) return;
+      e.preventDefault();
+      lift(armX, armY);
+      startEdgeScroll();
+    }
     if(!dragging) return;
     e.preventDefault();
-    lastX = e.touches[0].clientX;
-    lastY = e.touches[0].clientY;
+    lastX = t.clientX;
+    lastY = t.clientY;
     schedule();
   }, {passive:false});
 
   ['touchend','touchcancel'].forEach(ev=>{
     handle.addEventListener(ev, (e)=>{
-      if(!dragging) return;
+      armed = false;
+      if(!dragging) return;   // a tap that never became a drag changes nothing
       e.preventDefault();
       drop();
     }, {passive:false});
@@ -2097,9 +2188,14 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
   handle.addEventListener('mousedown', (e)=>{
     e.preventDefault();
-    lift(e.clientX, e.clientY);
-    startEdgeScroll();
+    armed = true; armX = e.clientX; armY = e.clientY;
     const onMove = (ev)=>{
+      if(armed && !dragging){
+        if(Math.abs(ev.clientX - armX) < DRAG_THRESHOLD
+           && Math.abs(ev.clientY - armY) < DRAG_THRESHOLD) return;
+        lift(armX, armY);
+        startEdgeScroll();
+      }
       if(!dragging) return;
       lastX = ev.clientX; lastY = ev.clientY;
       schedule();
@@ -2107,7 +2203,8 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
     const onUp = ()=>{
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      drop();
+      armed = false;
+      if(dragging) drop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -4616,6 +4713,7 @@ function makeButtonsEditor(item){
   const count = (item.buttons || []).length;
   openBtn.textContent = 'Quick buttons' + (count ? ' · ' + count : ' · none');
   openBtn.addEventListener('click', ()=> openQuickButtonsModal(item));
+
   wrap.appendChild(openBtn);
 
   return wrap;
@@ -4668,6 +4766,147 @@ function openColorPicker(item, idx, onDone){
   const close = ()=> document.body.removeChild(overlay);
   overlay.querySelector('#colorCancel').addEventListener('click', close);
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+}
+
+
+// ---------- Linking a reading to a dosage ----------
+// "When Free chlorine is 5, put 1 tab in" — saves the tech entering something
+// they always do anyway.
+const RULE_OPS = [
+  {op:'eq',      label:'is exactly'},
+  {op:'lte',     label:'is at or below'},
+  {op:'gte',     label:'is at or above'},
+  {op:'lt',      label:'is below'},
+  {op:'gt',      label:'is above'},
+  {op:'between', label:'is between'}
+];
+
+function openDoseRulesModal(item){
+  const lists = activeConfigLists();
+  const doses = (lists && lists.dosages) || [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
+      <h3 style="font-size:15px;margin:0 0 4px;">Dosage rules for ${item.label || 'this reading'}</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">When a technician enters this reading, the dosage below fills in automatically. They can still change it.</p>
+      <div id="ruleList" style="flex:1;overflow-y:auto;"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-ghost" id="ruleAdd" style="flex:1;">+ Add a rule</button>
+        <button class="btn btn-primary" id="ruleDone" style="width:auto;">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const listBox = overlay.querySelector('#ruleList');
+
+  function render(){
+    item.doseRules = item.doseRules || [];
+    listBox.innerHTML = '';
+
+    if(doses.length === 0){
+      listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0;">Add a dosage to this list first, then you can link a reading to it.</div>';
+      return;
+    }
+    if(item.doseRules.length === 0){
+      listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0;">No rules yet. Add one to fill a dosage automatically.</div>';
+      return;
+    }
+
+    item.doseRules.forEach((rule, idx)=>{
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line);';
+
+      const when = document.createElement('span');
+      when.style.cssText = 'font-size:12.5px;color:var(--muted);';
+      when.textContent = 'When';
+      row.appendChild(when);
+
+      const opSel = document.createElement('select');
+      opSel.style.cssText = 'width:auto;flex:0 0 auto;font-size:12.5px;padding:5px 8px;';
+      RULE_OPS.forEach(o=>{
+        const opt = document.createElement('option');
+        opt.value = o.op; opt.textContent = o.label;
+        opSel.appendChild(opt);
+      });
+      opSel.value = rule.op || 'eq';
+      opSel.addEventListener('change', ()=>{ rule.op = opSel.value; saveActiveConfig(); render(); });
+      row.appendChild(opSel);
+
+      const v1 = document.createElement('input');
+      v1.type = 'number'; v1.step = 'any'; v1.value = rule.value ?? '';
+      v1.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
+      v1.addEventListener('change', ()=>{ rule.value = v1.value; saveActiveConfig(); });
+      row.appendChild(v1);
+
+      if(rule.op === 'between'){
+        const andTxt = document.createElement('span');
+        andTxt.style.cssText = 'font-size:12.5px;color:var(--muted);';
+        andTxt.textContent = 'and';
+        row.appendChild(andTxt);
+        const v2 = document.createElement('input');
+        v2.type = 'number'; v2.step = 'any'; v2.value = rule.value2 ?? '';
+        v2.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
+        v2.addEventListener('change', ()=>{ rule.value2 = v2.value; saveActiveConfig(); });
+        row.appendChild(v2);
+      }
+
+      const arrow = document.createElement('span');
+      arrow.style.cssText = 'font-size:12.5px;color:var(--muted);';
+      arrow.textContent = '\u2192 add';
+      row.appendChild(arrow);
+
+      const amt = document.createElement('input');
+      amt.type = 'number'; amt.step = 'any'; amt.value = rule.amount ?? '';
+      amt.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
+      amt.addEventListener('change', ()=>{ rule.amount = amt.value; saveActiveConfig(); });
+      row.appendChild(amt);
+
+      const doseSel = document.createElement('select');
+      doseSel.style.cssText = 'flex:1 1 120px;min-width:0;font-size:12.5px;padding:5px 8px;';
+      doses.forEach(d=>{
+        const opt = document.createElement('option');
+        opt.value = d.key; opt.textContent = d.label || d.key;
+        doseSel.appendChild(opt);
+      });
+      doseSel.value = rule.doseKey || doses[0].key;
+      rule.doseKey = doseSel.value;
+      doseSel.addEventListener('change', ()=>{ rule.doseKey = doseSel.value; saveActiveConfig(); });
+      row.appendChild(doseSel);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '\u00D7';
+      del.style.cssText = 'flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #EFC9BC;'
+        + 'border-radius:8px;background:#fff;color:var(--rust);font-size:16px;cursor:pointer;';
+      del.addEventListener('click', ()=>{
+        item.doseRules.splice(idx, 1);
+        saveActiveConfig();
+        render();
+      });
+      row.appendChild(del);
+
+      listBox.appendChild(row);
+    });
+  }
+
+  overlay.querySelector('#ruleAdd').addEventListener('click', ()=>{
+    if(doses.length === 0){ showToast('Add a dosage to this list first'); return; }
+    item.doseRules = item.doseRules || [];
+    item.doseRules.push({op:'eq', value:'', amount:'', doseKey: doses[0].key});
+    saveActiveConfig();
+    render();
+  });
+
+  const close = ()=>{
+    document.body.removeChild(overlay);
+    renderChemConfigLists();
+  };
+  overlay.querySelector('#ruleDone').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  render();
 }
 
 function openQuickButtonsModal(item){
@@ -4940,6 +5179,19 @@ function makeConfigRow(item, listKey){
   reqWrap.appendChild(reqCb);
   reqWrap.appendChild(document.createTextNode('Required'));
   row.appendChild(reqWrap);
+
+  // Chemicals can automatically fill a dosage based on the reading entered
+  if(listKey === 'chemicals'){
+    const rulesBtn = document.createElement('button');
+    rulesBtn.type = 'button';
+    rulesBtn.className = 'btn btn-ghost';
+    const ruleCount = (item.doseRules || []).length;
+    rulesBtn.style.cssText = 'width:auto;flex-shrink:0;padding:6px 10px;font-size:11.5px;'
+      + (ruleCount ? 'color:var(--teal-deep);border-color:var(--teal-mid);font-weight:700;' : '');
+    rulesBtn.textContent = ruleCount ? 'Dosage rules (' + ruleCount + ')' : 'Dosage rules';
+    rulesBtn.addEventListener('click', ()=> openDoseRulesModal(item));
+    row.appendChild(rulesBtn);
+  }
 
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
@@ -6674,6 +6926,23 @@ document.getElementById('btnMultiReport').addEventListener('click', openMultiRep
 // ---------- Backup & restore ----------
 
 // Rough gauge — browsers don't report the real cap, so 5MB is the safe assumption
+
+document.getElementById('btnFreeSpace').addEventListener('click', async ()=>{
+  const before = storageUsage();
+  const ok = await confirmDialog(
+    'Remove photos from all but the four most recent visits per body of water? '
+    + 'Readings, notes and service records are kept. Download a backup first if you want to keep the images.',
+    'Clear old photos');
+  if(!ok) return;
+  const removed = stripPhotosFromOldReadings(PHOTO_KEEP_VISITS);
+  const after = storageUsage();
+  const savedMb = Math.max(0, (before - after) / (1024 * 1024)).toFixed(2);
+  renderStorageMeter();
+  showToast(removed
+    ? 'Cleared ' + removed + ' photo' + (removed === 1 ? '' : 's') + ' — freed ' + savedMb + ' MB'
+    : 'Nothing old enough to clear yet');
+});
+
 function renderStorageMeter(){
   const fill = document.getElementById('storageBarFill');
   const text = document.getElementById('storageBarText');

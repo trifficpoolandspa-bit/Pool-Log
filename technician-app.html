@@ -333,16 +333,20 @@ textarea{min-height:52px;resize:vertical;}
 .ob-temp{background:#fff;color:#8C5A0F;}
 .ob-close{background:#fff;color:#B8492E;border-color:#EFC0B4 !important;}
 .step-bar{
-  position:fixed;bottom:62px;left:0;right:0;z-index:40;
+  /* Clear of the tab bar with room to spare — a thumb on the step button used
+     to land within a few pixels of the tabs underneath. */
+  position:fixed;bottom:calc(74px + env(safe-area-inset-bottom));
+  left:0;right:0;z-index:40;
   max-width:720px;margin:0 auto;
   background:#fff;border-top:1px solid var(--line);
-  padding:10px 14px;
+  border-radius:14px 14px 0 0;
+  padding:10px 14px 14px;
   box-shadow:0 -4px 14px rgba(15,46,46,0.08);
   display:none;
 }
 .step-bar #stepBarNext{padding:14px 18px;font-size:15.5px;}
 .step-bar #btnPushToTalk{width:62px !important;flex:0 0 62px !important;padding:0 !important;}
-body.has-step-bar{padding-bottom:146px;}
+body.has-step-bar{padding-bottom:calc(168px + env(safe-area-inset-bottom));}
 .step-back{
   flex-shrink:0;background:none;border:1px solid var(--line);
   color:var(--teal-deep);border-radius:9px;
@@ -354,9 +358,10 @@ body.has-step-bar{padding-bottom:146px;}
 #visitSectionButtons::-webkit-scrollbar{display:none;}
 #visitSectionButtons > button{flex:0 0 auto;}
 .bottombar{
-  position:fixed;bottom:0;left:0;right:0;
+  position:fixed;bottom:0;left:0;right:0;z-index:45;
   background:#fff;border-top:1px solid var(--line);
   display:flex;max-width:720px;margin:0 auto;
+  padding-bottom:env(safe-area-inset-bottom);
 }
 .bottombar .tab{padding:12px 4px 10px;font-size:11.5px;}
 .bottombar .tab i{display:block;font-size:19px;margin-bottom:2px;}
@@ -733,6 +738,8 @@ select#customerSelect{font-weight:600;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+let stepBarPressedAt = 0;
+const PHOTO_KEEP_VISITS = 4;
 let storageWarningShown = false;
 const DEFAULT_CHEM_CONFIG = {
   pool: {
@@ -857,6 +864,77 @@ function fieldId(type, kind, key){
   return type + '_' + kind + '_' + key;
 }
 
+
+// ---------- Reading-to-dosage rules ----------
+// A chemical can carry rules like "when this is 5, put 1 tab in". They fill the
+// dosage automatically; anything the tech types by hand is never overwritten.
+const manuallyEditedDoses = {};
+
+function matchesDoseRule(readingValue, rule){
+  const v = parseFloat(readingValue);
+  if(isNaN(v)) return false;
+  const a = parseFloat(rule.value);
+  const b = parseFloat(rule.value2);
+  switch(rule.op){
+    case 'eq':      return !isNaN(a) && v === a;
+    case 'lte':     return !isNaN(a) && v <= a;
+    case 'gte':     return !isNaN(a) && v >= a;
+    case 'lt':      return !isNaN(a) && v < a;
+    case 'gt':      return !isNaN(a) && v > a;
+    case 'between': return !isNaN(a) && !isNaN(b)
+                      && v >= Math.min(a, b) && v <= Math.max(a, b);
+    default:        return false;
+  }
+}
+
+function applyDoseRules(type){
+  const cid = currentVisitCustomerId;
+  const lists = cid
+    ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+    : chemConfig[type];
+  if(!lists) return;
+
+  (lists.chemicals || []).forEach(chem=>{
+    const rules = chem.doseRules || [];
+    if(!rules.length) return;
+    const readEl = document.getElementById(fieldId(type, 'chem', chem.key));
+    if(!readEl) return;
+    const reading = readEl.value;
+
+    rules.forEach(rule=>{
+      if(!rule || !rule.doseKey) return;
+      const doseEl = document.getElementById(fieldId(type, 'dose', rule.doseKey));
+      if(!doseEl) return;
+      // Never overwrite something typed or tapped by hand
+      if(manuallyEditedDoses[doseEl.id]) return;
+
+      if(matchesDoseRule(reading, rule)){
+        const val = String(rule.amount ?? '');
+        if(doseEl.value !== val){
+          doseEl.value = val;
+          doseEl.dataset.autoFilled = 'true';
+          doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+        }
+      } else if(doseEl.dataset.autoFilled === 'true'){
+        // The reading changed and no longer matches, so clear what we put there
+        doseEl.value = '';
+        delete doseEl.dataset.autoFilled;
+        doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+      }
+    });
+  });
+}
+
+function markDoseEditedByHand(el){
+  if(!el) return;
+  if(el.dataset.autoFilled === 'true'){ delete el.dataset.autoFilled; }
+  manuallyEditedDoses[el.id] = true;
+}
+
+function resetDoseRuleTracking(){
+  Object.keys(manuallyEditedDoses).forEach(k => delete manuallyEditedDoses[k]);
+}
+
 function renderConfigFields(containerId, list, type, kind, onInput){
   const container = document.getElementById(containerId);
   if(!container) return;
@@ -876,14 +954,37 @@ function renderConfigFields(containerId, list, type, kind, onInput){
     const showSuggestions = appSettings.showDosageSuggestions !== false
       && configuredButtons && configuredButtons.length > 0;
     if(onInput) input.addEventListener('input', onInput);
-    wrap.appendChild(label);
 
+    if(kind === 'chem'){
+      input.addEventListener('input', ()=> applyDoseRules(type));
+    } else {
+      // Anything the tech enters themselves takes precedence over a rule
+      input.addEventListener('input', (ev)=>{
+        if(ev && ev.autoFill) return;
+        markDoseEditedByHand(input);
+      });
+    }
+
+    // Label on the left, a narrow entry box on the right — readings are two or
+    // three characters, so a full-width field wastes most of the screen.
     const inputRow = document.createElement('div');
     inputRow.style.display = 'flex';
     inputRow.style.alignItems = 'center';
     inputRow.style.gap = '8px';
-    input.style.flex = '1';
+
+    label.style.flex = '1 1 auto';
+    label.style.minWidth = '0';
+    label.style.margin = '0';
+    label.style.overflow = 'hidden';
+    label.style.textOverflow = 'ellipsis';
+    label.style.whiteSpace = 'nowrap';
+    inputRow.appendChild(label);
+
+    input.style.setProperty('flex', '0 0 96px', 'important');
+    input.style.setProperty('width', '96px', 'important');
     input.style.minWidth = '0';
+    input.style.textAlign = 'center';
+    input.placeholder = '';
     inputRow.appendChild(input);
 
     const clearBtn = document.createElement('button');
@@ -1101,6 +1202,10 @@ function switchView(view, opts){
 
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click', ()=>{
+    // Ignore a tab tapped right after the step button — the two sit close
+    // together and that is a mis-tap, not a decision
+    if(Date.now() - stepBarPressedAt < 500) return;
+
     // A visit left part-finished resumes rather than dumping you on the list
     if(t.dataset.view === 'home' && visitDraft.customerId){
       openVisit(visitDraft.customerId);
@@ -1123,6 +1228,54 @@ function lsGet(key){
 // Storage is capped by the browser. When it fills, setItem throws — and this
 // used to swallow that quietly, so saves appeared to work but changed nothing.
 // Now it says so loudly, because silent data loss is far worse than an alert.
+
+// ---------- Keeping storage under control ----------
+// Photos are by far the largest thing stored, and browsers cap this at a few
+// megabytes. Readings are kept forever; their photos are not. Only the most
+// recent visits keep their images — older readings keep every number, note and
+// service record, just without the pictures.
+
+function stripPhotosFromOldReadings(keepCount){
+  const keep = keepCount || PHOTO_KEEP_VISITS;
+  let removed = 0;
+  let keys = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(STORAGE_PREFIX) === 0
+         && (k.indexOf('readings:') !== -1 || k.indexOf('Readings:') !== -1)){
+        keys.push(k.slice(STORAGE_PREFIX.length));
+      }
+    }
+  }catch(e){ return 0; }
+
+  keys.forEach(key=>{
+    const list = lsGet(key);
+    if(!Array.isArray(list) || list.length <= keep) return;
+    // Newest first, so anything past the cut loses its images
+    const sorted = list.slice().sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')));
+    let changed = false;
+    sorted.forEach((r, i)=>{
+      if(i < keep) return;
+      ['photo','beforePhoto','gatePhoto'].forEach(p=>{
+        if(r[p]){ r[p] = null; r.photosCleared = true; removed++; changed = true; }
+      });
+    });
+    if(changed){
+      try{ localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(sorted)); }catch(e){}
+    }
+  });
+  return removed;
+}
+
+// Called when a save fails: free space, then let the caller try again
+function makeRoomForSave(){
+  let freed = stripPhotosFromOldReadings(PHOTO_KEEP_VISITS);
+  if(freed === 0) freed = stripPhotosFromOldReadings(2);
+  if(freed === 0) freed = stripPhotosFromOldReadings(1);
+  return freed;
+}
+
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
@@ -1132,6 +1285,24 @@ function lsSet(key, value){
       || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
       || e.code === 22 || e.code === 1014);
     console.error('Could not save "' + key + '":', e);
+
+    // Clear photos off older visits and try once more before troubling anyone
+    if(full && typeof makeRoomForSave === 'function' && !lsSet._retrying){
+      lsSet._retrying = true;
+      try{
+        const freed = makeRoomForSave();
+        if(freed > 0){
+          try{
+            localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+            lsSet._retrying = false;
+            if(typeof showToast === 'function'){
+              showToast('Freed space by clearing photos from older visits');
+            }
+            return true;
+          }catch(e2){ /* still full — fall through to the warning */ }
+        }
+      } finally { lsSet._retrying = false; }
+    }
 
     if(full && !storageWarningShown){
       storageWarningShown = true;
@@ -1843,7 +2014,7 @@ function makePhotoController(ids){
 
   takeBtn.addEventListener('click', async ()=>{
     try{
-      const data = await captureFromCamera(1400, 0.62);
+      const data = await captureFromCamera(900, 0.5);
       if(data) showPreview(data);      // null means they cancelled
     }catch(err){
       // No camera, permission refused, or an older browser — use the file input
@@ -2165,7 +2336,11 @@ document.getElementById('pickDayInput').addEventListener('change', (e)=>{
 });
 
 function todayDateStr(){
-  return new Date().toISOString().slice(0,10);
+  // Must be the LOCAL date. toISOString() is UTC, so anything finished after
+  // 5pm in Arizona was being stamped with tomorrow's date — the visit then
+  // looked incomplete today and reappeared on tomorrow's route.
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
 }
 
 let fieldRouteOrder = lsGet('fieldRouteOrder') || {};
@@ -2297,6 +2472,7 @@ function orderCustomersForDay(day, list){
 
 // ---------- Route order prompt ----------
 let pendingOrderIds = null;
+let orderBeforeDrag = null;
 
 function showOrderBanner(ids){
   pendingOrderIds = ids;
@@ -2343,14 +2519,23 @@ document.getElementById('orderPermBtn').addEventListener('click', async ()=>{
 });
 
 document.getElementById('orderCloseBtn').addEventListener('click', async ()=>{
-  const ok = await confirmDialog('Undo this order change and go back to the usual route?', 'Remove changes');
+  const ok = await confirmDialog('Put the route back the way it was?', 'Remove changes');
   if(!ok) return;
-  // Throw away the one-off order so the route falls back to its usual sequence
-  delete fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))];
+
+  // Restore the exact order that was on screen before the drag. Simply
+  // deleting the override would fall back to an older saved order, which is
+  // why a stop from further down could appear to jump up the list.
+  const key = orderKey(selectedHomeDay, isoForDay(selectedHomeDay));
+  if(orderBeforeDrag && orderBeforeDrag.length){
+    fieldRouteOrder[key] = orderBeforeDrag.slice();
+  } else {
+    delete fieldRouteOrder[key];
+  }
   saveFieldRouteOrder();
+  pendingOrderIds = null;
   hideOrderBanner();
   renderHomeList();
-  showToast('Order change removed');
+  showToast('Route put back');
 });
 
 // Move a stop one position — works by tapping, unlike dragging
@@ -2430,6 +2615,10 @@ function renderHomeList(){
     routeCustomers
       .filter(c => !movedAway.has(c.id))
       .concat(extraFilterCustomers));
+
+  // Snapshot of the order as shown, so "Remove changes" can put back exactly
+  // what was on screen rather than falling back to an older saved order.
+  if(!pendingOrderIds) orderBeforeDrag = todaysCustomers.map(c => c.id);
 
   // Remaining out of total, counting down as visits are completed.
   // The route list hides finished customers, so count those separately.
@@ -2777,7 +2966,7 @@ function openSkipReasonModal(customer){
       const file = e.target.files[0];
       if(!file) return;
       try{
-        photoData = await resizeImageFile(file, 1000, 0.6);
+        photoData = await resizeImageFile(file, 900, 0.5);
         preview.src = photoData;
         wrap.style.display = 'block';
       }catch(err){ showToast('Could not read that photo'); }
@@ -3403,7 +3592,10 @@ function reorderEquipmentType(draggedType, targetType){
 // Reordering only happens when the finger passes a neighbour's midpoint, so
 // nothing jitters back and forth.
 function attachTouchReorder(handle, item, container, itemSelector, onReorder){
+  const DRAG_THRESHOLD = 8;   // pixels of travel before it counts as a drag
   let dragging = false;
+  let armed = false;          // touched the grip, but not yet moved enough
+  let armX = 0, armY = 0;
   let placeholder = null;
   let startX = 0, startY = 0;
   let offsetX = 0, offsetY = 0;
@@ -3416,8 +3608,12 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
       .filter(el => el !== item && el !== placeholder);
   }
 
+  let orderAtLift = [];
+
   function lift(clientX, clientY){
     const rect = item.getBoundingClientRect();
+    orderAtLift = Array.from(container.querySelectorAll(itemSelector))
+      .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
     dragging = true;
     startX = clientX; startY = clientY;
     offsetX = clientX - rect.left;
@@ -3507,7 +3703,10 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
     const keys = Array.from(container.querySelectorAll(itemSelector))
       .map(el => el.dataset.reorderKey).filter(k => k !== undefined);
-    if(keys.length && onReorder) onReorder(keys);
+    // Only report a change if the order actually differs
+    if(keys.length && onReorder && keys.join('\u0000') !== orderAtLift.join('\u0000')){
+      onReorder(keys);
+    }
   }
 
   handle.style.touchAction = 'none';
@@ -3518,22 +3717,32 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
   handle.addEventListener('touchstart', (e)=>{
     if(e.touches.length !== 1) return;
     e.preventDefault();
-    const t = e.touches[0];
-    lift(t.clientX, t.clientY);
-    startEdgeScroll();
+    armed = true;
+    armX = e.touches[0].clientX;
+    armY = e.touches[0].clientY;
   }, {passive:false});
 
   handle.addEventListener('touchmove', (e)=>{
+    const t = e.touches[0];
+    if(armed && !dragging){
+      // Wait for real movement before picking the row up
+      if(Math.abs(t.clientX - armX) < DRAG_THRESHOLD
+         && Math.abs(t.clientY - armY) < DRAG_THRESHOLD) return;
+      e.preventDefault();
+      lift(armX, armY);
+      startEdgeScroll();
+    }
     if(!dragging) return;
     e.preventDefault();
-    lastX = e.touches[0].clientX;
-    lastY = e.touches[0].clientY;
+    lastX = t.clientX;
+    lastY = t.clientY;
     schedule();
   }, {passive:false});
 
   ['touchend','touchcancel'].forEach(ev=>{
     handle.addEventListener(ev, (e)=>{
-      if(!dragging) return;
+      armed = false;
+      if(!dragging) return;   // a tap that never became a drag changes nothing
       e.preventDefault();
       drop();
     }, {passive:false});
@@ -3541,9 +3750,14 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
 
   handle.addEventListener('mousedown', (e)=>{
     e.preventDefault();
-    lift(e.clientX, e.clientY);
-    startEdgeScroll();
+    armed = true; armX = e.clientX; armY = e.clientY;
     const onMove = (ev)=>{
+      if(armed && !dragging){
+        if(Math.abs(ev.clientX - armX) < DRAG_THRESHOLD
+           && Math.abs(ev.clientY - armY) < DRAG_THRESHOLD) return;
+        lift(armX, armY);
+        startEdgeScroll();
+      }
       if(!dragging) return;
       lastX = ev.clientX; lastY = ev.clientY;
       schedule();
@@ -3551,7 +3765,8 @@ function attachTouchReorder(handle, item, container, itemSelector, onReorder){
     const onUp = ()=>{
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      drop();
+      armed = false;
+      if(dragging) drop();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -4519,6 +4734,7 @@ document.addEventListener('visibilitychange', ()=>{
 });
 
 document.getElementById('stepBarNext').addEventListener('click', ()=>{
+  stepBarPressedAt = Date.now();
   const total = currentVisibleSection ? visitStepCardsFor(currentVisibleSection).length : 1;
 
   const photoMsg = missingRequiredPhoto();
@@ -4830,6 +5046,7 @@ async function openVisit(customerId){
 
   isFilterCleanVisit = detectFilterCleanVisit(customerId);
   gatePhotoController.clear();
+  resetDoseRuleTracking();
   syncGatePhotoBlock();
 
   // A filter clean gets its own wording, and skips the equipment toggles
@@ -5203,7 +5420,10 @@ async function sendViaEmailJS(customerId, type){
   }
 }
 
-async function attemptAutoSend(customerId, type){
+// manual = true when the tech pressed Email report themselves. Only then may
+// the share sheet or a mail draft open — an automatic send that fails should
+// never hijack the screen.
+async function attemptAutoSend(customerId, type, manual){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
   const custName = actions.dataset.customerName;
@@ -5219,6 +5439,13 @@ async function attemptAutoSend(customerId, type){
     const sent = await sendViaEmailJS(customerId, type);
     if(sent) return;
     // fall through to the manual fallbacks below if sending failed
+  }
+
+  // An automatic send that failed stops here. The report is saved; the tech can
+  // resend deliberately rather than being dropped into a share sheet.
+  if(!manual){
+    showToast('Saved \u2014 the email didn\'t go out. Resend it from the Report tab.');
+    return;
   }
 
   // Prefer native share (can actually attach the photo as a real file)
@@ -5284,7 +5511,7 @@ async function attemptAutoSend(customerId, type){
 
 document.getElementById('btnEmailReport').addEventListener('click', async ()=>{
   const actions = document.getElementById('reportActions');
-  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool', true);
 });
 
 document.getElementById('btnDownloadReport').addEventListener('click', ()=>{
@@ -5317,7 +5544,7 @@ document.getElementById('btnSharePhoto').addEventListener('click', async ()=>{
     showToast('No photo on this reading');
     return;
   }
-  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool');
+  await attemptAutoSend(actions.dataset.customerId, actions.dataset.type || 'pool', true);
 });
 
 document.getElementById('btnDeleteReport').addEventListener('click', async ()=>{
