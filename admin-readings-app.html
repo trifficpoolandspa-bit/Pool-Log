@@ -1078,6 +1078,42 @@ select#customerSelect{font-weight:600;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+
+// ---------- Leading zero on decimals ----------
+// Typing ".5" is quicker than "0.5", so accept it and tidy it up. One
+// delegated listener covers every number field, including any added later.
+function padLeadingZero(v){
+  if(typeof v !== 'string') return v;
+  const t = v.trim();
+  if(t === '' || t === '.' || t === '-' || t === '-.') return t;
+  if(t.charAt(0) === '.') return '0' + t;
+  if(t.slice(0, 2) === '-.') return '-0' + t.slice(1);
+  return t;
+}
+
+document.addEventListener('change', (e)=>{
+  const el = e.target;
+  if(!el || el.tagName !== 'INPUT') return;
+  if(el.type !== 'number' && el.type !== 'text') return;
+  const fixed = padLeadingZero(el.value);
+  if(fixed !== el.value){
+    el.value = fixed;
+    // Let anything watching this field (dosage rules, quick buttons) react
+    el.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+}, true);
+
+document.addEventListener('blur', (e)=>{
+  const el = e.target;
+  if(!el || el.tagName !== 'INPUT') return;
+  if(el.type !== 'number' && el.type !== 'text') return;
+  const fixed = padLeadingZero(el.value);
+  if(fixed !== el.value){
+    el.value = fixed;
+    el.dispatchEvent(new Event('input', {bubbles:true}));
+  }
+}, true);
+
 let stepBarPressedAt = 0;
 let backGuardArmed = false;
 const PHOTO_KEEP_VISITS = 4;
@@ -1283,54 +1319,78 @@ function applyDoseRules(type){
     : chemConfig[type];
   if(!lists) return;
 
+  // Work out what EVERY dosage should be first, across every chemical and rule,
+  // then write once. Setting and clearing per rule meant a later rule that
+  // didn't match would wipe the value an earlier matching rule had just set —
+  // so whether a rule worked depended on where it sat in the list.
+  const intended = {};   // doseFieldId -> value a matching rule wants
+  const touched = {};    // doseFieldId -> some rule targets this field
+
   (lists.chemicals || []).forEach(chem=>{
     const rules = resolveDoseRules(chem, type);
     if(!rules.length) return;
+
     const readEl = document.getElementById(fieldId(type, 'chem', chem.key));
     if(!readEl) return;
     const reading = readEl.value;
 
     rules.forEach(rule=>{
       if(!rule || !rule.doseKey){
-        noteRuleProblem(chem.label + ': a rule has no dosage chosen');
+        noteRuleProblem((chem.label || chem.key) + ': a rule has no dosage chosen');
         return;
       }
       if(rule.value === '' || rule.value === undefined || rule.value === null){
-        noteRuleProblem(chem.label + ': a rule has no value set');
+        noteRuleProblem((chem.label || chem.key) + ': a rule has no value set');
         return;
       }
       if(rule.amount === '' || rule.amount === undefined || rule.amount === null){
-        noteRuleProblem(chem.label + ': a rule has no amount set');
+        noteRuleProblem((chem.label || chem.key) + ': a rule has no amount set');
         return;
       }
-      const doseEl = document.getElementById(fieldId(type, 'dose', rule.doseKey));
-      if(!doseEl){
-        // The rule points at a dosage this body of water doesn't have.
-        // Silently doing nothing is how this stayed invisible.
-        noteRuleProblem(chem.label + ': rule points at a dosage not on this list');
+      if(rule.op === 'between'
+         && (rule.value2 === '' || rule.value2 === undefined || rule.value2 === null)){
+        noteRuleProblem((chem.label || chem.key) + ': a range rule has no second value');
         return;
       }
-      // Never overwrite something typed or tapped by hand
-      if(manuallyEditedDoses[doseEl.id]) return;
 
-      if(matchesDoseRule(reading, rule)){
-        const val = String(rule.amount ?? '');
-        if(doseEl.value !== val){
-          applyingDoseRules = true;
-          doseEl.value = val;
-          doseEl.dataset.autoFilled = 'true';
-          doseEl.dispatchEvent(new Event('input', {bubbles:true}));
-          applyingDoseRules = false;
-        }
-      } else if(doseEl.dataset.autoFilled === 'true'){
-        // The reading changed and no longer matches, so clear what we put there
+      const doseId = fieldId(type, 'dose', rule.doseKey);
+      if(!document.getElementById(doseId)){
+        noteRuleProblem((chem.label || chem.key)
+          + ': rule points at a dosage not on this list');
+        return;
+      }
+
+      touched[doseId] = true;
+      // A later matching rule wins, so a more specific rule can sit below a
+      // general one and override it
+      if(matchesDoseRule(reading, rule)) intended[doseId] = String(rule.amount);
+    });
+  });
+
+  // Now write each field once
+  Object.keys(touched).forEach(doseId=>{
+    const el = document.getElementById(doseId);
+    if(!el) return;
+    if(manuallyEditedDoses[doseId]) return;   // the tech's own entry wins
+
+    const want = intended[doseId];
+
+    if(want !== undefined){
+      if(el.value !== want){
         applyingDoseRules = true;
-        doseEl.value = '';
-        delete doseEl.dataset.autoFilled;
-        doseEl.dispatchEvent(new Event('input', {bubbles:true}));
+        el.value = want;
+        el.dataset.autoFilled = 'true';
+        el.dispatchEvent(new Event('input', {bubbles:true}));
         applyingDoseRules = false;
       }
-    });
+    } else if(el.dataset.autoFilled === 'true'){
+      // Nothing matches any more, so take back only what we put there
+      applyingDoseRules = true;
+      el.value = '';
+      delete el.dataset.autoFilled;
+      el.dispatchEvent(new Event('input', {bubbles:true}));
+      applyingDoseRules = false;
+    }
   });
 }
 
@@ -3425,11 +3485,11 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
   };
   chemConfig.pool.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('pool','chem',ch.key));
-    reading[ch.key] = el ? el.value : '';
+    reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
   chemConfig.pool.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('pool','dose',d.key));
-    reading[d.key] = el ? el.value : '';
+    reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
   const anyValue = isFilterCleanVisit
     ? (reading.photo || reading.beforePhoto || reading.notes)
@@ -3478,11 +3538,11 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   };
   chemConfig.spa.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('spa','chem',ch.key));
-    reading[ch.key] = el ? el.value : '';
+    reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
   chemConfig.spa.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('spa','dose',d.key));
-    reading[d.key] = el ? el.value : '';
+    reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
   const anyValue = chemConfig.spa.chemicals.some(ch => reading[ch.key] !== '')
     || chemConfig.spa.dosages.some(d => reading[d.key] !== '') || reading.photo;
@@ -3521,11 +3581,11 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   };
   chemConfig.fountain.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('fountain','chem',ch.key));
-    reading[ch.key] = el ? el.value : '';
+    reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
   chemConfig.fountain.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('fountain','dose',d.key));
-    reading[d.key] = el ? el.value : '';
+    reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
   const anyValue = chemConfig.fountain.chemicals.some(ch => reading[ch.key] !== '')
     || chemConfig.fountain.dosages.some(d => reading[d.key] !== '') || reading.photo;
