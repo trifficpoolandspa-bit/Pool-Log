@@ -956,7 +956,7 @@ input::placeholder{color:#A9BCB9;}
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, pool volume (in gallons) can be entered when adding or editing a customer, and shows on their profile right under their technician. When off, the field is hidden entirely.</p>
     </div>
 
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Photos</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Photos</div>
 
 <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -1013,10 +1013,9 @@ input::placeholder{color:#A9BCB9;}
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report. Proof the property was left secure.</p>
     </div>
 
-    
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Field app</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Field app</div>
 
-<div class="card">
+    <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Voice entry button</h2>
         <label class="toggle-switch">
@@ -4781,6 +4780,31 @@ const RULE_OPS = [
   {op:'between', label:'is between'}
 ];
 
+
+// The rules actually in force for a chemical: its own, or another list's if
+// it has been set to follow one.
+function rulesFromSource(sourceType, chemKey){
+  const src = chemConfig[sourceType];
+  if(!src) return [];
+  const chem = (src.chemicals || []).find(x => x.key === chemKey);
+  return (chem && chem.doseRules) || [];
+}
+
+function effectiveDoseRules(item, ownType){
+  if(item.doseRulesFrom) return rulesFromSource(item.doseRulesFrom, item.key);
+  if(item.doseRules && item.doseRules.length) return item.doseRules;
+
+  // A custom setup is a snapshot, so it inherits the standard list's rules
+  // unless it defines its own — otherwise rules added to Pool later would
+  // never reach a customised customer.
+  if(ownType === 'custom'){
+    const base = customBodyKey === 'pool' ? 'pool'
+      : (customBodyKey === 'spa' ? 'spa' : 'fountain');
+    return rulesFromSource(base, item.key);
+  }
+  return [];
+}
+
 function openDoseRulesModal(item){
   const lists = activeConfigLists();
   const doses = (lists && lists.dosages) || [];
@@ -4790,7 +4814,17 @@ function openDoseRulesModal(item){
   overlay.innerHTML = `
     <div class="confirm-box" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
       <h3 style="font-size:15px;margin:0 0 4px;">Dosage rules for ${item.label || 'this reading'}</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">When a technician enters this reading, the dosage below fills in automatically. They can still change it.</p>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">When a technician enters this reading, the dosage below fills in automatically. They can still change it.</p>
+
+      <div id="ruleMimicRow" style="display:none;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);">
+        <label style="display:flex;align-items:center;gap:10px;font-size:13.5px;cursor:pointer;">
+          <input type="checkbox" id="ruleMimicOn" style="margin:0;flex-shrink:0;">
+          <span>Use the same rules as</span>
+          <select id="ruleMimicSource" style="width:auto;flex:0 0 auto;font-size:13px;padding:4px 8px;"></select>
+        </label>
+        <p id="ruleMimicNote" style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Rules stay linked — changing them there changes them here too.</p>
+      </div>
+
       <div id="ruleList" style="flex:1;overflow-y:auto;"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="ruleAdd" style="flex:1;">+ Add a rule</button>
@@ -4800,16 +4834,104 @@ function openDoseRulesModal(item){
   document.body.appendChild(overlay);
 
   const listBox = overlay.querySelector('#ruleList');
+  const mimicRow = overlay.querySelector('#ruleMimicRow');
+  const mimicOn = overlay.querySelector('#ruleMimicOn');
+  const mimicSrc = overlay.querySelector('#ruleMimicSource');
+  const mimicNote = overlay.querySelector('#ruleMimicNote');
+
+  // Which other lists this one could follow
+  const SOURCE_LABELS = {pool:'Pool', spa:'Spa', fountain:'Extra'};
+  const sources = Object.keys(SOURCE_LABELS)
+    .filter(t => t !== selectedChemConfigType);   // never itself
+
+  if(sources.length){
+    mimicRow.style.display = 'block';
+    mimicSrc.innerHTML = '';
+    sources.forEach(t=>{
+      const o = document.createElement('option');
+      o.value = t; o.textContent = SOURCE_LABELS[t];
+      mimicSrc.appendChild(o);
+    });
+    mimicOn.checked = !!item.doseRulesFrom;
+    mimicSrc.value = item.doseRulesFrom || sources[0];
+    mimicSrc.disabled = !mimicOn.checked;
+  }
+
+  function applyMimicState(){
+    const on = mimicOn.checked;
+    mimicSrc.disabled = !on;
+    item.doseRulesFrom = on ? mimicSrc.value : null;
+    saveActiveConfig();
+    if(on){
+      const src = SOURCE_LABELS[mimicSrc.value];
+      const srcRules = rulesFromSource(mimicSrc.value, item.key);
+      mimicNote.textContent = srcRules.length
+        ? 'Following ' + src + ' — ' + srcRules.length
+          + (srcRules.length === 1 ? ' rule' : ' rules') + ', kept in step automatically.'
+        : src + ' has no rules for this reading yet, so nothing will fill in.';
+    } else {
+      mimicNote.textContent = 'Rules stay linked — changing them there changes them here too.';
+    }
+    render();
+  }
+
+  mimicOn.addEventListener('change', applyMimicState);
+  mimicSrc.addEventListener('change', applyMimicState);
 
   function render(){
     item.doseRules = item.doseRules || [];
     listBox.innerHTML = '';
+
+    // Following another list — show what it says, but don't let it be edited here
+    if(item.doseRulesFrom){
+      const srcRules = rulesFromSource(item.doseRulesFrom, item.key);
+      const srcName = ({pool:'Pool', spa:'Spa', fountain:'Extra'})[item.doseRulesFrom] || item.doseRulesFrom;
+      if(srcRules.length === 0){
+        listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0;">'
+          + srcName + ' has no rules for this reading. Add them on the ' + srcName + ' tab.</div>';
+        return;
+      }
+      listBox.innerHTML = '';
+      srcRules.forEach(r=>{
+        const label = ({eq:'is exactly', lte:'is at or below', gte:'is at or above',
+                        lt:'is below', gt:'is above', between:'is between'})[r.op] || r.op;
+        const dose = (doses.find(d => d.key === r.doseKey) || {}).label || r.doseKey;
+        const line = document.createElement('div');
+        line.style.cssText = 'font-size:13px;padding:8px 0;border-bottom:1px solid var(--line);color:var(--muted);';
+        line.textContent = 'When ' + label + ' ' + r.value
+          + (r.op === 'between' ? ' and ' + r.value2 : '')
+          + ' \u2192 add ' + r.amount + ' ' + dose;
+        listBox.appendChild(line);
+      });
+      return;
+    }
 
     if(doses.length === 0){
       listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0;">Add a dosage to this list first, then you can link a reading to it.</div>';
       return;
     }
     if(item.doseRules.length === 0){
+      // Inherited from the standard list — shown so it isn't a surprise
+      const inherited = effectiveDoseRules(item, selectedChemConfigType);
+      if(inherited.length){
+        const base = customBodyKey === 'pool' ? 'Pool'
+          : (customBodyKey === 'spa' ? 'Spa' : 'Extra');
+        listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0 10px;">'
+          + 'Using the ' + base + ' rules, because this customer has none of their own. '
+          + 'Add one below to override them just for this customer.</div>';
+        inherited.forEach(r=>{
+          const label = ({eq:'is exactly', lte:'is at or below', gte:'is at or above',
+                          lt:'is below', gt:'is above', between:'is between'})[r.op] || r.op;
+          const dose = (doses.find(d => d.key === r.doseKey) || {}).label || r.doseKey;
+          const line = document.createElement('div');
+          line.style.cssText = 'font-size:13px;padding:8px 0;border-bottom:1px solid var(--line);color:var(--muted);';
+          line.textContent = 'When ' + label + ' ' + r.value
+            + (r.op === 'between' ? ' and ' + r.value2 : '')
+            + ' \u2192 add ' + r.amount + ' ' + dose;
+          listBox.appendChild(line);
+        });
+        return;
+      }
       listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:8px 0;">No rules yet. Add one to fill a dosage automatically.</div>';
       return;
     }
@@ -4892,6 +5014,10 @@ function openDoseRulesModal(item){
   }
 
   overlay.querySelector('#ruleAdd').addEventListener('click', ()=>{
+    if(item.doseRulesFrom){
+      showToast('These rules follow another list — untick the box to set your own');
+      return;
+    }
     if(doses.length === 0){ showToast('Add a dosage to this list first'); return; }
     item.doseRules = item.doseRules || [];
     item.doseRules.push({op:'eq', value:'', amount:'', doseKey: doses[0].key});
@@ -4979,6 +5105,13 @@ function openQuickButtonsModal(item){
       numInput.style.fontSize = '13px';
       numInput.style.fontFamily = "'JetBrains Mono',monospace";
       numInput.style.fontWeight = '700';
+      numInput.style.cursor = 'text';
+
+      // Tapping the value selects it, so typing replaces it outright rather
+      // than making you clear the old number first
+      numInput.addEventListener('focus', ()=> numInput.select());
+      numInput.addEventListener('click', ()=> numInput.select());
+
       numInput.addEventListener('change', ()=>{
         const parsed = parseFloat(numInput.value);
         if(isNaN(parsed)){
@@ -5185,7 +5318,7 @@ function makeConfigRow(item, listKey){
     const rulesBtn = document.createElement('button');
     rulesBtn.type = 'button';
     rulesBtn.className = 'btn btn-ghost';
-    const ruleCount = (item.doseRules || []).length;
+    const ruleCount = effectiveDoseRules(item, selectedChemConfigType).length;
     rulesBtn.style.cssText = 'width:auto;flex-shrink:0;padding:6px 10px;font-size:11.5px;'
       + (ruleCount ? 'color:var(--teal-deep);border-color:var(--teal-mid);font-weight:700;' : '');
     rulesBtn.textContent = ruleCount ? 'Dosage rules (' + ruleCount + ')' : 'Dosage rules';

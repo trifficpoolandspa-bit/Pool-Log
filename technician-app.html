@@ -489,7 +489,7 @@ select#customerSelect{font-weight:600;}
     <!-- POOL SECTION -->
     <div class="card" id="visitEquipmentSection" style="display:none;">
       <h2>Equipment</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Tap the camera icon next to any item to view or add its photos.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Tap the camera icon next to any item to view or add its photos.</p>
       <div id="icEquipmentList"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-primary" id="btnNewEquipmentType" type="button" style="width:auto;">+ Add new equipment</button>
@@ -500,7 +500,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitPoolBeforePhotoSection" style="display:none;">
       <h2>Before photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBefore" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBefore" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
@@ -523,7 +523,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitPoolPhotoSection" style="display:none;">
       <h2>After photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="gatePhotoBlock" style="display:none;margin-bottom:16px;padding:14px;border:1.5px solid #E8B5A8;border-radius:11px;background:#FBEAE6;text-align:center;">
         <div style="font-size:14px;font-weight:700;color:#B8492E;margin-bottom:4px;">Closed gate photo required</div>
         <p style="font-size:12px;color:#8C4429;margin:0 0 12px;">Photograph the gate closed or locked before submitting.</p>
@@ -557,7 +557,7 @@ select#customerSelect{font-weight:600;}
     <!-- SPA SECTION -->
     <div class="card" id="visitSpaBeforePhotoSection" style="display:none;">
       <h2>Before photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeSpa" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBeforeSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
@@ -580,7 +580,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitSpaPhotoSection" style="display:none;">
       <h2>After photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapSpa" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
@@ -602,7 +602,7 @@ select#customerSelect{font-weight:600;}
     <!-- FOUNTAIN SECTION -->
     <div class="card" id="visitFountainBeforePhotoSection" style="display:none;">
       <h2>Before photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool before you start work.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeFountain" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBeforeFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
       </div>
@@ -625,7 +625,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitFountainPhotoSection" style="display:none;">
       <h2>After photos</h2>
-      <p class="voice-hint" style="margin:-6px 0 12px;">Take a photo of the pool now that the work is done.</p>
+      <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapFountain" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
@@ -871,6 +871,11 @@ function fieldId(type, kind, key){
 // dosage automatically; anything the tech types by hand is never overwritten.
 const manuallyEditedDoses = {};
 
+// True while the rule engine is writing. The dose fields listen for input to
+// detect hand edits, and a custom property on the Event is dropped by the
+// constructor — so a shared flag is the only reliable signal.
+let applyingDoseRules = false;
+
 function matchesDoseRule(readingValue, rule){
   const v = parseFloat(readingValue);
   if(isNaN(v)) return false;
@@ -888,6 +893,28 @@ function matchesDoseRule(readingValue, rule){
   }
 }
 
+
+// Which rules actually apply to a chemical, in order of precedence:
+//   1. rules it holds itself
+//   2. rules it has been told to follow from another list
+//   3. the matching standard list's rules
+// Step 3 is what makes a customer's custom setup inherit rules added to Pool
+// after that setup was created. A custom list is a snapshot, so without this
+// it would silently never see them.
+function resolveDoseRules(chem, type){
+  if(chem.doseRulesFrom){
+    const src = chemConfig[chem.doseRulesFrom];
+    const found = ((src && src.chemicals) || []).find(x => x.key === chem.key);
+    return (found && found.doseRules) || [];
+  }
+  if(chem.doseRules && chem.doseRules.length) return chem.doseRules;
+
+  // Fall back to the standard list for this body of water
+  const std = chemConfig[type];
+  const match = ((std && std.chemicals) || []).find(x => x.key === chem.key);
+  return (match && match.doseRules) || [];
+}
+
 function applyDoseRules(type){
   const cid = currentVisitCustomerId;
   const lists = cid
@@ -896,7 +923,7 @@ function applyDoseRules(type){
   if(!lists) return;
 
   (lists.chemicals || []).forEach(chem=>{
-    const rules = chem.doseRules || [];
+    const rules = resolveDoseRules(chem, type);
     if(!rules.length) return;
     const readEl = document.getElementById(fieldId(type, 'chem', chem.key));
     if(!readEl) return;
@@ -912,15 +939,19 @@ function applyDoseRules(type){
       if(matchesDoseRule(reading, rule)){
         const val = String(rule.amount ?? '');
         if(doseEl.value !== val){
+          applyingDoseRules = true;
           doseEl.value = val;
           doseEl.dataset.autoFilled = 'true';
-          doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+          doseEl.dispatchEvent(new Event('input', {bubbles:true}));
+          applyingDoseRules = false;
         }
       } else if(doseEl.dataset.autoFilled === 'true'){
         // The reading changed and no longer matches, so clear what we put there
+        applyingDoseRules = true;
         doseEl.value = '';
         delete doseEl.dataset.autoFilled;
-        doseEl.dispatchEvent(new Event('input', {bubbles:true, autoFill:true}));
+        doseEl.dispatchEvent(new Event('input', {bubbles:true}));
+        applyingDoseRules = false;
       }
     });
   });
@@ -950,6 +981,11 @@ function renderConfigFields(containerId, list, type, kind, onInput){
     input.type = 'number';
     input.step = 'any';
     input.id = fieldId(type, kind, item.key);
+
+    // Tapping a filled field selects it, so typing replaces the value instead
+    // of forcing the tech to clear it first
+    input.addEventListener('focus', ()=>{ if(input.value) input.select(); });
+    input.addEventListener('click', ()=>{ if(input.value) input.select(); });
     input.placeholder = 'Tap a button or type any amount';
     const configuredButtons = Array.isArray(item.buttons) ? item.buttons : null;
     const showSuggestions = appSettings.showDosageSuggestions !== false
@@ -960,8 +996,8 @@ function renderConfigFields(containerId, list, type, kind, onInput){
       input.addEventListener('input', ()=> applyDoseRules(type));
     } else {
       // Anything the tech enters themselves takes precedence over a rule
-      input.addEventListener('input', (ev)=>{
-        if(ev && ev.autoFill) return;
+      input.addEventListener('input', ()=>{
+        if(applyingDoseRules) return;   // the rule engine is writing, not the tech
         markDoseEditedByHand(input);
       });
     }
@@ -1042,13 +1078,20 @@ function renderConfigFields(containerId, list, type, kind, onInput){
           + 'transition:background-color .12s ease,color .12s ease,border-color .12s ease;';
         sBtn.style.cssText = String(input.value) === String(amt) ? pressedStyle : restStyle;
         sBtn.textContent = amt;
+        // Each button keeps its own colours, so resetting the row can restore
+        // every button to what it should be rather than to one shared style
+        sBtn._restStyle = restStyle;
+        sBtn._pressedStyle = pressedStyle;
         sBtn.addEventListener('click', ()=>{
           // Tapping the value that's already set clears it back out
           const alreadySet = String(input.value) === String(amt);
           input.value = alreadySet ? '' : amt;
           input.dispatchEvent(new Event('input', {bubbles:true}));
-          // Only one value can be current, so clear the others in this row
-          suggestRow.querySelectorAll('button').forEach(b => b.style.cssText = restStyle);
+          // Only one value can be current, so clear the others in this row —
+          // each back to its OWN colour, not to this button's
+          suggestRow.querySelectorAll('button').forEach(b=>{
+            if(b._restStyle) b.style.cssText = b._restStyle;
+          });
           if(!alreadySet) sBtn.style.cssText = pressedStyle;
         });
         // Typing by hand should drop the highlight
@@ -4396,7 +4439,8 @@ function syncStepChrome(){
   } else {
     const wrap = document.createElement('div');
     wrap.dataset.stepHead = 'true';
-    wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;';
+    wrap.style.cssText = 'display:flex;align-items:center;justify-content:space-between;'
+      + 'gap:12px;margin-bottom:18px;';
     h.parentNode.insertBefore(wrap, h);
     wrap.appendChild(h);
     wrap.appendChild(back);
