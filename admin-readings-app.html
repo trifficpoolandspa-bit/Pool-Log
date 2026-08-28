@@ -1018,6 +1018,15 @@ select#customerSelect{font-weight:600;}
       </div>
     </div>
     <div class="card">
+      <div class="section-head">
+        <h2>Dosage rule check</h2>
+        <button class="btn btn-ghost" id="btnCheckDoseRules" style="width:auto;">Run check</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">Lists every dosage rule on this device and whether it can actually fire.</p>
+      <div id="doseRuleReport" style="display:none;margin-top:12px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.6;white-space:pre-wrap;background:var(--surface-alt);border-radius:10px;padding:12px;max-height:340px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
           <h2 style="margin:0;">Technicians tab</h2>
@@ -1232,6 +1241,15 @@ function matchesDoseRule(readingValue, rule){
 // Step 3 is what makes a customer's custom setup inherit rules added to Pool
 // after that setup was created. A custom list is a snapshot, so without this
 // it would silently never see them.
+function isCompleteRule(r){
+  if(!r || !r.doseKey) return false;
+  if(r.value === '' || r.value === undefined || r.value === null) return false;
+  if(r.amount === '' || r.amount === undefined || r.amount === null) return false;
+  if(r.op === 'between'
+     && (r.value2 === '' || r.value2 === undefined || r.value2 === null)) return false;
+  return true;
+}
+
 function resolveDoseRules(chem, type){
   if(chem.doseRulesFrom){
     const src = chemConfig[chem.doseRulesFrom];
@@ -1244,6 +1262,18 @@ function resolveDoseRules(chem, type){
   const std = chemConfig[type];
   const match = ((std && std.chemicals) || []).find(x => x.key === chem.key);
   return (match && match.doseRules) || [];
+}
+
+
+// A rule that can't fire used to do nothing at all, which made it impossible to
+// tell a broken rule from a rule that simply didn't match. Now it says so once.
+let ruleProblemsShown = {};
+
+function noteRuleProblem(msg){
+  if(ruleProblemsShown[msg]) return;
+  ruleProblemsShown[msg] = true;
+  if(typeof showToast === 'function') showToast(msg);
+  console.warn('Dosage rule: ' + msg);
 }
 
 function applyDoseRules(type){
@@ -1261,9 +1291,25 @@ function applyDoseRules(type){
     const reading = readEl.value;
 
     rules.forEach(rule=>{
-      if(!rule || !rule.doseKey) return;
+      if(!rule || !rule.doseKey){
+        noteRuleProblem(chem.label + ': a rule has no dosage chosen');
+        return;
+      }
+      if(rule.value === '' || rule.value === undefined || rule.value === null){
+        noteRuleProblem(chem.label + ': a rule has no value set');
+        return;
+      }
+      if(rule.amount === '' || rule.amount === undefined || rule.amount === null){
+        noteRuleProblem(chem.label + ': a rule has no amount set');
+        return;
+      }
       const doseEl = document.getElementById(fieldId(type, 'dose', rule.doseKey));
-      if(!doseEl) return;
+      if(!doseEl){
+        // The rule points at a dosage this body of water doesn't have.
+        // Silently doing nothing is how this stayed invisible.
+        noteRuleProblem(chem.label + ': rule points at a dosage not on this list');
+        return;
+      }
       // Never overwrite something typed or tapped by hand
       if(manuallyEditedDoses[doseEl.id]) return;
 
@@ -1295,6 +1341,7 @@ function markDoseEditedByHand(el){
 }
 
 function resetDoseRuleTracking(){
+  ruleProblemsShown = {};
   Object.keys(manuallyEditedDoses).forEach(k => delete manuallyEditedDoses[k]);
 }
 
@@ -7430,6 +7477,72 @@ if('serviceWorker' in navigator){
     navigator.serviceWorker.register('./sw.js').catch(()=>{});
   });
 }
+
+// Reports what the app can actually see, so a rule that never fires can be
+// diagnosed from the device rather than guessed at.
+document.getElementById('btnCheckDoseRules').addEventListener('click', ()=>{
+  const box = document.getElementById('doseRuleReport');
+  const lines = [];
+  const cfg = lsGet('chemConfig') || {};
+  const custom = lsGet('customChemConfig') || {};
+
+  function describe(rule){
+    const ops = {eq:'is exactly', lte:'at or below', gte:'at or above',
+                 lt:'below', gt:'above', between:'between'};
+    return (ops[rule.op] || rule.op) + ' ' + JSON.stringify(rule.value)
+      + (rule.op === 'between' ? ' and ' + JSON.stringify(rule.value2) : '')
+      + '  ->  ' + JSON.stringify(rule.amount) + ' of "' + rule.doseKey + '"';
+  }
+
+  let total = 0, usable = 0;
+  ['pool','spa','fountain'].forEach(t=>{
+    const list = cfg[t];
+    if(!list) return;
+    lines.push('--- ' + t.toUpperCase() + ' ---');
+    const doseKeys = (list.dosages || []).map(d => d.key);
+    lines.push('dosages available: ' + (doseKeys.join(', ') || '(none)'));
+    (list.chemicals || []).forEach(ch=>{
+      const rules = ch.doseRules || [];
+      if(!rules.length) return;
+      lines.push('  ' + (ch.label || ch.key) + '  [key: ' + ch.key + ']');
+      rules.forEach(r=>{
+        total++;
+        const problems = [];
+        if(!r.doseKey) problems.push('no dosage chosen');
+        if(r.value === '' || r.value == null) problems.push('no value');
+        if(r.amount === '' || r.amount == null) problems.push('no amount');
+        if(r.op === 'between' && (r.value2 === '' || r.value2 == null)) problems.push('no second value');
+        if(r.doseKey && doseKeys.indexOf(r.doseKey) === -1) problems.push('dosage "' + r.doseKey + '" is not on this list');
+        if(problems.length) lines.push('     BROKEN: ' + describe(r) + '  (' + problems.join('; ') + ')');
+        else { usable++; lines.push('     ok:     ' + describe(r)); }
+      });
+    });
+  });
+
+  const customIds = Object.keys(custom);
+  lines.push('');
+  lines.push('custom setups: ' + (customIds.length || 'none'));
+  customIds.forEach(cid=>{
+    const cust = (customers || []).find(x => x.id === cid);
+    Object.keys(custom[cid] || {}).forEach(bodyKey=>{
+      const body = custom[cid][bodyKey];
+      const dKeys = (body.dosages || []).map(d => d.key);
+      lines.push('  ' + ((cust && cust.name) || cid) + ' / ' + bodyKey
+        + '  dosages: ' + (dKeys.join(', ') || '(none)'));
+      (body.chemicals || []).forEach(ch=>{
+        const own = (ch.doseRules || []).length;
+        lines.push('     ' + (ch.label || ch.key) + ': ' + own + ' own rule(s)'
+          + (own ? '' : ' -> inherits from ' + bodyKey));
+      });
+    });
+  });
+
+  lines.unshift(total + ' rule(s) found, ' + usable + ' usable, ' + (total - usable) + ' broken');
+  lines.unshift('');
+  box.textContent = lines.join('\n');
+  box.style.display = 'block';
+});
+
 </script>
 </body>
 </html>

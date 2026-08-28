@@ -4853,13 +4853,15 @@ function openDoseRulesModal(item){
       mimicSrc.appendChild(o);
     });
     mimicOn.checked = !!item.doseRulesFrom;
-    mimicSrc.value = item.doseRulesFrom || sources[0];
-    mimicSrc.disabled = !mimicOn.checked;
+    // The dropdown stays usable whether or not the box is ticked, so you can
+    // pick the body of water first and then turn it on
+    mimicSrc.value = item.doseRulesFrom || item.doseRulesFromPick || sources[0];
   }
 
   function applyMimicState(){
     const on = mimicOn.checked;
-    mimicSrc.disabled = !on;
+    // Remember the choice even while it's off, so ticking the box uses it
+    item.doseRulesFromPick = mimicSrc.value;
     item.doseRulesFrom = on ? mimicSrc.value : null;
     saveActiveConfig();
     if(on){
@@ -4870,7 +4872,12 @@ function openDoseRulesModal(item){
           + (srcRules.length === 1 ? ' rule' : ' rules') + ', kept in step automatically.'
         : src + ' has no rules for this reading yet, so nothing will fill in.';
     } else {
-      mimicNote.textContent = 'Rules stay linked — changing them there changes them here too.';
+      const picked = SOURCE_LABELS[mimicSrc.value] || '';
+      const n = rulesFromSource(mimicSrc.value, item.key).length;
+      mimicNote.textContent = n
+        ? 'Tick the box to follow ' + picked + '\u2019s ' + n
+          + (n === 1 ? ' rule' : ' rules') + ' instead of setting your own.'
+        : picked + ' has no rules for this reading yet.';
     }
     render();
   }
@@ -4938,7 +4945,13 @@ function openDoseRulesModal(item){
 
     item.doseRules.forEach((rule, idx)=>{
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--line);';
+      const incomplete = (rule.value === '' || rule.value === undefined || rule.value === null)
+        || (rule.amount === '' || rule.amount === undefined || rule.amount === null)
+        || (rule.op === 'between'
+            && (rule.value2 === '' || rule.value2 === undefined || rule.value2 === null));
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:9px 0;'
+        + 'border-bottom:1px solid var(--line);'
+        + (incomplete ? 'background:#FBEAE6;border-radius:8px;padding-left:8px;padding-right:8px;' : '');
 
       const when = document.createElement('span');
       when.style.cssText = 'font-size:12.5px;color:var(--muted);';
@@ -4959,7 +4972,7 @@ function openDoseRulesModal(item){
       const v1 = document.createElement('input');
       v1.type = 'number'; v1.step = 'any'; v1.value = rule.value ?? '';
       v1.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
-      v1.addEventListener('change', ()=>{ rule.value = v1.value; saveActiveConfig(); });
+      v1.addEventListener('change', ()=>{ rule.value = v1.value; saveActiveConfig(); render(); });
       row.appendChild(v1);
 
       if(rule.op === 'between'){
@@ -4970,7 +4983,7 @@ function openDoseRulesModal(item){
         const v2 = document.createElement('input');
         v2.type = 'number'; v2.step = 'any'; v2.value = rule.value2 ?? '';
         v2.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
-        v2.addEventListener('change', ()=>{ rule.value2 = v2.value; saveActiveConfig(); });
+        v2.addEventListener('change', ()=>{ rule.value2 = v2.value; saveActiveConfig(); render(); });
         row.appendChild(v2);
       }
 
@@ -4982,7 +4995,7 @@ function openDoseRulesModal(item){
       const amt = document.createElement('input');
       amt.type = 'number'; amt.step = 'any'; amt.value = rule.amount ?? '';
       amt.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
-      amt.addEventListener('change', ()=>{ rule.amount = amt.value; saveActiveConfig(); });
+      amt.addEventListener('change', ()=>{ rule.amount = amt.value; saveActiveConfig(); render(); });
       row.appendChild(amt);
 
       const doseSel = document.createElement('select');
@@ -5009,6 +5022,17 @@ function openDoseRulesModal(item){
       });
       row.appendChild(del);
 
+      if(incomplete){
+        const warn = document.createElement('div');
+        warn.style.cssText = 'flex:1 1 100%;font-size:11.5px;color:var(--rust);font-weight:600;padding-top:2px;';
+        const missing = [];
+        if(rule.value === '' || rule.value == null) missing.push('a value');
+        if(rule.op === 'between' && (rule.value2 === '' || rule.value2 == null)) missing.push('a second value');
+        if(rule.amount === '' || rule.amount == null) missing.push('an amount');
+        warn.textContent = 'Needs ' + missing.join(' and ') + ' — this rule won\u2019t do anything until it\u2019s filled in.';
+        row.appendChild(warn);
+      }
+
       listBox.appendChild(row);
     });
   }
@@ -5025,8 +5049,27 @@ function openDoseRulesModal(item){
     render();
   });
 
+  let closed = false;
   const close = ()=>{
-    document.body.removeChild(overlay);
+    if(closed) return;          // a second click must not slip past the cleanup
+    closed = true;
+
+    // An unfinished rule does nothing and hides the fact that it does nothing,
+    // so it is dropped without asking. There is no case where keeping one helps.
+    const before = (item.doseRules || []).length;
+    item.doseRules = (item.doseRules || []).filter(r =>
+      !((r.value === '' || r.value == null)
+        || (r.amount === '' || r.amount == null)
+        || (r.op === 'between' && (r.value2 === '' || r.value2 == null))));
+    const dropped = before - item.doseRules.length;
+    if(dropped){
+      saveActiveConfig();
+      showToast(dropped === 1
+        ? 'Removed an unfinished rule'
+        : 'Removed ' + dropped + ' unfinished rules');
+    }
+
+    if(overlay.parentNode) document.body.removeChild(overlay);
     renderChemConfigLists();
   };
   overlay.querySelector('#ruleDone').addEventListener('click', close);
