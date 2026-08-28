@@ -739,6 +739,7 @@ select#customerSelect{font-weight:600;}
 <script>
 const STORAGE_PREFIX = 'poollog:';
 let stepBarPressedAt = 0;
+let backGuardArmed = false;
 const PHOTO_KEEP_VISITS = 4;
 let storageWarningShown = false;
 const DEFAULT_CHEM_CONFIG = {
@@ -4947,15 +4948,30 @@ function discardVisitInProgress(){
 // ---------- Phone back button ----------
 // Without a history entry to consume, Android's back gesture closes the app
 // mid-visit. Keep one armed so back steps through the visit instead.
+// Exactly ONE guard entry is kept in history at a time. Pushing on every view
+// change piled up hundreds of entries, and browsers throttle pushState — once
+// throttled the pushes silently failed, the stack ran dry, and Back closed the
+// app. Tracking whether a guard is already armed keeps this to a handful of
+// calls per session.
 function armBackButton(){
-  try{ history.pushState({poollog:true}, ''); }catch(e){}
+  if(backGuardArmed) return;
+  try{
+    history.pushState({poollog:true}, '');
+    backGuardArmed = true;
+  }catch(e){
+    // Throttled or blocked — try again shortly rather than giving up
+    setTimeout(()=>{
+      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
+    }, 400);
+  }
 }
 
 let backPromptOpen = false;
 
 window.addEventListener('popstate', async ()=>{
-  // Put an entry back straight away, before anything else can go wrong.
-  // Without this the stack empties and the next Back closes the app.
+  // The guard entry was just consumed by this Back press, so put one back
+  // immediately — before anything else can fail and leave the stack empty.
+  backGuardArmed = false;
   armBackButton();
 
   if(currentViewName === 'visit'){
@@ -4978,7 +4994,7 @@ window.addEventListener('popstate', async ()=>{
       backPromptOpen = false;
     }
     if(!ok){
-      armBackButton();     // they stayed, so keep an entry ready
+      armBackButton();     // they stayed, so make sure a guard is ready
       return;
     }
     discardVisitInProgress();

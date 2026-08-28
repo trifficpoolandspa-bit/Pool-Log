@@ -896,7 +896,7 @@ select#customerSelect{font-weight:600;}
       </div>
     </div>
 
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Photos</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Photos</div>
 
 <div class="card">
       <div class="field">
@@ -959,7 +959,7 @@ select#customerSelect{font-weight:600;}
       </div>
     </div>
 
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:22px 0 -4px;">Field app</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Field app</div>
 
 
     <input type="checkbox" id="settingVoiceMode" style="display:none;">
@@ -1070,6 +1070,7 @@ select#customerSelect{font-weight:600;}
 <script>
 const STORAGE_PREFIX = 'poollog:';
 let stepBarPressedAt = 0;
+let backGuardArmed = false;
 const PHOTO_KEEP_VISITS = 4;
 let storageWarningShown = false;
 const DEFAULT_CHEM_CONFIG = {
@@ -3323,7 +3324,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
   if(!customerId){ showToast('Open a customer from Today first'); return; }
   const reading = {
     id: 'read_' + Date.now(),
-    date: new Date().toISOString(),
+    date: visitTimestamp(),
     notes: document.getElementById('inNotes').value.trim(),
     photo: poolPhotoController.getData() || null,
     beforePhoto: beforeControllerFor('pool').getData() || null,
@@ -3380,7 +3381,7 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   if(!customerId){ showToast('Open a customer from Today first'); return; }
   const reading = {
     id: 'spa_' + Date.now(),
-    date: new Date().toISOString(),
+    date: visitTimestamp(),
     notes: document.getElementById('inSpaNotes').value.trim(),
     photo: spaPhotoController.getData() || null,
     beforePhoto: beforeControllerFor('spa').getData() || null
@@ -3423,7 +3424,7 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   if(!fountainId){ showToast('Select which fountain this reading is for'); return; }
   const reading = {
     id: 'fountain_' + Date.now(),
-    date: new Date().toISOString(),
+    date: visitTimestamp(),
     notes: document.getElementById('inFountainNotes').value.trim(),
     photo: fountainPhotoController.getData() || null,
     beforePhoto: beforeControllerFor('fountain').getData() || null
@@ -4731,11 +4732,11 @@ function renderHomeList(){
       // Only today's route can be worked, so say so rather than letting them
       // press it and be turned away
       const isToday = viewingToday();
-      startBtn.textContent = isToday ? 'Start visit \u2192' : 'Not today\u2019s route';
+      startBtn.textContent = isToday ? 'Start visit \u2192' : 'Service this day \u2192';
       if(!isToday){
-        startBtn.style.opacity = '0.45';
-        startBtn.style.cursor = 'not-allowed';
-        startBtn.title = 'Service reports can only be logged on the day the work is done';
+        startBtn.style.background = 'var(--gold)';
+        startBtn.style.borderColor = 'var(--gold)';
+        startBtn.title = 'Not today\u2019s route — the report will be dated for the day shown';
       }
       startBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
@@ -4899,9 +4900,9 @@ async function skipService(customer){
     pendingVisit = null;
     stopVisitTimer();
   }
-  const today = todayDateStr();
+  const today = visitDateStr();
   customer.lastServicedDate = today;
-  customer.lastServicedAt = new Date().toISOString();
+  customer.lastServicedAt = visitTimestamp();
   await saveCustomers();
 
   const skipList = await loadSkippedVisits(customer.id);
@@ -6586,15 +6587,30 @@ function discardVisitInProgress(){
 // ---------- Phone back button ----------
 // Without a history entry to consume, Android's back gesture closes the app
 // mid-visit. Keep one armed so back steps through the visit instead.
+// Exactly ONE guard entry is kept in history at a time. Pushing on every view
+// change piled up hundreds of entries, and browsers throttle pushState — once
+// throttled the pushes silently failed, the stack ran dry, and Back closed the
+// app. Tracking whether a guard is already armed keeps this to a handful of
+// calls per session.
 function armBackButton(){
-  try{ history.pushState({poollog:true}, ''); }catch(e){}
+  if(backGuardArmed) return;
+  try{
+    history.pushState({poollog:true}, '');
+    backGuardArmed = true;
+  }catch(e){
+    // Throttled or blocked — try again shortly rather than giving up
+    setTimeout(()=>{
+      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
+    }, 400);
+  }
 }
 
 let backPromptOpen = false;
 
 window.addEventListener('popstate', async ()=>{
-  // Put an entry back straight away, before anything else can go wrong.
-  // Without this the stack empties and the next Back closes the app.
+  // The guard entry was just consumed by this Back press, so put one back
+  // immediately — before anything else can fail and leave the stack empty.
+  backGuardArmed = false;
   armBackButton();
 
   if(currentViewName === 'visit'){
@@ -6617,7 +6633,7 @@ window.addEventListener('popstate', async ()=>{
       backPromptOpen = false;
     }
     if(!ok){
-      armBackButton();     // they stayed, so keep an entry ready
+      armBackButton();     // they stayed, so make sure a guard is ready
       return;
     }
     discardVisitInProgress();
@@ -6635,6 +6651,27 @@ armBackButton();
 
 // Is the day currently being viewed actually today? Visits can only be logged
 // against the real date — browsing ahead or back is for planning, not working.
+
+// The date a visit should be recorded against. Normally today, but when an
+// admin services a day other than today, the report belongs to that day so it
+// counts against that route rather than appearing on today's.
+function visitDateStr(){
+  const d = dateForWeekday(selectedHomeDay);
+  if(!d) return todayDateStr();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0,10);
+}
+
+// A timestamp for that date. Same clock time, so duration and ordering still
+// make sense, but on the correct day.
+function visitTimestamp(){
+  const d = dateForWeekday(selectedHomeDay);
+  const now = new Date();
+  if(!d || d.toDateString() === now.toDateString()) return now.toISOString();
+  const stamped = new Date(d);
+  stamped.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), 0);
+  return stamped.toISOString();
+}
+
 function viewingToday(){
   const d = dateForWeekday(selectedHomeDay);
   if(!d) return false;
@@ -6642,13 +6679,17 @@ function viewingToday(){
 }
 
 async function openVisit(customerId){
+  // Admins can service any day — useful for catching up or working ahead.
+  // It confirms first, and says plainly what date the report will carry.
   if(!viewingToday()){
     const d = dateForWeekday(selectedHomeDay);
     const when = d ? d.toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'}) : selectedHomeDay;
-    await alertDialog(
-      'This route is for ' + when + ', not today. Service reports can only be logged on the day the work is done.',
-      'Not today\u2019s route');
-    return;
+    const today = new Date().toLocaleDateString(undefined, {weekday:'long', month:'short', day:'numeric'});
+    const ok = await confirmDialog(
+      'This route is for ' + when + ', but today is ' + today + '. '
+      + 'The report will be dated ' + when + ' so it counts against that day\u2019s route. Continue?',
+      'Service anyway');
+    if(!ok) return;
   }
 
   if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
@@ -6778,8 +6819,8 @@ async function finalizeVisitSend(){
   const elapsedMs = stopVisitTimer();
   const customer = customers.find(c => c.id === customerId);
   if(customer){
-    customer.lastServicedDate = todayDateStr();
-    customer.lastServicedAt = new Date().toISOString();
+    customer.lastServicedDate = visitDateStr();
+    customer.lastServicedAt = visitTimestamp();
     if(elapsedMs !== null) customer.lastServiceDurationMs = elapsedMs;
     await saveCustomers();
   }
