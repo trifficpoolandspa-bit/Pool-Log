@@ -982,6 +982,19 @@ function noteRuleProblem(msg){
   console.warn('Dosage rule: ' + msg);
 }
 
+
+// A salt pool makes its own chlorine, so a rule that adds tabs or liquid off a
+// chlorine reading doesn't apply. Rules on other chemicals are unaffected.
+function isSaltPool(){
+  const cust = customers.find(x => x.id === currentVisitCustomerId);
+  if(!cust) return false;
+  const chlor = (cust.equipment || []).find(i => i.type === 'Chlorination');
+  return !!(chlor && chlor.chlorinationChoice === 'Salt Cell');
+}
+
+// Which readings a salt pool should not trigger dosing from
+const SALT_EXEMPT_KEYS = ['chlorine'];
+
 function applyDoseRules(type){
   const cid = currentVisitCustomerId;
   const lists = cid
@@ -996,7 +1009,12 @@ function applyDoseRules(type){
   const intended = {};   // doseFieldId -> value a matching rule wants
   const touched = {};    // doseFieldId -> some rule targets this field
 
+  const saltPool = isSaltPool();
+
   (lists.chemicals || []).forEach(chem=>{
+    // Salt pools generate their own chlorine, so skip chlorine-driven rules
+    if(saltPool && SALT_EXEMPT_KEYS.indexOf(chem.key) !== -1) return;
+
     const rules = resolveDoseRules(chem, type);
     if(!rules.length) return;
 
@@ -1328,6 +1346,37 @@ document.addEventListener('click', (e)=>{
     e.preventDefault();
   }
 }, true);   // capture phase, so it runs before any row handler
+
+
+// ---------- Live refresh ----------
+// The browser fires a storage event when ANOTHER tab or window on this device
+// changes localStorage. That keeps two tabs in step — an admin watching the
+// technicians tab while a visit is submitted in another tab will see it update.
+// It does NOT reach other devices: there is no server, so a technician's phone
+// and an admin's computer keep entirely separate copies of the data.
+let liveRefreshPending = null;
+
+function refreshFromStorage(){
+  if(liveRefreshPending) return;          // collapse a burst of changes into one
+  liveRefreshPending = setTimeout(()=>{
+    liveRefreshPending = null;
+    try{
+      customers = lsGet('customers') || customers;
+      if(typeof renderHomeList === 'function' && currentViewName === 'home') renderHomeList();
+      if(typeof renderServicedList === 'function') renderServicedList();
+    }catch(e){ console.warn('Live refresh failed:', e); }
+  }, 250);
+}
+
+window.addEventListener('storage', (e)=>{
+  if(!e.key || e.key.indexOf(STORAGE_PREFIX) !== 0) return;
+  refreshFromStorage();
+});
+
+// Coming back to the tab is the other moment data may have moved on
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden) refreshFromStorage();
+});
 
 function switchView(view, opts){
   opts = opts || {};
@@ -2252,6 +2301,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     photo: poolPhotoController.getData() || null,
     beforePhoto: beforeControllerFor('pool').getData() || null,
     isFilterClean: isFilterCleanVisit,
+    isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
     gatePhoto: gatePhotoController.getData() || null,
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
@@ -2296,6 +2346,7 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   if(!customerId){ showToast('Open a customer from Today first'); return; }
   const reading = {
     id: 'spa_' + Date.now(),
+    isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
     date: new Date().toISOString(),
     notes: document.getElementById('inSpaNotes').value.trim(),
     photo: spaPhotoController.getData() || null,
@@ -2331,6 +2382,7 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   if(!fountainId){ showToast('Select which fountain this reading is for'); return; }
   const reading = {
     id: 'fountain_' + Date.now(),
+    isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
     date: new Date().toISOString(),
     notes: document.getElementById('inFountainNotes').value.trim(),
     photo: fountainPhotoController.getData() || null,
@@ -3059,8 +3111,12 @@ function renderServicedList(){
 }
 
 async function reserviceCustomer(customer){
+  // The original report stays exactly as it was. This flag marks the NEXT
+  // report as a redo so the two can be told apart.
+  customer.pendingRedo = true;
   customer.lastServicedDate = null;
   delete customer.lastServiceDurationMs;
+  delete customer.lastServicedAt;
   await saveCustomers();
 
   const today = todayDateStr();
@@ -3187,10 +3243,15 @@ function openDirections(customer){
 }
 
 function sendOnMyWay(customer){
-  const smsText = `Hi ${customer.name}, this is your pool tech — just a heads up that I'll be at your house soon to service your pool${customer.hasSpa ? ' and spa' : ''}. See you shortly!`;
+  // Some customers want the heads-up going to someone else — a property
+  // manager, a spouse, whoever is actually there to open the gate.
+  const toName = (customer.notifyName || '').trim() || customer.name;
+  const toPhone = (customer.notifyPhone || '').trim() || customer.phone;
 
-  if(customer.phone){
-    const digits = customer.phone.replace(/[^\d+]/g, '');
+  const smsText = `Hi ${toName}, this is your pool tech — just a heads up that I'll be at the house soon to service the pool${customer.hasSpa ? ' and spa' : ''}. See you shortly!`;
+
+  if(toPhone){
+    const digits = toPhone.replace(/[^\d+]/g, '');
     const encodedText = encodeURIComponent(smsText);
     const link = document.createElement('a');
     link.href = `sms:${digits}?body=${encodedText}`;
@@ -3201,12 +3262,13 @@ function sendOnMyWay(customer){
     return;
   }
 
-  if(customer.email){
+  const toEmail = (customer.notifyEmail || '').trim() || customer.email;
+  if(toEmail){
     const subject = encodeURIComponent('On my way!');
-    const bodyText = `Hi ${customer.name},\n\nJust letting you know I'm on my way to service your pool${customer.hasSpa ? ' and spa' : ''} today.\n\nSee you soon!`;
+    const bodyText = `Hi ${toName},\n\nJust letting you know I'm on my way to service the pool${customer.hasSpa ? ' and spa' : ''} today.\n\nSee you soon!`;
     const encodedBody = encodeURIComponent(bodyText);
     const link = document.createElement('a');
-    link.href = `mailto:${customer.email}?subject=${subject}&body=${encodedBody}`;
+    link.href = `mailto:${toEmail}?subject=${subject}&body=${encodedBody}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -3220,25 +3282,28 @@ function sendOnMyWay(customer){
 async function getCustomerServiceDates(customerId){
   const customer = customers.find(c => c.id === customerId);
   if(!customer) return [];
+  // Keyed by date AND whether it was a redo, so an original and a redo on the
+  // same day are two separate reports rather than one hiding the other.
   const dateMap = new Map();
+  const keyFor = r => r.date.slice(0,10) + (r.isRedo ? '|redo' : '');
 
   const poolList = await loadReadings(customerId, 'pool');
   poolList.forEach(r=>{
-    const d = r.date.slice(0,10);
-    if(!dateMap.has(d)) dateMap.set(d, r.date);
+    const k = keyFor(r);
+    if(!dateMap.has(k)) dateMap.set(k, r.date);
   });
 
   const spaList = await loadReadings(customerId, 'spa');
   spaList.forEach(r=>{
-    const d = r.date.slice(0,10);
-    if(!dateMap.has(d)) dateMap.set(d, r.date);
+    const k = keyFor(r);
+    if(!dateMap.has(k)) dateMap.set(k, r.date);
   });
 
   for(const f of getValidFountains(customer)){
     const fList = await loadFountainReadings(customerId, f.id);
     fList.forEach(r=>{
-      const d = r.date.slice(0,10);
-      if(!dateMap.has(d)) dateMap.set(d, r.date);
+      const k = keyFor(r);
+      if(!dateMap.has(k)) dateMap.set(k, r.date);
     });
   }
 
@@ -3248,15 +3313,22 @@ async function getCustomerServiceDates(customerId){
   });
 
   return Array.from(dateMap.entries())
-    .map(([dateStr, ts]) => ({dateStr, ts}))
+    .map(([key, ts]) => ({dateStr: key, ts, isRedo: key.indexOf('|redo') !== -1}))
     .sort((a,b) => b.ts.localeCompare(a.ts));
 }
 
 async function renderDateReport(customerId, dateStr){
   if(!customerId || !dateStr) return;
+
+  // The key may carry a "|redo" suffix, marking which of the day's two
+  // reports is wanted
+  const wantRedo = dateStr.indexOf('|redo') !== -1;
+  const plainDate = dateStr.replace('|redo', '');
+  const matches = r => r.date.slice(0,10) === plainDate && !!r.isRedo === wantRedo;
+
   const skipList = await loadSkippedVisits(customerId);
-  const skipRecord = skipList.find(r => r.date === dateStr);
-  if(skipRecord){
+  const skipRecord = skipList.find(r => r.date === plainDate);
+  if(skipRecord && !wantRedo){
     await renderReport(customerId, skipRecord.id);
     return;
   }
@@ -3265,13 +3337,13 @@ async function renderDateReport(customerId, dateStr){
   if(!customer) return;
 
   const poolList = await loadReadings(customerId, 'pool');
-  const poolReading = poolList.find(r => r.date.slice(0,10) === dateStr);
+  const poolReading = poolList.find(matches);
   const spaList = await loadReadings(customerId, 'spa');
-  const spaReading = spaList.find(r => r.date.slice(0,10) === dateStr);
+  const spaReading = spaList.find(matches);
   const fountainRefs = [];
   for(const f of getValidFountains(customer)){
     const fList = await loadFountainReadings(customerId, f.id);
-    const match = fList.find(r => r.date.slice(0,10) === dateStr);
+    const match = fList.find(matches);
     if(match) fountainRefs.push({fountainId: f.id, readingId: match.id});
   }
 
@@ -3304,7 +3376,7 @@ async function refreshDateSelector(customerId){
   dates.forEach(d=>{
     const opt = document.createElement('option');
     opt.value = d.dateStr;
-    opt.textContent = fmtDate(d.ts);
+    opt.textContent = fmtDate(d.ts) + (d.isRedo ? '  \u2014 redone' : '');
     sel.appendChild(opt);
   });
   await renderDateReport(customerId, dates[0].dateStr);
@@ -5343,6 +5415,13 @@ async function finalizeVisitSend(){
   // weak signal can't strand the tech on the after-photos page.
   // Clear the visit identity before leaving, otherwise switchView captures a
   // fresh draft on the way out and the finished visit resumes next time.
+  // The redo flag belongs to this visit only
+  const redoCust = customers.find(x => x.id === customerId);
+  if(redoCust && redoCust.pendingRedo){
+    delete redoCust.pendingRedo;
+    saveCustomers();
+  }
+
   currentVisitCustomerId = null;
   currentVisibleSection = null;
   currentVisitStep = 1;
@@ -5515,7 +5594,8 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
     </div>
   `;
 
-  currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(sections[0].reading.date)}\n${sectionsText}`;
+  const wasRedone = sections.some(s => s.reading && s.reading.isRedo);
+  currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT${wasRedone ? ' (REDONE)' : ''}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(sections[0].reading.date)}\n${sectionsText}`;
 
   // Only one photo can attach automatically (a single email can only carry one dynamic
   // attachment via EmailJS) — prefer earliest section with a photo (pool, then spa, then fountains in order).

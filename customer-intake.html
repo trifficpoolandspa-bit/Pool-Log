@@ -8422,6 +8422,75 @@ function inlineText(cust, field, type){
   };
 }
 
+
+// Who the "On my way" message goes to, when it isn't the customer themselves.
+// Leave these blank and it goes to the customer as normal.
+function inlineNotifyContact(cust){
+  return (row, done)=>{
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '4px';
+
+    function box(field, ph){
+      const input = document.createElement('input');
+      input.className = 'profile-inline-input';
+      input.placeholder = ph;
+      input.value = cust[field] || '';
+      return input;
+    }
+
+    const nameEl = box('notifyName', 'Name (e.g. property manager)');
+    nameEl.style.marginBottom = '8px';
+    wrap.appendChild(nameEl);
+
+    const line = document.createElement('div');
+    line.style.cssText = 'display:flex;gap:8px;';
+    const phoneEl = box('notifyPhone', 'Phone');
+    phoneEl.type = 'tel';
+    phoneEl.style.flex = '1';
+    const emailEl = box('notifyEmail', 'Email');
+    emailEl.type = 'email';
+    emailEl.style.flex = '1';
+    line.appendChild(phoneEl);
+    line.appendChild(emailEl);
+    wrap.appendChild(line);
+
+    const hint = document.createElement('p');
+    hint.style.cssText = 'font-size:11.5px;color:var(--muted);margin:8px 0 0;';
+    hint.textContent = 'Leave blank to text the customer as usual.';
+    wrap.appendChild(hint);
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'margin-top:10px;';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-primary';
+    save.style.cssText = 'width:auto;padding:6px 14px;font-size:12px;';
+    save.textContent = 'Done';
+    save.addEventListener('click', commit);
+    btns.appendChild(save);
+    wrap.appendChild(btns);
+
+    function commit(){
+      cust.notifyName = nameEl.value.trim();
+      cust.notifyPhone = phoneEl.value.trim();
+      cust.notifyEmail = emailEl.value.trim();
+      saveCustomerField();
+      done();
+    }
+
+    [nameEl, phoneEl, emailEl].forEach(inp=>{
+      inp.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); commit(); }
+        if(e.key === 'Escape'){ done(); }
+      });
+    });
+
+    row.appendChild(wrap);
+    nameEl.focus();
+    nameEl.select();
+  };
+}
+
 function inlineAddress(cust){
   return (row, done)=>{
     const wrap = document.createElement('div');
@@ -8791,6 +8860,17 @@ function viewCustomer(c){
     editor: inlineAddress(c)});
   profileRow(meta, {label:'Phone', value:c.phone, placeholder:'Add a phone number', editor: inlineText(c,'phone','tel')});
   profileRow(meta, {label:'Email', value:c.email, placeholder:'Add an email', editor: inlineText(c,'email','email')});
+
+  // Who the "On my way" message goes to, when it isn't the customer themselves
+  const notifyLabel = (c.notifyName || c.notifyPhone || c.notifyEmail)
+    ? [c.notifyName, c.notifyPhone].filter(Boolean).join(' \u00b7 ')
+    : '';
+  profileRow(meta, {
+    label: 'On my way goes to',
+    value: notifyLabel,
+    placeholder: 'The customer (tap to send it to someone else)',
+    editor: inlineNotifyContact(c)
+  });
 
   const svcParts = [];
   if(c.hasPool !== false) svcParts.push('Pool');
