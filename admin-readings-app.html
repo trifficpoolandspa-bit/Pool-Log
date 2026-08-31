@@ -5905,7 +5905,21 @@ function hasUnsavedSectionData(){
     const el = document.getElementById(id);
     return el && el.value !== '' && el.value !== undefined;
   });
-  return hasFieldValue || !!(photoController && photoController.getData());
+  if(hasFieldValue) return true;
+  if(photoController && photoController.getData()) return true;
+
+  // A before photo or a gate photo counts as work too — losing either without
+  // warning would be as bad as losing a reading
+  const before = typeof beforeControllerFor === 'function'
+    ? beforeControllerFor(currentVisibleSection) : null;
+  if(before && before.getData()) return true;
+  if(typeof gatePhotoController !== 'undefined' && gatePhotoController.getData()) return true;
+
+  // And a section already saved during this visit
+  if(pendingVisit && pendingVisit.doneSections
+     && Object.keys(pendingVisit.doneSections).length) return true;
+
+  return false;
 }
 
 let currentVisitStep = 1;
@@ -6770,24 +6784,25 @@ window.addEventListener('popstate', async ()=>{
       return;
     }
 
-    // Leaving a visit always asks first — whether or not anything was typed,
-    // and whether or not a photo was taken. Backing out of a report by
-    // accident should never be possible.
-    if(backPromptOpen) return;
-    backPromptOpen = true;
-    let ok = false;
-    try{
-      ok = await confirmDialog(
-        "Are you sure you'd like to cancel the report? Anything entered will be lost.",
-        'Cancel report');
-    } finally {
-      backPromptOpen = false;
+    // Nothing entered means nothing to lose, so just leave — same as the
+    // on-screen Return to route button.
+    if(hasUnsavedSectionData()){
+      if(backPromptOpen) return;
+      backPromptOpen = true;
+      let ok = false;
+      try{
+        ok = await confirmDialog(
+          "This will remove all readings taken. Are you sure you'd like to cancel the report?",
+          'Cancel report');
+      } finally {
+        backPromptOpen = false;
+      }
+      if(!ok){
+        armBackButton();     // they stayed, so make sure a guard is ready
+        return;
+      }
+      discardVisitInProgress();
     }
-    if(!ok){
-      armBackButton();     // they stayed, so make sure a guard is ready
-      return;
-    }
-    discardVisitInProgress();
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
     switchView('home');
     return;
@@ -6850,11 +6865,18 @@ async function openVisit(customerId){
 
   const customer = customers.find(c => c.id === customerId);
   if(!customer) return;
+
+  // The customer must be set BEFORE the fields are built, because
+  // renderAllConfigFields reads currentVisitCustomerId to decide whose custom
+  // setup to use. Rendering first meant every visit was laid out with the
+  // PREVIOUS customer's chemicals — so a custom setup showed up on whoever
+  // came before them on the route.
+  currentVisitCustomerId = customerId;
+  currentVisitFountainId = null;
+
   chemConfig = loadChemConfig();
   renderAllConfigFields();
   refreshDynamicFieldLabels();
-  currentVisitCustomerId = customerId;
-  currentVisitFountainId = null;
 
   if(!pendingVisit || pendingVisit.customerId !== customerId){
     pendingVisit = {
