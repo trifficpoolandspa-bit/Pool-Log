@@ -731,6 +731,15 @@ input::placeholder{color:#A9BCB9;}
         <span>Require a closed gate photo</span>
       </label>
       <p id="photoRequireNote" style="display:none;font-size:11.5px;color:var(--rust);margin:8px 0 0;"></p>
+
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <h3 style="font-size:13.5px;margin:0;">Your own photos</h3>
+          <button class="btn btn-ghost" id="btnAddCustomPhoto" style="width:auto;padding:6px 12px;font-size:12px;">+ Add a photo</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin:6px 0 10px;">Name a photo the technician must take &mdash; a filter gauge, a skimmer basket, whatever you need. Choose whether it comes before or after the readings.</p>
+        <div id="customPhotoList"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -5437,19 +5446,49 @@ function applyAllBodiesVisibility(){
   if(b) b.style.display = onPool ? 'flex' : 'none';
 }
 
+// What the spa and fountain lists were before the pool's were copied over
+// them, so unticking can put them back rather than leaving the pool's copy
+// stranded there.
+function stashOwnLists(listKey){
+  const stash = lsGet('chemConfigStash') || {};
+  stash[listKey] = {
+    spa: JSON.parse(JSON.stringify(chemConfig.spa[listKey] || [])),
+    fountain: JSON.parse(JSON.stringify(chemConfig.fountain[listKey] || []))
+  };
+  lsSet('chemConfigStash', stash);
+}
+
+function restoreOwnLists(listKey){
+  const stash = lsGet('chemConfigStash') || {};
+  const saved = stash[listKey];
+  if(!saved) return false;
+  chemConfig.spa[listKey] = JSON.parse(JSON.stringify(saved.spa || []));
+  chemConfig.fountain[listKey] = JSON.parse(JSON.stringify(saved.fountain || []));
+  delete stash[listKey];
+  lsSet('chemConfigStash', stash);
+  lsSet('chemConfig', chemConfig);
+  return true;
+}
+
 function wireApplyAll(boxId, settingKey, listKey, label){
   document.getElementById(boxId).addEventListener('change', async (e)=>{
     if(!e.target.checked){
       appSettings[settingKey] = false;
       saveSettings();
-      showToast('Spa and fountains can set their own ' + label + ' again');
+      const restored = restoreOwnLists(listKey);
+      renderChemConfigLists();
+      showToast(restored
+        ? 'Spa and fountain ' + label + ' put back the way they were'
+        : 'Spa and fountains can set their own ' + label + ' again');
       return;
     }
     const ok = await confirmDialog(
-      "Copy the pool's " + label + " to the spa and every body of water? Their current " + label +
-      " will be replaced, and they'll keep matching the pool as you make changes.",
+      "Copy the pool's " + label + " to the spa and every body of water? Their own " + label +
+      " will be set aside and put back if you untick this.",
       'Apply');
     if(!ok){ e.target.checked = false; return; }
+
+    stashOwnLists(listKey);            // remember before overwriting
     appSettings[settingKey] = true;
     saveSettings();
     applyPoolListToAllBodies(listKey);
@@ -5697,6 +5736,23 @@ function takeCustomSnapshot(){
 }
 
 // Buttons for each of the customer's bodies of water
+
+// A customer's own order for their bodies of water, if they have one.
+// Anything not listed keeps its usual place at the end, so adding a fountain
+// later doesn't disappear.
+function orderedBodiesFor(cust, bodies){
+  const store = lsGet('customBodyOrder') || {};
+  const saved = store[cust.id];
+  if(!Array.isArray(saved) || !saved.length) return bodies;
+  const out = [];
+  saved.forEach(k=>{
+    const found = bodies.find(b => b.key === k);
+    if(found) out.push(found);
+  });
+  bodies.forEach(b => { if(!out.some(x => x.key === b.key)) out.push(b); });
+  return out;
+}
+
 function renderCustomBodies(){
   const box = document.getElementById('customBodyList');
   const actions = document.getElementById('customActionRow');
@@ -5727,22 +5783,49 @@ function renderCustomBodies(){
   label.textContent = 'Body of water';
   box.appendChild(label);
 
+  const hint = document.createElement('p');
+  hint.style.cssText = 'font-size:11.5px;color:var(--muted);margin:-4px 0 8px;';
+  hint.textContent = 'Drag to change the order this customer\u2019s bodies of water are serviced. The first one is where their visit opens.';
+  box.appendChild(hint);
+
   const row = document.createElement('div');
   row.className = 'btn-row';
   row.style.flexWrap = 'wrap';
-  bodies.forEach(b=>{
+
+  const ordered = orderedBodiesFor(cust, bodies);
+
+  ordered.forEach((b, i)=>{
+    const chip = document.createElement('div');
+    chip.dataset.reorderKey = b.key;
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;';
+
+    const grip = document.createElement('span');
+    grip.textContent = '\u2261';
+    grip.title = 'Drag to reorder';
+    grip.style.cssText = 'font-size:16px;color:var(--muted);padding:0 2px;cursor:grab;';
+    attachTouchReorder(grip, chip, row, '[data-reorder-key]', (keys)=>{
+      const store = lsGet('customBodyOrder') || {};
+      store[cust.id] = keys;
+      lsSet('customBodyOrder', store);
+      renderCustomBodies();
+      showToast('Service order saved for ' + displayName(cust.name));
+    });
+    chip.appendChild(grip);
+
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = b.key === customBodyKey ? 'btn btn-primary' : 'btn btn-ghost';
     btn.style.cssText = 'width:auto;padding:8px 14px;font-size:13px;';
-    btn.textContent = b.label;
+    btn.textContent = (i === 0 ? '1st \u00b7 ' : '') + b.label;
     btn.addEventListener('click', ()=>{
       customBodyKey = b.key;
-          renderCustomBodies();
+      renderCustomBodies();
       takeCustomSnapshot();
       renderChemConfigLists();
     });
-    row.appendChild(btn);
+    chip.appendChild(btn);
+
+    row.appendChild(chip);
   });
   box.appendChild(row);
   box.style.display = 'block';
@@ -5890,6 +5973,7 @@ function renderPhotoRequirements(){
   afterBox.checked = lists.requireAfterPhoto === true;
   const gateBox = document.getElementById('chkRequireGatePhoto');
   if(gateBox) gateBox.checked = lists.requireGatePhoto === true;
+  renderCustomPhotoList();
 
   // If the step itself is switched off in Settings, the requirement can't apply
   const beforeOff = appSettings.showBeforePhotos === false;
@@ -5938,6 +6022,204 @@ document.getElementById('chkRequireAfterPhoto').addEventListener('change', (e)=>
   saveActiveConfig();
   showToast(e.target.checked ? 'After photo now required here' : 'After photo no longer required here');
 });
+
+
+// ---------- Photos the user defines themselves ----------
+// Stored on the list alongside the built-in requirements, so they follow the
+// same per-body and per-customer rules as everything else.
+
+document.getElementById('btnAddCustomPhoto').addEventListener('click', ()=>{
+  const lists = activeConfigLists();
+  if(!lists){ showToast('Pick a customer and body of water first'); return; }
+  lists.customPhotos = lists.customPhotos || [];
+  lists.customPhotos.push({
+    id: 'cphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    label: '', when: 'after', required: false
+  });
+  saveActiveConfig();
+  renderCustomPhotoList();
+});
+
+
+// Who a user-defined photo applies to. No technicians chosen means everyone,
+// so a photo added without touching this still works for the whole team.
+function openPhotoTechModal(item){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:420px;max-height:80vh;display:flex;flex-direction:column;">
+      <h3 style="font-size:15px;margin:0 0 4px;">Who takes this photo?</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">${item.label || 'This photo'}</p>
+      <div id="photoTechList" style="flex:1;overflow-y:auto;"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-primary" id="photoTechDone" style="flex:1;">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const listBox = overlay.querySelector('#photoTechList');
+
+  function draw(){
+    listBox.innerHTML = '';
+    item.techIds = Array.isArray(item.techIds) ? item.techIds : [];
+
+    const allRow = document.createElement('label');
+    allRow.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:14px;font-weight:600;cursor:pointer;';
+    const allBox = document.createElement('input');
+    allBox.type = 'checkbox';
+    allBox.checked = item.techIds.length === 0;
+    allBox.style.margin = '0';
+    allBox.addEventListener('change', ()=>{
+      item.techIds = [];              // empty means everyone
+      saveActiveConfig();
+      draw();
+    });
+    allRow.appendChild(allBox);
+    allRow.appendChild(document.createTextNode('All technicians'));
+    listBox.appendChild(allRow);
+
+    const active = (technicians || []).filter(t => t.active !== false);
+    if(active.length === 0){
+      const none = document.createElement('div');
+      none.style.cssText = 'font-size:12.5px;color:var(--muted);padding:10px 0;';
+      none.textContent = 'No technicians added yet.';
+      listBox.appendChild(none);
+      return;
+    }
+
+    active.forEach(t=>{
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;'
+        + 'border-bottom:1px solid var(--line);font-size:14px;cursor:pointer;';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = item.techIds.indexOf(t.id) !== -1;
+      box.style.margin = '0';
+      box.addEventListener('change', ()=>{
+        const at = item.techIds.indexOf(t.id);
+        if(box.checked && at === -1) item.techIds.push(t.id);
+        if(!box.checked && at !== -1) item.techIds.splice(at, 1);
+        saveActiveConfig();
+        draw();
+      });
+      row.appendChild(box);
+      row.appendChild(document.createTextNode(t.name || 'Unnamed'));
+      listBox.appendChild(row);
+    });
+  }
+
+  const close = ()=>{
+    document.body.removeChild(overlay);
+    renderCustomPhotoList();
+  };
+  overlay.querySelector('#photoTechDone').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  draw();
+}
+
+function renderCustomPhotoList(){
+  const box = document.getElementById('customPhotoList');
+  if(!box) return;
+  const lists = activeConfigLists();
+  box.innerHTML = '';
+  if(!lists){ return; }
+
+  const items = lists.customPhotos || [];
+  if(items.length === 0){
+    box.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0;">None yet.</div>';
+    return;
+  }
+
+  items.forEach((item, idx)=>{
+    const row = document.createElement('div');
+    row.dataset.reorderKey = item.id;
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;'
+      + 'border-bottom:1px solid var(--line);flex-wrap:wrap;';
+
+    const grip = document.createElement('span');
+    grip.textContent = '\u2261';
+    grip.style.cssText = 'font-size:16px;color:var(--muted);flex-shrink:0;cursor:grab;';
+    attachTouchReorder(grip, row, box, '[data-reorder-key]', (keys)=>{
+      const byId = {};
+      (lists.customPhotos || []).forEach(p => { byId[p.id] = p; });
+      lists.customPhotos = keys.map(k => byId[k]).filter(Boolean);
+      saveActiveConfig();
+      renderCustomPhotoList();
+    });
+    row.appendChild(grip);
+
+    const name = document.createElement('input');
+    name.value = item.label || '';
+    name.placeholder = 'What to photograph';
+    name.style.cssText = 'flex:1 1 150px;min-width:0;font-size:13px;padding:6px 8px;';
+    name.addEventListener('change', ()=>{
+      item.label = name.value.trim();
+      saveActiveConfig();
+      renderCustomPhotoList();
+    });
+    row.appendChild(name);
+
+    // Which technicians this photo applies to
+    const techBtn = document.createElement('button');
+    techBtn.type = 'button';
+    techBtn.className = 'btn btn-ghost';
+    const chosen = Array.isArray(item.techIds) ? item.techIds : [];
+    const allTechs = chosen.length === 0;
+    techBtn.style.cssText = 'width:auto;flex:0 0 auto;padding:5px 10px;font-size:12px;'
+      + (allTechs ? '' : 'color:var(--teal-deep);border-color:var(--teal-mid);font-weight:700;');
+    techBtn.textContent = allTechs
+      ? 'Technicians'
+      : 'Technicians (' + chosen.length + ')';
+    techBtn.addEventListener('click', ()=> openPhotoTechModal(item));
+    row.appendChild(techBtn);
+
+    const when = document.createElement('select');
+    when.style.cssText = 'width:auto;flex:0 0 auto;font-size:12.5px;padding:5px 8px;';
+    [['before','Before readings'], ['after','After readings']].forEach(([v,l])=>{
+      const o = document.createElement('option');
+      o.value = v; o.textContent = l;
+      when.appendChild(o);
+    });
+    when.value = item.when === 'before' ? 'before' : 'after';
+    when.addEventListener('change', ()=>{
+      item.when = when.value;
+      saveActiveConfig();
+    });
+    row.appendChild(when);
+
+    const req = document.createElement('label');
+    req.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);flex-shrink:0;cursor:pointer;';
+    const reqBox = document.createElement('input');
+    reqBox.type = 'checkbox';
+    reqBox.checked = item.required === true;
+    reqBox.style.margin = '0';
+    reqBox.addEventListener('change', ()=>{
+      item.required = reqBox.checked;
+      saveActiveConfig();
+    });
+    req.appendChild(reqBox);
+    req.appendChild(document.createTextNode('Required'));
+    row.appendChild(req);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.textContent = '\u00D7';
+    del.style.cssText = 'flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #EFC9BC;'
+      + 'border-radius:8px;background:#fff;color:var(--rust);font-size:16px;cursor:pointer;';
+    del.addEventListener('click', async ()=>{
+      const ok = await confirmDialog('Remove "' + (item.label || 'this photo') + '"?', 'Remove');
+      if(!ok) return;
+      lists.customPhotos.splice(idx, 1);
+      saveActiveConfig();
+      renderCustomPhotoList();
+    });
+    row.appendChild(del);
+
+    box.appendChild(row);
+  });
+}
 
 function renderChemConfigLists(){
   applyAllBodiesVisibility();
@@ -6535,7 +6817,7 @@ function renderTechProfile(techId){
   meta.appendChild(phHead);
 
   checkRow('Require after photo', 'requireAfterPhoto',
-    'This technician cannot submit a service report until an after photo is taken.', true);
+    'This technician cannot submit a service report until an after photo is taken.');
   checkRow('Require before photo', 'requireBeforePhoto',
     'This technician must take a before photo on each body of water before moving on.');
   checkRow('Require closed gate photo', 'requireGatePhoto',
@@ -7150,6 +7432,7 @@ document.getElementById('btnFreeSpace').addEventListener('click', async ()=>{
     ? 'Cleared ' + removed + ' photo' + (removed === 1 ? '' : 's') + ' — freed ' + savedMb + ' MB'
     : 'Nothing old enough to clear yet');
 });
+
 
 function renderStorageMeter(){
   const fill = document.getElementById('storageBarFill');

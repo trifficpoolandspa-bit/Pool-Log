@@ -499,6 +499,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitPoolBeforePhotoSection" style="display:none;">
+      <div id="customPhotos_pool_before" style="display:none;"></div>
       <h2>Before photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBefore" style="display:none;margin-bottom:12px;">
@@ -522,6 +523,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitPoolPhotoSection" style="display:none;">
+      <div id="customPhotos_pool_after" style="display:none;"></div>
       <h2>After photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="gatePhotoBlock" style="display:none;margin-bottom:16px;padding:14px;border:1.5px solid #E8B5A8;border-radius:11px;background:#FBEAE6;text-align:center;">
@@ -556,6 +558,7 @@ select#customerSelect{font-weight:600;}
 
     <!-- SPA SECTION -->
     <div class="card" id="visitSpaBeforePhotoSection" style="display:none;">
+      <div id="customPhotos_spa_before" style="display:none;"></div>
       <h2>Before photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeSpa" style="display:none;margin-bottom:12px;">
@@ -579,6 +582,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitSpaPhotoSection" style="display:none;">
+      <div id="customPhotos_spa_after" style="display:none;"></div>
       <h2>After photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapSpa" style="display:none;margin-bottom:12px;">
@@ -601,6 +605,7 @@ select#customerSelect{font-weight:600;}
 
     <!-- FOUNTAIN SECTION -->
     <div class="card" id="visitFountainBeforePhotoSection" style="display:none;">
+      <div id="customPhotos_fountain_before" style="display:none;"></div>
       <h2>Before photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeFountain" style="display:none;margin-bottom:12px;">
@@ -624,6 +629,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitFountainPhotoSection" style="display:none;">
+      <div id="customPhotos_fountain_after" style="display:none;"></div>
       <h2>After photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapFountain" style="display:none;margin-bottom:12px;">
@@ -1093,6 +1099,111 @@ function resetDoseRuleTracking(){
   Object.keys(manuallyEditedDoses).forEach(k => delete manuallyEditedDoses[k]);
 }
 
+
+// ---------- Photos the user defined themselves ----------
+// Each is rendered as its own capture block, placed with the before or after
+// photos depending on how it was set up. Their data rides along on the reading.
+const customPhotoData = {};       // photoId -> data url, for this visit
+
+function customPhotosFor(type){
+  const cid = currentVisitCustomerId;
+  const lists = cid
+    ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
+    : chemConfig[type];
+  const own = (lists && lists.customPhotos) || [];
+  const defs = own.length
+    ? own
+    // A custom setup is a snapshot, so fall back to the standard list
+    : ((chemConfig[type] || {}).customPhotos || []);
+
+  return defs.filter(p=>{
+    if(!p || !p.label) return false;
+    // No technicians chosen means everyone
+    if(!Array.isArray(p.techIds) || p.techIds.length === 0) return true;
+    return !!(currentUser && p.techIds.indexOf(currentUser.id) !== -1);
+  });
+}
+
+function renderCustomPhotoBlocks(type, when){
+  const host = document.getElementById('customPhotos_' + type + '_' + when);
+  if(!host) return;
+  host.innerHTML = '';
+
+  const wanted = customPhotosFor(type).filter(p =>
+    (p.when === 'before' ? 'before' : 'after') === when);
+  if(!wanted.length){ host.style.display = 'none'; return; }
+  host.style.display = 'block';
+
+  wanted.forEach(p=>{
+    const block = document.createElement('div');
+    block.style.cssText = 'margin-bottom:14px;padding:13px;border:1px solid var(--line);'
+      + 'border-radius:11px;background:var(--surface-alt);text-align:center;';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:13.5px;font-weight:700;color:var(--teal-deep);margin-bottom:8px;';
+    title.textContent = p.label + (p.required ? ' (required)' : '');
+    block.appendChild(title);
+
+    const img = document.createElement('img');
+    img.style.cssText = 'max-width:100%;border-radius:10px;border:1px solid var(--line);display:none;margin-bottom:8px;';
+    block.appendChild(img);
+
+    const take = document.createElement('button');
+    take.type = 'button';
+    take.className = 'btn';
+    take.style.cssText = 'width:auto;padding:11px 20px;font-size:14px;background:var(--rust);color:#fff;border:1.5px solid var(--rust);margin:0 auto;';
+    take.textContent = 'Take photo';
+    block.appendChild(take);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-ghost';
+    remove.style.cssText = 'width:auto;margin-top:8px;color:var(--rust);border-color:#EFC9BC;display:none;';
+    remove.textContent = 'Remove photo';
+    block.appendChild(remove);
+
+    function show(data){
+      customPhotoData[p.id] = data || null;
+      if(data){
+        img.src = data; img.style.display = 'block';
+        take.textContent = 'Retake photo';
+        remove.style.display = 'inline-flex';
+      } else {
+        img.removeAttribute('src'); img.style.display = 'none';
+        take.textContent = 'Take photo';
+        remove.style.display = 'none';
+      }
+      if(typeof syncStepChrome === 'function') syncStepChrome();
+      if(typeof refreshSaveButtons === 'function') refreshSaveButtons();
+    }
+
+    take.addEventListener('click', async ()=>{
+      try{
+        const data = await captureFromCamera(900, 0.5);
+        if(data) show(data);
+      }catch(err){
+        showToast('Could not open the camera');
+      }
+    });
+    remove.addEventListener('click', ()=> show(null));
+
+    show(customPhotoData[p.id] || null);
+    host.appendChild(block);
+  });
+}
+
+// Any user-defined photo still owing for this section
+function missingCustomPhoto(type, when){
+  const wanted = customPhotosFor(type).filter(p =>
+    p.required === true && (p.when === 'before' ? 'before' : 'after') === when);
+  const missing = wanted.find(p => !customPhotoData[p.id]);
+  return missing ? missing.label : '';
+}
+
+function clearCustomPhotoData(){
+  Object.keys(customPhotoData).forEach(k => delete customPhotoData[k]);
+}
+
 function renderConfigFields(containerId, list, type, kind, onInput){
   const container = document.getElementById(containerId);
   if(!container) return;
@@ -1254,6 +1365,10 @@ function renderAllConfigFields(){
   const fKey = currentVisitFountainId || 'fountain';
   const fountL = cid ? listsForBody(cid, fKey, 'fountain') : chemConfig.fountain;
 
+  ['pool','spa','fountain'].forEach(t=>{
+    renderCustomPhotoBlocks(t, 'before');
+    renderCustomPhotoBlocks(t, 'after');
+  });
   renderConfigFields('poolChemFields', poolL.chemicals, 'pool', 'chem', renderStripPreview);
   renderConfigFields('poolDoseFields', poolL.dosages, 'pool', 'dose');
   renderConfigFields('spaChemFields', spaL.chemicals, 'spa', 'chem', renderSpaStripPreview);
@@ -2302,6 +2417,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     beforePhoto: beforeControllerFor('pool').getData() || null,
     isFilterClean: isFilterCleanVisit,
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
+    customPhotos: Object.assign({}, customPhotoData),
     gatePhoto: gatePhotoController.getData() || null,
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
@@ -2347,6 +2463,7 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   const reading = {
     id: 'spa_' + Date.now(),
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
+    customPhotos: Object.assign({}, customPhotoData),
     date: new Date().toISOString(),
     notes: document.getElementById('inSpaNotes').value.trim(),
     photo: spaPhotoController.getData() || null,
@@ -2383,6 +2500,7 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   const reading = {
     id: 'fountain_' + Date.now(),
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
+    customPhotos: Object.assign({}, customPhotoData),
     date: new Date().toISOString(),
     notes: document.getElementById('inFountainNotes').value.trim(),
     photo: fountainPhotoController.getData() || null,
@@ -2413,6 +2531,14 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   markSectionDone(fountainId, reading.id);
   showToast('Fountain reading saved');
 });
+
+
+// Date and time together, for the report header
+function fmtDateTime(iso){
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'})
+    + ' at ' + d.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+}
 
 function fmtDate(iso){
   const d = new Date(iso);
@@ -3094,8 +3220,12 @@ function renderServicedList(){
     // Guarded so a leftover click from a previous screen can't trigger it.
     row.style.cursor = 'pointer';
     row.addEventListener('click', async (ev)=>{
+      if(ev.target.closest('button')) return;    // leave Reservice alone
       if(viewJustChanged()) return;
-      if(currentViewName !== 'serviced') return;
+      // This list appears inside the Report tab in one app and its own tab in
+      // the other, so accept either rather than naming one.
+      if(currentViewName !== 'serviced' && currentViewName !== 'report') return;
+
       const sel = document.getElementById('reportCustomerSelect');
       if(sel){
         populateCustomerSelect(sel, 'Add a customer first');
@@ -3103,7 +3233,22 @@ function renderServicedList(){
       }
       if(typeof syncReportCustomerSearchField === 'function') syncReportCustomerSearchField();
       await refreshDateSelector(c.id);
-      switchView('report', {skipRefresh: true});
+
+      // Open today's report specifically, not just the newest one
+      const today = todayDateStr();
+      const dateSel = document.getElementById('reportReadingSelect');
+      if(dateSel){
+        const match = Array.from(dateSel.options)
+          .find(o => o.value === today || o.value === today + '|redo');
+        if(match){
+          dateSel.value = match.value;
+          await renderDateReport(c.id, match.value);
+        }
+      }
+
+      // This app has no Serviced/Reports toggle — the report view is its own tab
+      if(currentViewName !== 'report') switchView('report', {skipRefresh: true});
+      window.scrollTo({top: 0, behavior: 'smooth'});
     });
 
     container.appendChild(row);
@@ -3498,6 +3643,19 @@ function computeNeededSections(customer){
   if(customer.hasPool !== false) sections.push('pool');
   if(customer.hasSpa) sections.push('spa');
   getValidFountains(customer).forEach(f => sections.push(f.id));
+
+  // This customer may have their own order, set on the Custom tab. Anything
+  // not listed keeps its usual place at the end, so a body of water added
+  // later still shows up.
+  const store = lsGet('customBodyOrder') || {};
+  const saved = store[customer.id];
+  if(Array.isArray(saved) && saved.length){
+    const ordered = [];
+    saved.forEach(k => { if(sections.indexOf(k) !== -1) ordered.push(k); });
+    sections.forEach(s => { if(ordered.indexOf(s) === -1) ordered.push(s); });
+    return ordered;
+  }
+
   return sections;
 }
 
@@ -3624,7 +3782,35 @@ function renderVisitSectionButtons(){
     }
 
     btn.addEventListener('click', ()=> showVisitSection(sectionId));
-    container.appendChild(btn);
+
+    // A narrow grip so the order can be changed here as well as on the
+    // website. Both write the same per-customer setting, so it stays in step.
+    if(pendingVisit.neededSections.length > 1){
+      const chip = document.createElement('span');
+      chip.dataset.reorderKey = sectionId;
+      chip.style.cssText = 'display:inline-flex;align-items:stretch;flex-shrink:0;';
+
+      const grip = document.createElement('span');
+      grip.title = 'Drag to reorder';
+      grip.textContent = '\u22EE';                 // vertical ellipsis, narrow
+      grip.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;'
+        + 'width:14px;font-size:14px;line-height:1;color:' + colour.border + ';'
+        + 'cursor:grab;user-select:none;';
+      attachTouchReorder(grip, chip, container, '[data-reorder-key]', (keys)=>{
+        const store = lsGet('customBodyOrder') || {};
+        store[customer.id] = keys;
+        lsSet('customBodyOrder', store);
+        pendingVisit.neededSections = computeNeededSections(customer);
+        renderVisitSectionButtons();
+        showToast('Order saved for ' + customer.name);
+      });
+
+      chip.appendChild(grip);
+      chip.appendChild(btn);
+      container.appendChild(chip);
+    } else {
+      container.appendChild(btn);
+    }
   });
 
   // Equipment tab appears only for technicians granted photo access
@@ -4393,18 +4579,30 @@ function missingRequiredPhoto(){
   const here = steps[idx] ? stepId(steps[idx]) : '';
 
   // Required either everywhere (Settings) or just for this section
-  const beforeNeeded = appSettings.requireBeforePhotos === true
-    || lists.requireBeforePhoto === true
-    || techRequires('requireBeforePhoto');
-  const afterNeeded = appSettings.requireAfterPhotos === true
-    || lists.requireAfterPhoto === true
-    || techRequires('requireAfterPhoto');
+  // Track WHY a photo is required, so a technician blocked by a setting they
+  // thought was off can see where it comes from.
+  let beforeWhy = '', afterWhy = '';
+  if(appSettings.requireBeforePhotos === true) beforeWhy = 'app-wide setting';
+  else if(lists.requireBeforePhoto === true) beforeWhy = 'this list\u2019s own setting';
+  else if(techRequires('requireBeforePhoto')) beforeWhy = 'your technician profile';
+
+  if(appSettings.requireAfterPhotos === true) afterWhy = 'app-wide setting';
+  else if(lists.requireAfterPhoto === true) afterWhy = 'this list\u2019s own setting';
+  else if(techRequires('requireAfterPhoto')) afterWhy = 'your technician profile';
+
+  const beforeNeeded = !!beforeWhy;
+  const afterNeeded = !!afterWhy;
 
   if(here === 'visit' + cap + 'BeforePhotoSection'
      && appSettings.showBeforePhotos !== false
      && beforeNeeded){
     const ctrl = beforeControllerFor(type);
-    if(ctrl && !ctrl.getData()) return 'A before photo is required here';
+    if(ctrl && !ctrl.getData()) return 'A before photo is required here (' + beforeWhy + ')';
+  }
+
+  if(here === 'visit' + cap + 'BeforePhotoSection'){
+    const owing = missingCustomPhoto(type, 'before');
+    if(owing) return owing + ' photo is required here';
   }
 
   if(here.indexOf(cap + 'PhotoSection') !== -1
@@ -4413,7 +4611,12 @@ function missingRequiredPhoto(){
      && afterNeeded){
     const ctrl = type === 'pool' ? poolPhotoController
       : (type === 'spa' ? spaPhotoController : fountainPhotoController);
-    if(ctrl && !ctrl.getData()) return 'An after photo is required here';
+    if(ctrl && !ctrl.getData()) return 'An after photo is required here (' + afterWhy + ')';
+  }
+
+  if(here.indexOf(cap + 'PhotoSection') !== -1 && here.indexOf('Before') === -1){
+    const owing = missingCustomPhoto(type, 'after');
+    if(owing) return owing + ' photo is required here';
   }
 
   return '';
@@ -5309,6 +5512,7 @@ async function openVisit(customerId){
   isFilterCleanVisit = detectFilterCleanVisit(customerId);
   gatePhotoController.clear();
   resetDoseRuleTracking();
+  clearCustomPhotoData();
   syncGatePhotoBlock();
 
   // A filter clean gets its own wording, and skips the equipment toggles
@@ -5457,7 +5661,7 @@ async function renderReport(customerId, readingId){
         <div>
           <h2>Service skipped</h2>
           <div class="rdate">${customer.name}${customer.address ? ' — '+customer.address : ''}</div>
-          <div class="rdate">${fmtDate(skipRecord.timestamp || skipRecord.date)}</div>
+          <div class="rdate">${fmtDateTime(skipRecord.timestamp || skipRecord.date)}</div>
         </div>
         <div class="report-badge" style="background:var(--gold-pale);color:#7A5A0C;">Skipped</div>
       </div>
@@ -5505,6 +5709,17 @@ function buildReadingSection(reading, chemList, prodList){
     productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Chemicals Added</h3><table class="report-table">${prows}</table>`;
   }
 
+  // Photos the user defined, listed by name so a customer knows what they show
+  const namedShots = [];
+  if(reading.customPhotos){
+    const defs = customPhotosFor(reading.spaKey ? 'spa' : 'pool');
+    Object.keys(reading.customPhotos).forEach(id=>{
+      if(!reading.customPhotos[id]) return;
+      const def = defs.find(d => d.id === id);
+      namedShots.push({label: (def && def.label) || 'Photo', data: reading.customPhotos[id]});
+    });
+  }
+
   // Equipment servicing — only listed when it was actually done
   const doneItems = [];
   if(reading.filterBackwashed) doneItems.push('Filter backwashed');
@@ -5518,7 +5733,17 @@ function buildReadingSection(reading, chemList, prodList){
     servicedText = doneItems.join('\n') + '\n';
   }
 
-  return {rowsHtml, rowsText, productsHtml, productsText, servicedHtml, servicedText};
+  let namedHtml = '';
+  let namedText = '';
+  if(namedShots.length){
+    namedHtml = namedShots.map(s =>
+      '<div style="margin-top:12px;"><div style="font-size:12.5px;font-weight:600;color:var(--teal-deep);margin-bottom:4px;">'
+      + s.label + '</div><img src="' + s.data + '" style="max-width:100%;border-radius:8px;border:1px solid var(--line);"></div>').join('');
+    namedText = namedShots.map(s => s.label + ': photo attached').join('\n') + '\n';
+  }
+
+  return {rowsHtml, rowsText, productsHtml, productsText, servicedHtml, servicedText,
+          namedHtml, namedText};
 }
 
 async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadingRefs){
@@ -5566,6 +5791,7 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
       <table class="report-table">${s.rowsHtml}</table>
       ${s.productsHtml}
       ${s.servicedHtml || ''}
+      ${s.namedHtml || ''}
       ${s.reading.notes ? `<div class="report-notes">${s.reading.notes}<div style="font-size:11px;color:var(--muted);margin-top:6px;">Internal only — not emailed to the customer.</div></div>` : ''}
       ${photoHtml}
     `;
@@ -5585,7 +5811,7 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
         <div>
           <h2>${reportLabel} service report</h2>
           <div class="rdate">${customer.name}${customer.address ? ' — '+customer.address : ''}</div>
-          <div class="rdate">${fmtDate(sections[0].reading.date)}</div>
+          <div class="rdate">${fmtDateTime(sections[0].reading.date)}</div>
           ${durationHtml}
         </div>
         <div class="report-badge">Serviced</div>
@@ -5595,7 +5821,7 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   `;
 
   const wasRedone = sections.some(s => s.reading && s.reading.isRedo);
-  currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT${wasRedone ? ' (REDONE)' : ''}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nService date: ${fmtDate(sections[0].reading.date)}\n${sectionsText}`;
+  currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT${wasRedone ? ' (REDONE)' : ''}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nServiced: ${fmtDateTime(sections[0].reading.date)}\n${sectionsText}`;
 
   // Only one photo can attach automatically (a single email can only carry one dynamic
   // attachment via EmailJS) — prefer earliest section with a photo (pool, then spa, then fountains in order).
