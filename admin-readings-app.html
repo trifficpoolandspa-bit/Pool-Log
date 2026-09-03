@@ -810,7 +810,11 @@ select#customerSelect{font-weight:600;}
         <button type="button" class="btn btn-ghost" id="btnNcAddDog" style="width:auto;margin-top:2px;">+ Add dog</button>
       </div>
       <div class="field">
-        <label>Gate code</label>
+          <label>Neighborhood gate code</label>
+          <input id="ncNeighborhoodGateCode" placeholder="e.g. 1234#">
+        </div>
+        <div class="field">
+        <label>Yard gate code</label>
         <input id="ncGateCode" placeholder="e.g. 4821#">
       </div>
       <div class="field">
@@ -3261,7 +3265,7 @@ function populateNcTechnicianSelect(){
 
 function resetCustomerForm(){
   editingCustomerId = null;
-  ['ncName','ncAddress','ncCity','ncState','ncZip','ncEmail','ncPhone','ncPoolGallons','ncGateCode','ncAccessNotes']
+  ['ncName','ncAddress','ncCity','ncState','ncZip','ncEmail','ncPhone','ncPoolGallons','ncNeighborhoodGateCode','ncGateCode','ncAccessNotes']
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('ncDay').value = 'Monday';
   document.getElementById('ncHasPool').checked = true;
@@ -3605,6 +3609,7 @@ document.getElementById('btnSaveCustomer').addEventListener('click', async ()=>{
   const poolGallons = document.getElementById('ncPoolGallons').value.trim();
   const technicianId = document.getElementById('ncTechnician').value;
   const gateCode = document.getElementById('ncGateCode').value.trim();
+  const neighborhoodGateCode = (document.getElementById('ncNeighborhoodGateCode') || {value:''}).value.trim();
   const accessNotes = document.getElementById('ncAccessNotes').value.trim();
   const fountains = ncFountains.map((f,i)=>({id:f.id, name:f.name.trim() || ('Fountain '+(i+1))}));
   const dogs = ncDogs.map((d,i)=>({id:d.id, name:d.name.trim() || ('Dog '+(i+1))})).filter(d=>d.name);
@@ -3626,6 +3631,7 @@ document.getElementById('btnSaveCustomer').addEventListener('click', async ()=>{
       existing.poolGallons = poolGallons;
       existing.technicianId = technicianId;
       existing.gateCode = gateCode;
+      existing.neighborhoodGateCode = neighborhoodGateCode;
       existing.accessNotes = accessNotes;
       existing.fountains = fountains;
       existing.dogs = dogs;
@@ -5005,7 +5011,8 @@ function renderHomeList(){
       }
 
       const bits = [];
-      if(c.gateCode) bits.push(['\ud83d\udd11 Gate code', c.gateCode]);
+      if(c.neighborhoodGateCode) bits.push(['\ud83d\udd11 Neighborhood gate', c.neighborhoodGateCode]);
+      if(c.gateCode) bits.push(['\ud83d\udd11 Yard gate', c.gateCode]);
       const dogNames = (c.dogs || []).map(d => d.name).filter(Boolean);
       if(dogNames.length) bits.push([dogNames.length === 1 ? '\ud83d\udc15 Dog' : '\ud83d\udc15 Dogs', dogNames.join(', ')]);
 
@@ -5421,6 +5428,8 @@ function openCustomerEditor(customer){
   document.getElementById('ncHasSpa').checked = !!customer.hasSpa;
   document.getElementById('ncPoolGallons').value = customer.poolGallons || '';
   document.getElementById('ncGateCode').value = customer.gateCode || '';
+  const nG = document.getElementById('ncNeighborhoodGateCode');
+  if(nG) nG.value = customer.neighborhoodGateCode || '';
   document.getElementById('ncAccessNotes').value = customer.accessNotes || '';
   populateNcTechnicianSelect();
   document.getElementById('ncTechnician').value = customer.technicianId || '';

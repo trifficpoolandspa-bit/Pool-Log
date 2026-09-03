@@ -576,7 +576,11 @@ input::placeholder{color:#A9BCB9;}
         <button type="button" class="btn btn-ghost" id="btnAddDog" style="width:auto;margin-top:2px;">+ Add dog</button>
       </div>
       <div class="field">
-        <label>Gate code</label>
+        <label>Neighborhood gate code</label>
+        <input id="icNeighborhoodGateCode" placeholder="e.g. 1234#">
+      </div>
+      <div class="field">
+        <label>Yard gate code</label>
         <input id="icGateCode" placeholder="e.g. 4821#">
       </div>
       <div class="field">
@@ -985,7 +989,7 @@ input::placeholder{color:#A9BCB9;}
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Show pool size details</h2>
+        <h2 style="margin:0;">Show water body sizes</h2>
         <label class="toggle-switch">
           <input type="checkbox" id="settingShowPoolSize" checked>
           <span class="toggle-slider"></span>
@@ -2500,7 +2504,7 @@ document.getElementById('settingShowPoolSize').addEventListener('change', (e)=>{
   appSettings.showPoolSizeInProfile = e.target.checked;
   saveSettings();
   applyPoolGallonsFieldVisibility();
-  showToast(appSettings.showPoolSizeInProfile ? 'Pool size will show on profiles' : 'Pool size hidden on profiles');
+  showToast(appSettings.showPoolSizeInProfile ? 'Water body sizes will show on profiles' : 'Water body sizes hidden on profiles');
   if(editingId){
     const c = customers.find(x => x.id === editingId);
     if(c && document.getElementById('customerProfileCard').style.display !== 'none'){
@@ -6381,6 +6385,33 @@ document.getElementById('btnRestoreChemDefaults').addEventListener('click', asyn
 let editingId = null;
 let currentFountains = [];
 
+
+// What is stored against a body of water, so the warning can name it rather
+// than being vague about what gets lost.
+function fountainAttachments(fountainId){
+  const bits = [];
+  if(!editingId || !fountainId) return bits;
+
+  try{
+    const readings = lsGet('fountainReadings:' + editingId + ':' + fountainId);
+    if(Array.isArray(readings) && readings.length){
+      bits.push(readings.length + ' service report' + (readings.length === 1 ? '' : 's'));
+    }
+  }catch(e){}
+
+  const custom = lsGet('customChemConfig') || {};
+  if(custom[editingId] && custom[editingId][fountainId]){
+    bits.push('its custom readings and dosages');
+  }
+
+  const cust = customers.find(x => x.id === editingId);
+  if(cust && cust.waterSizes && cust.waterSizes[fountainId]){
+    bits.push('its recorded size');
+  }
+
+  return bits;
+}
+
 function renderFountainFields(){
   const container = document.getElementById('fountainList');
   container.innerHTML = '';
@@ -6396,7 +6427,26 @@ function renderFountainFields(){
     removeBtn.className = 'btn btn-ghost fountain-remove';
     removeBtn.textContent = '×';
     removeBtn.setAttribute('aria-label', 'Remove this fountain');
-    removeBtn.addEventListener('click', ()=>{
+    removeBtn.addEventListener('click', async ()=>{
+      const f = currentFountains[i];
+      const label = (f && f.name && f.name.trim()) ? f.name.trim() : 'this body of water';
+
+      // Nothing to lose if it was only just added and never named or saved
+      const isNew = !f || !f.name || !f.name.trim()
+        || !(editingId && ((customers.find(x => x.id === editingId) || {}).fountains || [])
+              .some(x => x.id === f.id));
+
+      if(!isNew){
+        const attached = fountainAttachments(f.id);
+        const ok = await confirmDialog(
+          'Remove ' + label + '?' + (attached.length
+            ? ' This also deletes ' + attached.join(', ') + ' kept against it.'
+            : '')
+          + ' This cannot be undone.',
+          'Remove body of water');
+        if(!ok) return;
+      }
+
       currentFountains.splice(i, 1);
       renderFountainFields();
     });
@@ -8384,52 +8434,131 @@ function baseEquipmentType(type){
 }
 
 
-// Deleting a piece of equipment: from this customer alone, or from everyone
-// who has the same thing. Says how many others have it before asking.
+// Deleting a piece of equipment: from this customer alone, or from a chosen
+// set of the customers who have it.
 function openDeleteEquipmentModal(typeName){
   return new Promise((resolve)=>{
-    const others = customers.filter(x =>
-      x.active !== false
-      && x.id !== editingId
-      && (x.equipmentTypeOptions || []).includes(typeName));
+    const others = customers
+      .filter(x => x.active !== false
+        && x.id !== editingId
+        && (Array.isArray(x.equipmentTypeOptions)
+              ? x.equipmentTypeOptions
+              : DEFAULT_EQUIPMENT_TYPES).includes(typeName))
+      .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
 
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
     overlay.innerHTML = `
-      <div class="confirm-box" style="max-width:440px;">
+      <div class="confirm-box" style="max-width:460px;max-height:82vh;display:flex;flex-direction:column;">
         <h3 style="font-size:15px;margin:0 0 6px;">Delete ${typeName}?</h3>
-        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">
-          ${others.length
-            ? others.length + ' other customer' + (others.length === 1 ? ' has' : 's have')
-              + ' this equipment. Photos and notes on it go too, and this cannot be undone.'
-            : 'No other customer has this equipment. Photos and notes on it go too, and this cannot be undone.'}
-        </p>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">Photos and notes on it go too, and this cannot be undone.</p>
+
         <div class="btn-row" style="flex-direction:column;gap:8px;">
           <button class="btn btn-primary" id="delEqOne" style="width:100%;">Just this customer</button>
           ${others.length
-            ? '<button class="btn btn-ghost" id="delEqAll" style="width:100%;color:var(--rust);border-color:#EFC9BC;">Delete from all '
-              + (others.length + 1) + ' customers</button>'
+            ? '<button class="btn btn-ghost" id="delEqPick" style="width:100%;">Delete from multiple customers</button>'
             : ''}
-          <button class="btn btn-ghost" id="delEqCancel" style="width:100%;">Cancel</button>
+        </div>
+
+        <div id="delEqPickArea" style="display:none;margin-top:12px;flex:1;overflow-y:auto;">
+          <div style="display:flex;gap:8px;margin-bottom:8px;">
+            <input id="delEqSearch" placeholder="Search customers" style="flex:1;font-size:13px;padding:7px 9px;">
+            <button class="btn btn-ghost" id="delEqAll" style="width:auto;padding:6px 11px;font-size:12px;">Select all</button>
+          </div>
+          <div id="delEqList" style="border:1px solid var(--line);border-radius:10px;padding:4px 10px;max-height:230px;overflow-y:auto;"></div>
+        </div>
+
+        <div class="btn-row" style="margin-top:12px;">
+          <button class="btn btn-ghost" id="delEqCancel" style="flex:1;">Cancel</button>
+          <button class="btn btn-ghost" id="delEqGo" style="flex:1;display:none;color:var(--rust);border-color:#EFC9BC;">Delete from selected</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
 
+    const picked = new Set();
+    const pickArea = overlay.querySelector('#delEqPickArea');
+    const listBox = overlay.querySelector('#delEqList');
+    const searchEl = overlay.querySelector('#delEqSearch');
+    const goBtn = overlay.querySelector('#delEqGo');
+
+    function draw(){
+      const q = searchEl.value.trim().toLowerCase();
+      const shown = others.filter(x => !q || (x.name || '').toLowerCase().includes(q));
+      listBox.innerHTML = '';
+      if(shown.length === 0){
+        listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:10px 0;">No matches.</div>';
+        return;
+      }
+      shown.forEach(cust=>{
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;'
+          + 'border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = picked.has(cust.id);
+        box.style.margin = '0';
+        box.addEventListener('change', ()=>{
+          if(box.checked) picked.add(cust.id); else picked.delete(cust.id);
+          updateGo();
+        });
+        row.appendChild(box);
+        const name = document.createElement('span');
+        name.style.flex = '1';
+        name.textContent = displayName(cust.name);
+        row.appendChild(name);
+        listBox.appendChild(row);
+      });
+    }
+
+    function updateGo(){
+      goBtn.textContent = picked.size
+        ? 'Delete from ' + picked.size + ' customer' + (picked.size === 1 ? '' : 's')
+        : 'Delete from selected';
+      goBtn.disabled = picked.size === 0;
+      goBtn.style.opacity = picked.size ? '' : '0.45';
+    }
+
     const finish = (choice)=>{ document.body.removeChild(overlay); resolve(choice); };
-    overlay.querySelector('#delEqOne').addEventListener('click', ()=> finish('one'));
-    const allBtn = overlay.querySelector('#delEqAll');
-    if(allBtn) allBtn.addEventListener('click', ()=> finish('all'));
+
+    overlay.querySelector('#delEqOne').addEventListener('click', ()=> finish({scope:'one'}));
+
+    const pickBtn = overlay.querySelector('#delEqPick');
+    if(pickBtn){
+      pickBtn.addEventListener('click', ()=>{
+        pickArea.style.display = 'block';
+        pickBtn.style.display = 'none';
+        overlay.querySelector('#delEqOne').style.display = 'none';
+        goBtn.style.display = 'inline-flex';
+        updateGo();
+        draw();
+      });
+    }
+
+    searchEl.addEventListener('input', draw);
+    overlay.querySelector('#delEqAll').addEventListener('click', ()=>{
+      const q = searchEl.value.trim().toLowerCase();
+      others.filter(x => !q || (x.name || '').toLowerCase().includes(q))
+            .forEach(x => picked.add(x.id));
+      draw(); updateGo();
+    });
+
+    goBtn.addEventListener('click', ()=>{
+      if(picked.size === 0) return;
+      finish({scope:'some', ids: Array.from(picked)});
+    });
+
     overlay.querySelector('#delEqCancel').addEventListener('click', ()=> finish(null));
     overlay.addEventListener('click', (e)=>{ if(e.target === overlay) finish(null); });
   });
 }
 
 // Takes an equipment type off every other customer that has it
-function removeEquipmentTypeFromOthers(typeName){
+function removeEquipmentTypeFromCustomers(typeName, ids){
   let removed = 0;
-  customers.forEach(cust=>{
-    if(cust.id === editingId) return;
-    // Same as above — an unedited customer is showing the defaults
+  (ids || []).forEach(id=>{
+    const cust = customers.find(x => x.id === id);
+    if(!cust || cust.id === editingId) return;
+    // An unedited customer has no saved list and is showing the defaults
     const list = Array.isArray(cust.equipmentTypeOptions)
       ? cust.equipmentTypeOptions
       : [...DEFAULT_EQUIPMENT_TYPES];
@@ -8511,7 +8640,9 @@ function renderEquipmentTypeList(){
       persistCurrentEquipmentItems();
 
       let alsoRemoved = 0;
-      if(choice === 'all') alsoRemoved = removeEquipmentTypeFromOthers(type);
+      if(choice.scope === 'some'){
+        alsoRemoved = removeEquipmentTypeFromCustomers(type, choice.ids);
+      }
 
       renderEquipmentTypeList();
       showToast(alsoRemoved
@@ -9193,6 +9324,122 @@ function inlineText(cust, field, type){
 
 // Who the "On my way" message goes to, when it isn't the customer themselves.
 // Leave these blank and it goes to the customer as normal.
+
+// Every body of water this customer has, for the sizes row
+function bodiesForSizes(cust){
+  const out = [];
+  if(cust.hasPool !== false) out.push({key:'pool', label:'Pool'});
+  if(cust.hasSpa) out.push({key:'spa', label:'Spa'});
+  (cust.fountains || []).forEach(f=>{
+    if(f && f.id) out.push({key: f.id, label: f.name || 'Extra'});
+  });
+  return out;
+}
+
+// Sizes live in one object keyed by body. The old single poolGallons value is
+// read as the pool's size so nothing already entered is lost.
+const SIZE_UNITS = ['gallons','litres','m³'];
+
+function waterBodySize(cust, key){
+  const all = cust.waterSizes || {};
+  if(all[key]) return all[key];
+  if(key === 'pool' && cust.poolGallons){
+    return {amount: String(cust.poolGallons), unit: 'gallons'};
+  }
+  return null;
+}
+
+function inlineWaterBodySizes(cust){
+  return (row, done)=>{
+    const wrap = document.createElement('div');
+    wrap.style.marginTop = '4px';
+
+    const bodies = bodiesForSizes(cust);
+    if(bodies.length === 0){
+      const none = document.createElement('p');
+      none.style.cssText = 'font-size:12.5px;color:var(--muted);margin:0;';
+      none.textContent = 'No bodies of water on this customer yet.';
+      wrap.appendChild(none);
+    }
+
+    const fields = [];
+    bodies.forEach(b=>{
+      const line = document.createElement('div');
+      line.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+
+      const label = document.createElement('span');
+      label.style.cssText = 'flex:0 0 130px;font-size:13px;font-weight:600;'
+        + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      label.textContent = b.label;
+      line.appendChild(label);
+
+      const existing = waterBodySize(cust, b.key) || {};
+
+      const amount = document.createElement('input');
+      amount.type = 'number';
+      amount.step = 'any';
+      amount.className = 'profile-inline-input';
+      amount.placeholder = 'Volume';
+      amount.value = existing.amount || '';
+      amount.style.cssText = 'flex:1;min-width:0;';
+      line.appendChild(amount);
+
+      const unit = document.createElement('select');
+      unit.className = 'profile-inline-input';
+      unit.style.cssText = 'flex:0 0 auto;width:auto;font-size:13px;padding:6px 8px;';
+      SIZE_UNITS.forEach(u=>{
+        const o = document.createElement('option');
+        o.value = u; o.textContent = u;
+        if((existing.unit || 'gallons') === u) o.selected = true;
+        unit.appendChild(o);
+      });
+      line.appendChild(unit);
+
+      fields.push({key: b.key, amount, unit});
+      wrap.appendChild(line);
+    });
+
+    const hint = document.createElement('p');
+    hint.style.cssText = 'font-size:11.5px;color:var(--muted);margin:2px 0 0;';
+    hint.textContent = 'Leave a volume blank if you don\u2019t know it.';
+    wrap.appendChild(hint);
+
+    const btns = document.createElement('div');
+    btns.style.cssText = 'margin-top:10px;';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.className = 'btn btn-primary';
+    save.style.cssText = 'width:auto;padding:6px 14px;font-size:12px;';
+    save.textContent = 'Done';
+    save.addEventListener('click', commit);
+    btns.appendChild(save);
+    wrap.appendChild(btns);
+
+    function commit(){
+      const sizes = {};
+      fields.forEach(f=>{
+        const v = padLeadingZero(f.amount.value).trim();
+        if(v) sizes[f.key] = {amount: v, unit: f.unit.value};
+      });
+      cust.waterSizes = sizes;
+      // The old single field is kept in step so nothing else breaks
+      cust.poolGallons = sizes.pool ? sizes.pool.amount : '';
+      saveCustomerField();
+      done();
+    }
+
+    fields.forEach(f=>{
+      f.amount.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); commit(); }
+        if(e.key === 'Escape'){ done(); }
+      });
+    });
+
+    row.appendChild(wrap);
+    if(fields.length) { fields[0].amount.focus(); fields[0].amount.select(); }
+  };
+}
+
 function inlineNotifyContact(cust){
   return (row, done)=>{
     const wrap = document.createElement('div');
@@ -9657,6 +9904,18 @@ function viewCustomer(c){
     techWrap.style.display = 'none';
     techWrap.after(sel);
     sel.focus();
+
+    // Open the list straight away, so changing technician is one tap rather
+    // than tapping the name and then the closed dropdown.
+    if(typeof sel.showPicker === 'function'){
+      try{ sel.showPicker(); }
+      catch(e){ /* not allowed in this context — the select is still focused */ }
+    } else {
+      // Older browsers: a synthesised mouse press opens the list
+      try{
+        sel.dispatchEvent(new MouseEvent('mousedown', {bubbles:true}));
+      }catch(e){}
+    }
     let committed = false;
     const commit = ()=>{
       if(committed) return;
@@ -9697,19 +9956,26 @@ function viewCustomer(c){
   if(c.hasPool !== false) svcParts.push('Pool');
   if(c.hasSpa) svcParts.push('Spa');
   (c.fountains || []).forEach(f => { if(f && f.name) svcParts.push(f.name); });
-  profileRow(meta, {label:'Services', value: svcParts.join(' · '),
+  profileRow(meta, {label:'Bodies of water', value: svcParts.join(' · '),
     placeholder:'Nothing set yet', editor: inlineServices(c)});
 
   if(appSettings.showPoolSizeInProfile){
-    profileRow(meta, {label:'Pool size', value: c.poolGallons ? c.poolGallons + ' gallons' : '',
-      placeholder:'Add pool volume', editor: inlineText(c,'poolGallons','number')});
+    const sizeParts = [];
+    bodiesForSizes(c).forEach(b=>{
+      const v = waterBodySize(c, b.key);
+      if(v && v.amount) sizeParts.push(b.label + ': ' + v.amount + ' ' + (v.unit || 'gallons'));
+    });
+    profileRow(meta, {label:'Water body sizes', value: sizeParts.join(' \u00b7 '),
+      placeholder:'Add volumes', editor: inlineWaterBodySizes(c)});
   }
 
   const dogNames = (c.dogs || []).map(d => d.name).filter(Boolean);
   profileRow(meta, {label: dogNames.length === 1 ? 'Dog' : 'Dogs', value: dogNames.join(', '),
     placeholder:'None on file', editor: inlineNameList(c,'dogs','dog','e.g. Buddy — friendly')});
 
-  profileRow(meta, {label:'Gate code', value:c.gateCode, placeholder:'Add a gate code', editor: inlineText(c,'gateCode')});
+  profileRow(meta, {label:'Neighborhood gate code', value:c.neighborhoodGateCode,
+    placeholder:'Add a neighborhood gate code', editor: inlineText(c,'neighborhoodGateCode')});
+  profileRow(meta, {label:'Yard gate code', value:c.gateCode, placeholder:'Add a yard gate code', editor: inlineText(c,'gateCode')});
   profileRow(meta, {label:'Access notes', value:c.accessNotes, placeholder:'Add access notes', editor: inlineTextarea(c,'accessNotes')});
 
   currentFountains = (c.fountains || []).map(f =>
@@ -9773,6 +10039,8 @@ function openEditForm(){
   document.getElementById('icPoolGallons').value = c.poolGallons || '';
   document.getElementById('icTechnician').value = c.technicianId || '';
   document.getElementById('icGateCode').value = c.gateCode || '';
+  const nGate = document.getElementById('icNeighborhoodGateCode');
+  if(nGate) nGate.value = c.neighborhoodGateCode || '';
   document.getElementById('icAccessNotes').value = c.accessNotes || '';
   renderFountainFields();
   currentDogs = (c.dogs || []).map(d => ({...d}));
@@ -9870,7 +10138,9 @@ const IMPORT_FIELDS = [
   {key:'phone',       label:'Phone',           hints:['phone','mobile','cell','tel']},
   {key:'email',       label:'Email',           hints:['email','e-mail']},
   {key:'day',         label:'Service day',     hints:['day','service day','schedule']},
-  {key:'gateCode',    label:'Gate code',       hints:['gate','code']},
+  {key:'gateCode',    label:'Yard gate code',  hints:['yard gate','gate','code']},
+  {key:'neighborhoodGateCode', label:'Neighborhood gate code',
+    hints:['neighborhood','neighbourhood','community gate','subdivision']},
   {key:'poolGallons', label:'Pool gallons',    hints:['gallon','volume','size']},
   {key:'accessNotes', label:'Access notes',    hints:['note','access','comment']}
 ];
@@ -10021,6 +10291,7 @@ function openImportMapper(rows){
         poolGallons: val(row, 'poolGallons'),
         technicianId: '',
         gateCode: val(row, 'gateCode'),
+        neighborhoodGateCode: val(row, 'neighborhoodGateCode'),
         accessNotes: val(row, 'accessNotes'),
         fountains: [], dogs: [], active: true
       });
@@ -10217,6 +10488,7 @@ document.getElementById('btnSave').addEventListener('click', ()=>{
   const poolGallons = document.getElementById('icPoolGallons').value.trim();
   const technicianId = document.getElementById('icTechnician').value;
   const gateCode = document.getElementById('icGateCode').value.trim();
+  const neighborhoodGateCode = (document.getElementById('icNeighborhoodGateCode') || {value:''}).value.trim();
   const accessNotes = document.getElementById('icAccessNotes').value.trim();
   const dogs = currentDogs
     .map((d, i) => ({id: d.id, name: d.name.trim() || ('Dog ' + (i + 1))}))
@@ -10249,6 +10521,7 @@ document.getElementById('btnSave').addEventListener('click', ()=>{
       existing.poolGallons = poolGallons;
       existing.technicianId = technicianId;
       existing.gateCode = gateCode;
+      existing.neighborhoodGateCode = neighborhoodGateCode;
       existing.accessNotes = accessNotes;
       existing.dogs = dogs;
       existing.fountains = fountains;
@@ -10280,7 +10553,7 @@ document.getElementById('btnSave').addEventListener('click', ()=>{
   }
 
   const id = 'cust_' + Date.now();
-  const newCustomer = {id, name, address, city, state, zip, email, phone, day, hasPool, hasSpa, poolGallons, technicianId, gateCode, accessNotes, dogs, fountains, equipment: currentEquipmentItems, equipmentTypeOptions: currentEquipmentTypeOptions};
+  const newCustomer = {id, name, address, city, state, zip, email, phone, day, hasPool, hasSpa, poolGallons, technicianId, gateCode, neighborhoodGateCode, accessNotes, dogs, fountains, equipment: currentEquipmentItems, equipmentTypeOptions: currentEquipmentTypeOptions};
   if(coordsMatchAddress){
     newCustomer.lat = selectedAddressCoords.lat;
     newCustomer.lng = selectedAddressCoords.lng;

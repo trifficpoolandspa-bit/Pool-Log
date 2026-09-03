@@ -3098,7 +3098,8 @@ function renderHomeList(){
       }
 
       const bits = [];
-      if(c.gateCode) bits.push(['\ud83d\udd11 Gate code', c.gateCode]);
+      if(c.neighborhoodGateCode) bits.push(['\ud83d\udd11 Neighborhood gate', c.neighborhoodGateCode]);
+      if(c.gateCode) bits.push(['\ud83d\udd11 Yard gate', c.gateCode]);
       const dogNames = (c.dogs || []).map(d => d.name).filter(Boolean);
       if(dogNames.length) bits.push([dogNames.length === 1 ? '\ud83d\udc15 Dog' : '\ud83d\udc15 Dogs', dogNames.join(', ')]);
 
