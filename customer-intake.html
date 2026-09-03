@@ -463,7 +463,7 @@ input::placeholder{color:#A9BCB9;}
     </div>
 
     <div class="card" id="profileTabsCard" style="display:none;">
-      <h2 id="profileCustomerName" style="margin:0 0 12px;color:var(--teal-deep);"></h2>
+      <h2 id="profileCustomerName" style="margin:0 0 14px;color:var(--teal-deep);font-size:26px;line-height:1.2;"></h2>
       <div class="seg-control" id="profileTabControl">
         <button class="history-type-btn active" data-tab="profile" type="button">Profile</button>
         <button class="history-type-btn" data-tab="equipment" type="button">Equipment</button>
@@ -491,7 +491,6 @@ input::placeholder{color:#A9BCB9;}
       <div id="icEquipmentList"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-primary" id="btnNewEquipmentType" type="button" style="width:auto;">+ Add new equipment</button>
-        <button class="btn btn-ghost" id="btnReorderEquipment" type="button" style="width:auto;">Manage Equipment</button>
       </div>
       <input type="file" accept="image/*" capture="environment" id="icEquipmentPhotoInput" style="display:none;">
     </div>
@@ -953,7 +952,7 @@ input::placeholder{color:#A9BCB9;}
       <p id="storageBarText" style="font-size:12px;color:var(--muted);margin:8px 0 0;"></p>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
-        <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear ALL photos</button>
+        <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear service report photos</button>
       </div>
       <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Removes photos from all but the four most recent visits per body of water. Readings, notes and service records are kept in full — only the images go.</p>
     </div>
@@ -7526,20 +7525,9 @@ function stripEveryPhoto(){
       if(changed) lsSet(key, val);
     }
 
-    // Equipment photos live on the customer record
-    if(key === 'customers' && Array.isArray(val)){
-      let changed = false;
-      val.forEach(cust=>{
-        (cust.equipment || []).forEach(item=>{
-          if(Array.isArray(item.photos) && item.photos.length){
-            removed += item.photos.length;
-            item.photos = [];
-            changed = true;
-          }
-        });
-      });
-      if(changed){ lsSet('customers', val); customers = val; }
-    }
+    // Equipment photos are deliberately left alone. They are reference
+    // material for the equipment itself, not a record of a single visit,
+    // and they don't accumulate the way visit photos do.
   });
   return removed;
 }
@@ -7547,10 +7535,10 @@ function stripEveryPhoto(){
 document.getElementById('btnClearAllPhotos').addEventListener('click', async ()=>{
   const before = storageUsage();
   const ok = await confirmDialog(
-    'Remove EVERY photo stored on this device \u2014 visit photos and equipment photos, '
-    + 'including recent ones? Readings, notes and service records are all kept. '
+    'Remove every service report photo stored on this device, including recent ones? '
+    + 'Equipment photos are kept, as are readings, notes and service records. '
     + 'Download a backup first if you want to keep the images.',
-    'Clear all photos');
+    'Clear service report photos');
   if(!ok) return;
   const removed = stripEveryPhoto();
   const after = storageUsage();
@@ -7558,8 +7546,9 @@ document.getElementById('btnClearAllPhotos').addEventListener('click', async ()=
   renderStorageMeter();
   renderCustomerList();
   showToast(removed
-    ? 'Cleared ' + removed + ' photo' + (removed === 1 ? '' : 's') + ' \u2014 freed ' + freed + ' MB'
-    : 'No photos were stored');
+    ? 'Cleared ' + removed + ' report photo' + (removed === 1 ? '' : 's')
+      + ' \u2014 freed ' + freed + ' MB. Equipment photos kept.'
+    : 'No service report photos were stored');
 });
 
 document.getElementById('settingStorePhotos').addEventListener('change', (e)=>{
@@ -8030,7 +8019,9 @@ function applyProfileTab(){
   const nameEl = document.getElementById('profileCustomerName');
   if(nameEl){
     const cust = customers.find(x => x.id === (profileCustomerId || editingId));
-    nameEl.textContent = cust ? displayName(cust.name) : '';
+    // First name first here — lists stay "Last, First" for sorting, but the
+    // heading reads the way you would say it
+    nameEl.textContent = cust ? (cust.name || '').trim() : '';
   }
 
   const activeBtn = document.querySelector('#profileTabControl .history-type-btn.active');
@@ -8158,6 +8149,106 @@ function ensureEquipmentItem(type){
   return it;
 }
 
+
+// Options the user defines for their own equipment types, kept globally by
+// type name so every customer with that equipment gets the same buttons.
+function customEquipmentOptions(type){
+  const store = lsGet('equipmentChoices') || {};
+  const list = store[baseEquipmentType(type)];
+  return Array.isArray(list) ? list.slice() : [];
+}
+
+function saveCustomEquipmentOptions(type, options){
+  const store = lsGet('equipmentChoices') || {};
+  store[baseEquipmentType(type)] = options;
+  lsSet('equipmentChoices', store);
+}
+
+// Lets the user build the button list for an equipment type they created
+function openEquipmentOptionsModal(type, onDone){
+  const base = baseEquipmentType(type);
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column;">
+      <h3 style="font-size:15px;margin:0 0 4px;">Quick buttons for ${base}</h3>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">These appear for every customer who has ${base}, so you only set them up once.</p>
+      <div id="eqOptList" style="flex:1;overflow-y:auto;"></div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-ghost" id="eqOptAdd" style="flex:1;">+ Add a button</button>
+        <button class="btn btn-primary" id="eqOptDone" style="width:auto;">Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  let opts = customEquipmentOptions(type);
+  const listBox = overlay.querySelector('#eqOptList');
+
+  function draw(){
+    listBox.innerHTML = '';
+    if(opts.length === 0){
+      listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:6px 0;">No buttons yet. Add one for each kind you want to choose from.</div>';
+      return;
+    }
+    opts.forEach((opt, idx)=>{
+      const row = document.createElement('div');
+      row.dataset.reorderKey = 'opt' + idx;
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);';
+
+      const grip = document.createElement('span');
+      grip.textContent = '\u2261';
+      grip.style.cssText = 'font-size:16px;color:var(--muted);flex-shrink:0;cursor:grab;';
+      attachTouchReorder(grip, row, listBox, '[data-reorder-key]', (keys)=>{
+        opts = keys.map(k => opts[parseInt(k.replace('opt',''), 10)]).filter(Boolean);
+        saveCustomEquipmentOptions(type, opts);
+        draw();
+      });
+      row.appendChild(grip);
+
+      const input = document.createElement('input');
+      input.value = opt;
+      input.placeholder = 'Button name';
+      input.style.cssText = 'flex:1;min-width:0;font-size:13px;padding:6px 8px;';
+      input.addEventListener('change', ()=>{
+        opts[idx] = input.value.trim();
+        saveCustomEquipmentOptions(type, opts.filter(Boolean));
+      });
+      row.appendChild(input);
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '\u00D7';
+      del.style.cssText = 'flex:0 0 30px;width:30px;height:30px;padding:0;border:1px solid #EFC9BC;'
+        + 'border-radius:8px;background:#fff;color:var(--rust);font-size:16px;cursor:pointer;';
+      del.addEventListener('click', ()=>{
+        opts.splice(idx, 1);
+        saveCustomEquipmentOptions(type, opts);
+        draw();
+      });
+      row.appendChild(del);
+
+      listBox.appendChild(row);
+    });
+  }
+
+  overlay.querySelector('#eqOptAdd').addEventListener('click', ()=>{
+    opts.push('');
+    saveCustomEquipmentOptions(type, opts);
+    draw();
+  });
+
+  const close = ()=>{
+    opts = opts.map(o => String(o || '').trim()).filter(Boolean);
+    saveCustomEquipmentOptions(type, opts);
+    document.body.removeChild(overlay);
+    if(onDone) onDone();
+  };
+  overlay.querySelector('#eqOptDone').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  draw();
+}
+
 function renderChoicePicker(container, type, options, choiceField, customField, onChange){
   container.innerHTML = '';
   const item = currentEquipmentItems.find(i => i.type === type);
@@ -8182,27 +8273,35 @@ function renderChoicePicker(container, type, options, choiceField, customField, 
     displayText.style.color = '#fff';
     displayText.style.fontSize = '14.4px';
     displayText.style.fontWeight = '600';
-    displayText.textContent = (choice === 'Other' && customField) ? (item[customField] || 'Other') : choice;
-    displayRow.appendChild(displayText);
+    displayText.textContent = '';
+    displayText.style.gap = '6px';
 
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'btn btn-ghost fountain-remove';
-    clearBtn.style.setProperty('width', '27.2px', 'important');
-    clearBtn.style.setProperty('min-width', '27.2px', 'important');
-    clearBtn.style.setProperty('height', '30.4px', 'important');
-    clearBtn.style.setProperty('flex', '0 0 27.2px', 'important');
-    clearBtn.style.fontSize = '12.8px';
-    clearBtn.textContent = '×';
-    clearBtn.setAttribute('aria-label', 'Clear selection');
-    clearBtn.addEventListener('click', (e)=>{
+    const chosenText = document.createElement('span');
+    chosenText.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    chosenText.textContent = (choice === 'Other' && customField) ? (item[customField] || 'Other') : choice;
+    displayText.appendChild(chosenText);
+
+    // Only shows on hover, so the button reads cleanly the rest of the time
+    const hoverX = document.createElement('span');
+    hoverX.textContent = '\u00D7';
+    hoverX.style.cssText = 'flex-shrink:0;font-size:15px;line-height:1;opacity:0;transition:opacity .12s ease;';
+    displayText.appendChild(hoverX);
+    displayText.addEventListener('mouseenter', ()=>{ hoverX.style.opacity = '1'; });
+    displayText.addEventListener('mouseleave', ()=>{ hoverX.style.opacity = '0'; });
+
+    displayText.style.cursor = 'pointer';
+    displayText.title = 'Press again to clear';
+    displayText.addEventListener('click', (e)=>{
       e.stopPropagation();
-      item[choiceField] = '';
-      if(customField) item[customField] = '';
+      const it = currentEquipmentItems.find(i => i.type === type);
+      if(!it) return;
+      it[choiceField] = '';
+      if(customField) it[customField] = '';
       persistCurrentEquipmentItems();
       onChange();
     });
-    displayRow.appendChild(clearBtn);
+    displayRow.appendChild(displayText);
+
 
     container.appendChild(displayRow);
   } else {
@@ -8358,6 +8457,26 @@ function renderEquipmentTypeList(){
       renderChoicePicker(middleArea, type, ['Tabs', 'Salt Cell', 'Liquid', 'Other'], 'chlorinationChoice', 'chlorinationCustom', ()=> renderEquipmentTypeList());
     } else if(baseEquipmentType(type) === 'Heater'){
       renderChoicePicker(middleArea, type, ['Solar', 'Heat Pump', 'Gas', 'Other'], 'heaterChoice', 'heaterCustom', ()=> renderEquipmentTypeList());
+    } else {
+      // An equipment type the user created — their own buttons, shared by
+      // every customer who has this equipment
+      const own = customEquipmentOptions(type);
+      if(own.length){
+        renderChoicePicker(middleArea, type, own.concat(['Other']),
+          'customChoice', 'customChoiceOther', ()=> renderEquipmentTypeList());
+      }
+
+      const setupBtn = document.createElement('button');
+      setupBtn.type = 'button';
+      setupBtn.className = 'btn btn-ghost';
+      setupBtn.style.cssText = 'width:auto;flex:0 0 auto;padding:5px 10px;font-size:11.5px;margin-left:6px;';
+      setupBtn.textContent = own.length ? 'Edit buttons' : '+ Quick buttons';
+      setupBtn.title = 'Set the choices shown for ' + baseEquipmentType(type);
+      setupBtn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        openEquipmentOptionsModal(type, ()=> renderEquipmentTypeList());
+      });
+      middleArea.appendChild(setupBtn);
     }
 
     const existingItem = currentEquipmentItems.find(i => i.type === type);
@@ -8426,33 +8545,10 @@ function renderEquipmentTypeList(){
 
     container.appendChild(row);
   });
-  renderEquipmentTypeOrderList();
 }
 
-function openReorderEquipmentModal(){
-  const overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.innerHTML = `
-    <div class="confirm-box">
-      <h3 style="font-size:15px;margin:0 0 4px;">Reorder Equipment</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">Drag to change the order equipment appears in the list, or delete a type entirely.</p>
-      <div id="icEquipmentTypeOrderList"></div>
-      <div class="btn-row" style="margin-top:14px;">
-        <button class="btn btn-primary" id="reorderEquipmentDone">Done</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  renderEquipmentTypeOrderList();
-  const cleanup = ()=>{
-    document.body.removeChild(overlay);
-    renderEquipmentTypeList();
-  };
-  overlay.querySelector('#reorderEquipmentDone').addEventListener('click', cleanup);
-  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
-}
 
-document.getElementById('btnReorderEquipment').addEventListener('click', openReorderEquipmentModal);
+
 
 let draggedEquipmentType = null;
 
@@ -8466,100 +8562,7 @@ function reorderEquipmentType(draggedType, targetType){
   persistCurrentEquipmentTypeOptions();
 }
 
-function renderEquipmentTypeOrderList(){
-  const container = document.getElementById('icEquipmentTypeOrderList');
-  if(!container) return;
-  container.innerHTML = '';
-  if(currentEquipmentTypeOptions.length === 0){
-    container.innerHTML = emptyState('No equipment types yet.');
-    return;
-  }
-  currentEquipmentTypeOptions.forEach(type=>{
-    const row = document.createElement('div');
-    row.className = 'cust-row';
-    row.style.gap = '8px';
-    row.dataset.reorderKey = type;
 
-    const handle = document.createElement('div');
-    handle.textContent = '\u2261';
-    handle.title = 'Drag to reorder';
-    handle.style.color = 'var(--muted)';
-    handle.style.fontSize = '19px';
-    handle.style.flexShrink = '0';
-    handle.style.padding = '0 8px 0 2px';
-    attachTouchReorder(handle, row, container, '[data-reorder-key]', (keys)=>{
-      currentEquipmentTypeOptions = keys.slice();
-      persistCurrentEquipmentTypeOptions();
-      renderEquipmentTypeOrderList();
-      renderEquipmentTypeList();
-    });
-
-    const label = document.createElement('div');
-    label.style.flex = '1';
-    label.style.fontSize = '13.5px';
-    label.style.fontWeight = '600';
-    label.textContent = type;
-
-    const deleteBtn = document.createElement('button');
-    deleteBtn.type = 'button';
-    deleteBtn.className = 'btn btn-ghost fountain-remove';
-    deleteBtn.style.setProperty('width', '34.2px', 'important');
-    deleteBtn.style.setProperty('min-width', '34.2px', 'important');
-    deleteBtn.style.setProperty('max-width', '34.2px', 'important');
-    deleteBtn.style.setProperty('height', '34.2px', 'important');
-    deleteBtn.style.setProperty('min-height', '34.2px', 'important');
-    deleteBtn.style.setProperty('max-height', '34.2px', 'important');
-    deleteBtn.style.setProperty('flex', '0 0 34.2px', 'important');
-    deleteBtn.style.setProperty('box-sizing', 'border-box', 'important');
-    deleteBtn.style.marginLeft = 'auto';
-    deleteBtn.style.fontSize = '16px';
-    deleteBtn.style.color = 'var(--rust)';
-    deleteBtn.style.borderColor = '#EFC9BC';
-    deleteBtn.textContent = '×';
-    deleteBtn.setAttribute('aria-label', 'Remove ' + type);
-    deleteBtn.addEventListener('click', async (e)=>{
-      e.stopPropagation();
-      const confirmed = await confirmDialog('Permanently remove "' + type + '" from this customer\'s equipment list? This can\'t be undone.');
-      if(!confirmed) return;
-      currentEquipmentTypeOptions = currentEquipmentTypeOptions.filter(t => t !== type);
-      renderEquipmentTypeList();
-      persistCurrentEquipmentTypeOptions();
-      showToast('"' + type + '" removed from this customer\'s equipment list');
-    });
-
-    row.appendChild(handle);
-    row.appendChild(label);
-    row.appendChild(deleteBtn);
-
-    row.addEventListener('dragstart', ()=>{
-      draggedEquipmentType = type;
-      row.style.opacity = '0.4';
-    });
-    row.addEventListener('dragend', ()=>{
-      row.style.opacity = '1';
-      draggedEquipmentType = null;
-      container.querySelectorAll('.cust-row').forEach(r => r.style.borderTop = '');
-    });
-    row.addEventListener('dragover', (e)=>{
-      e.preventDefault();
-      if(draggedEquipmentType && draggedEquipmentType !== type){
-        row.style.borderTop = '2px solid var(--gold)';
-      }
-    });
-    row.addEventListener('dragleave', ()=>{
-      row.style.borderTop = '';
-    });
-    row.addEventListener('drop', (e)=>{
-      e.preventDefault();
-      row.style.borderTop = '';
-      if(draggedEquipmentType && draggedEquipmentType !== type){
-        reorderEquipmentType(draggedEquipmentType, type);
-      }
-    });
-
-    container.appendChild(row);
-  });
-}
 
 let currentEquipmentItems = [];
 
@@ -8581,6 +8584,120 @@ function persistCurrentEquipmentItems(){
   }
 }
 
+
+// After naming a new piece of equipment, offer to put it on other customers
+// too — most yards that have one thing have several of the same setup.
+function openAddToCustomersModal(typeName){
+  return new Promise((resolve)=>{
+    const others = customers
+      .filter(x => x.active !== false && x.id !== editingId)
+      .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
+
+    if(others.length === 0){ resolve([]); return; }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:460px;max-height:82vh;display:flex;flex-direction:column;">
+        <h3 style="font-size:15px;margin:0 0 4px;">Add ${typeName} to other customers?</h3>
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">It has already been added to this customer. Tick anyone else who has one.</p>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <input id="addEqSearch" placeholder="Search customers" style="flex:1;font-size:13px;padding:7px 9px;">
+          <button class="btn btn-ghost" id="addEqAll" style="width:auto;padding:6px 11px;font-size:12px;">Select all</button>
+        </div>
+        <div id="addEqList" style="flex:1;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px 10px;"></div>
+        <div class="btn-row" style="margin-top:12px;">
+          <button class="btn btn-ghost" id="addEqSkip" style="flex:1;">Just this customer</button>
+          <button class="btn btn-primary" id="addEqGo" style="flex:1;">Add to selected</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const picked = new Set();
+    const listBox = overlay.querySelector('#addEqList');
+    const searchEl = overlay.querySelector('#addEqSearch');
+
+    function draw(){
+      const q = searchEl.value.trim().toLowerCase();
+      const shown = others.filter(x => !q || (x.name || '').toLowerCase().includes(q));
+      listBox.innerHTML = '';
+      if(shown.length === 0){
+        listBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:10px 0;">No matches.</div>';
+        return;
+      }
+      shown.forEach(cust=>{
+        const row = document.createElement('label');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;'
+          + 'border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = picked.has(cust.id);
+        box.style.margin = '0';
+        box.addEventListener('change', ()=>{
+          if(box.checked) picked.add(cust.id); else picked.delete(cust.id);
+          updateCount();
+        });
+        row.appendChild(box);
+
+        const name = document.createElement('span');
+        name.style.flex = '1';
+        name.textContent = displayName(cust.name);
+        row.appendChild(name);
+
+        // Say so if they already have it, rather than adding a duplicate
+        const has = (cust.equipmentTypeOptions || []).some(t =>
+          baseEquipmentType(t) === baseEquipmentType(typeName));
+        if(has){
+          const tag = document.createElement('span');
+          tag.textContent = 'has one';
+          tag.style.cssText = 'font-size:10.5px;color:var(--muted);flex-shrink:0;';
+          row.appendChild(tag);
+        }
+
+        listBox.appendChild(row);
+      });
+    }
+
+    function updateCount(){
+      const go = overlay.querySelector('#addEqGo');
+      go.textContent = picked.size ? 'Add to ' + picked.size + ' customer' + (picked.size === 1 ? '' : 's')
+                                   : 'Add to selected';
+    }
+
+    searchEl.addEventListener('input', draw);
+    overlay.querySelector('#addEqAll').addEventListener('click', ()=>{
+      const q = searchEl.value.trim().toLowerCase();
+      others.filter(x => !q || (x.name || '').toLowerCase().includes(q))
+            .forEach(x => picked.add(x.id));
+      draw(); updateCount();
+    });
+
+    const finish = (ids)=>{ document.body.removeChild(overlay); resolve(ids); };
+    overlay.querySelector('#addEqSkip').addEventListener('click', ()=> finish([]));
+    overlay.querySelector('#addEqGo').addEventListener('click', ()=> finish(Array.from(picked)));
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) finish([]); });
+
+    draw();
+  });
+}
+
+// Puts an equipment type on a set of customers, skipping anyone who has it
+function addEquipmentTypeToCustomers(typeName, ids){
+  let added = 0;
+  ids.forEach(id=>{
+    const cust = customers.find(x => x.id === id);
+    if(!cust) return;
+    const list = Array.isArray(cust.equipmentTypeOptions)
+      ? cust.equipmentTypeOptions.slice() : [];
+    if(list.includes(typeName)) return;
+    list.push(typeName);
+    cust.equipmentTypeOptions = list;
+    added++;
+  });
+  if(added) saveCustomers();
+  return added;
+}
+
 document.getElementById('btnNewEquipmentType').addEventListener('click', async ()=>{
   const name = await promptDialog('Name this new equipment', 'e.g. Salt System');
   if(!name) return;
@@ -8599,7 +8716,15 @@ document.getElementById('btnNewEquipmentType').addEventListener('click', async (
 
   renderEquipmentTypeList();
   persistCurrentEquipmentTypeOptions();
-  showToast(finalName + ' added');
+
+  // Offer to put it on other customers too
+  const ids = await openAddToCustomersModal(finalName);
+  if(ids.length){
+    const added = addEquipmentTypeToCustomers(finalName, ids);
+    showToast(finalName + ' added to ' + (added + 1) + ' customers');
+  } else {
+    showToast(finalName + ' added');
+  }
 });
 
 let activeEquipmentPhotoItemId = null;
