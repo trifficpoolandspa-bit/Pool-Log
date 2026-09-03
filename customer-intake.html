@@ -52,6 +52,12 @@ header{
   color:#fff;
   display:flex;flex-direction:column;
   padding:24px 0 20px;
+  /* Stays in place while the page scrolls, so the tabs are always reachable */
+  position:sticky;
+  top:0;
+  align-self:flex-start;
+  height:100vh;
+  overflow-y:auto;
 }
 .sidebar-brand{
   display:flex;align-items:center;gap:11px;
@@ -447,7 +453,13 @@ input::placeholder{color:#A9BCB9;}
     </div>
 
     <div class="card" id="backToListCard" style="display:none;">
-      <button class="btn btn-ghost" id="btnBackToList" style="width:auto;">← Back to Customer List</button>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="btnBackToList" style="width:auto;">← Back to Customer List</button>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button class="btn btn-ghost" id="btnPrevCustomer" style="width:auto;">← Previous customer</button>
+          <button class="btn btn-ghost" id="btnNextCustomer" style="width:auto;">Next customer →</button>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="profileTabsCard" style="display:none;">
@@ -940,8 +952,22 @@ input::placeholder{color:#A9BCB9;}
       <p id="storageBarText" style="font-size:12px;color:var(--muted);margin:8px 0 0;"></p>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
+        <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear ALL photos</button>
       </div>
       <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Removes photos from all but the four most recent visits per body of water. Readings, notes and service records are kept in full — only the images go.</p>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Keep photos on this device</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingStorePhotos" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">Photos are by far the largest thing stored, and the browser only allows a few megabytes. Turn this off and technicians can still take photos and send them with the report, but nothing is kept on the device afterwards. Everything else &mdash; readings, notes, service records &mdash; is unaffected.</p>
+      </div>
     </div>
 
     <div class="card">
@@ -2359,8 +2385,27 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: true, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
+
+// One-time correction. requireAfterPhotos used to default to ON, so devices
+// set up before this carry a stored `true` they never chose — which is why
+// spa and fountain kept demanding a photo with the tick box unticked.
+// Clear it once so the setting starts from off; anyone who genuinely wants it
+// can switch it on and that choice sticks.
+(function clearForcedAfterPhotoRequirement(){
+  try{
+    if(lsGet('afterPhotoDefaultFixed')) return;
+    const s = lsGet('settings');
+    if(s && s.requireAfterPhotos === true){
+      s.requireAfterPhotos = false;
+      lsSet('settings', s);
+      if(typeof appSettings === 'object' && appSettings) appSettings.requireAfterPhotos = false;
+    }
+    lsSet('afterPhotoDefaultFixed', true);
+  }catch(e){}
+})();
+
 
 function saveSettings(){
   lsSet('settings', appSettings);
@@ -7446,6 +7491,83 @@ document.getElementById('btnFreeSpace').addEventListener('click', async ()=>{
 });
 
 
+
+// Removes every stored image, everywhere. Readings, notes and service records
+// are untouched — only the pictures go.
+function stripEveryPhoto(){
+  let removed = 0;
+  let keys = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf(STORAGE_PREFIX) === 0) keys.push(k.slice(STORAGE_PREFIX.length));
+    }
+  }catch(e){ return 0; }
+
+  keys.forEach(key=>{
+    const val = lsGet(key);
+
+    // Visit readings
+    if(Array.isArray(val) && val.length && typeof val[0] === 'object'){
+      let changed = false;
+      val.forEach(r=>{
+        if(!r || typeof r !== 'object') return;
+        ['photo','beforePhoto','gatePhoto'].forEach(p=>{
+          if(r[p]){ r[p] = null; r.photosCleared = true; removed++; changed = true; }
+        });
+        if(r.customPhotos && typeof r.customPhotos === 'object'){
+          Object.keys(r.customPhotos).forEach(id=>{
+            if(r.customPhotos[id]){ r.customPhotos[id] = null; removed++; changed = true; }
+          });
+        }
+      });
+      if(changed) lsSet(key, val);
+    }
+
+    // Equipment photos live on the customer record
+    if(key === 'customers' && Array.isArray(val)){
+      let changed = false;
+      val.forEach(cust=>{
+        (cust.equipment || []).forEach(item=>{
+          if(Array.isArray(item.photos) && item.photos.length){
+            removed += item.photos.length;
+            item.photos = [];
+            changed = true;
+          }
+        });
+      });
+      if(changed){ lsSet('customers', val); customers = val; }
+    }
+  });
+  return removed;
+}
+
+document.getElementById('btnClearAllPhotos').addEventListener('click', async ()=>{
+  const before = storageUsage();
+  const ok = await confirmDialog(
+    'Remove EVERY photo stored on this device \u2014 visit photos and equipment photos, '
+    + 'including recent ones? Readings, notes and service records are all kept. '
+    + 'Download a backup first if you want to keep the images.',
+    'Clear all photos');
+  if(!ok) return;
+  const removed = stripEveryPhoto();
+  const after = storageUsage();
+  const freed = Math.max(0, (before - after) / (1024 * 1024)).toFixed(2);
+  renderStorageMeter();
+  renderCustomerList();
+  showToast(removed
+    ? 'Cleared ' + removed + ' photo' + (removed === 1 ? '' : 's') + ' \u2014 freed ' + freed + ' MB'
+    : 'No photos were stored');
+});
+
+document.getElementById('settingStorePhotos').addEventListener('change', (e)=>{
+  appSettings.storePhotos = e.target.checked;
+  saveSettings();
+  showToast(appSettings.storePhotos
+    ? 'Photos will be kept on this device again'
+    : 'Photos will be sent with reports but not kept');
+});
+
 function renderStorageMeter(){
   const fill = document.getElementById('storageBarFill');
   const text = document.getElementById('storageBarText');
@@ -7923,6 +8045,10 @@ document.querySelectorAll('#profileTabControl .history-type-btn').forEach(btn=>{
   });
 });
 
+
+document.getElementById('btnPrevCustomer').addEventListener('click', ()=> stepToCustomer(-1));
+document.getElementById('btnNextCustomer').addEventListener('click', ()=> stepToCustomer(1));
+
 function showCustomerProfileView(){
   const profileTabsCard = document.getElementById('profileTabsCard');
   document.getElementById('allCustomersCard').style.display = 'none';
@@ -7932,6 +8058,7 @@ function showCustomerProfileView(){
   document.getElementById('customerList').style.display = 'none';
   document.getElementById('addCustomerCard').style.display = 'none';
   document.getElementById('backToListCard').style.display = 'block';
+  refreshCustomerStepButtons();
   clearCustomerSearchField();
   hideCustomerSearchSuggestions();
   profileTabsCard.scrollIntoView({behavior:'smooth'});
@@ -9038,7 +9165,50 @@ function inlineServices(cust){
   };
 }
 
+
+// Step through customers in the same order the list shows them, so Next and
+// Previous match what you would see on the customer list.
+let profileCustomerId = null;
+
+function customerListInOrder(){
+  return customers
+    .filter(x => x.active !== false)
+    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
+}
+
+function stepToCustomer(delta){
+  const list = customerListInOrder();
+  const i = list.findIndex(x => x.id === profileCustomerId);
+  if(i === -1) return;
+  const target = list[i + delta];
+  if(!target) return;
+  viewCustomer(target);
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function refreshCustomerStepButtons(){
+  const prev = document.getElementById('btnPrevCustomer');
+  const next = document.getElementById('btnNextCustomer');
+  if(!prev || !next) return;
+  const list = customerListInOrder();
+  const i = list.findIndex(x => x.id === profileCustomerId);
+
+  const atStart = i <= 0;
+  const atEnd = i === -1 || i >= list.length - 1;
+
+  prev.disabled = atStart;
+  prev.style.opacity = atStart ? '0.35' : '';
+  prev.style.cursor = atStart ? 'not-allowed' : '';
+  prev.title = atStart ? 'First customer' : 'Go to ' + displayName(list[i-1].name);
+
+  next.disabled = atEnd;
+  next.style.opacity = atEnd ? '0.35' : '';
+  next.style.cursor = atEnd ? 'not-allowed' : '';
+  next.title = atEnd ? 'Last customer' : 'Go to ' + displayName(list[i+1].name);
+}
+
 function viewCustomer(c){
+  profileCustomerId = c.id;
   editingId = c.id;
 
   document.querySelectorAll('#profileTabControl .history-type-btn').forEach(b=>{
@@ -9848,6 +10018,7 @@ document.getElementById('settingShowPoolSize').checked = appSettings.showPoolSiz
 document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
 document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
 document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+document.getElementById('settingStorePhotos').checked = appSettings.storePhotos !== false;
 document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
 renderMicSideButtons();
 document.getElementById('settingShowDosageSuggestions').checked = appSettings.showDosageSuggestions;

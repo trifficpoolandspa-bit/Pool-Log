@@ -1522,6 +1522,10 @@ document.querySelectorAll('.tab').forEach(t=>{
     // together and that is a mis-tap, not a decision
     if(Date.now() - stepBarPressedAt < 500) return;
 
+    // Already on this tab — do nothing. Tapping Today twice used to drop you
+    // straight into a customer's report.
+    if(t.dataset.view === currentViewName) return;
+
     // A visit left part-finished resumes rather than dumping you on the list
     if(t.dataset.view === 'home' && visitDraft.customerId){
       openVisit(visitDraft.customerId);
@@ -1889,15 +1893,22 @@ function syncGatePhotoBlock(){
 // never just because the section exists.
 function afterPhotoRequiredFor(type){
   if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
-  if(appSettings.showAfterPhotos === false) return false;
-  if(appSettings.requireAfterPhotos === true) return true;
-  if(techRequires('requireAfterPhoto')) return true;
+  // With the After photos step switched off there is nowhere to take one, so
+  // nothing can be required — otherwise the submit would be blocked forever.
+  if(!showsAfterPhotoStep(type)) return false;
 
+  // This body of water's own setting has the final say. Ticking or unticking
+  // it on Readings and Dosages beats the app-wide setting, so a spa or
+  // fountain can be exempt while the pool still requires one.
   const cid = currentVisitCustomerId;
   const lists = cid
     ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
     : chemConfig[type];
-  return !!(lists && lists.requireAfterPhoto === true);
+  if(lists && typeof lists.requireAfterPhoto === 'boolean') return lists.requireAfterPhoto;
+
+  // Not set for this body of water — fall back to the wider settings
+  if(techRequires('requireAfterPhoto')) return true;
+  return appSettings.requireAfterPhotos === true;
 }
 
 function refreshSaveButtons(){
@@ -2413,12 +2424,12 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     id: 'read_' + Date.now(),
     date: new Date().toISOString(),
     notes: document.getElementById('inNotes').value.trim(),
-    photo: poolPhotoController.getData() || null,
-    beforePhoto: beforeControllerFor('pool').getData() || null,
+    photo: appSettings.storePhotos === false ? null : (poolPhotoController.getData() || null),
+    beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('pool').getData() || null),
     isFilterClean: isFilterCleanVisit,
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
-    customPhotos: Object.assign({}, customPhotoData),
-    gatePhoto: gatePhotoController.getData() || null,
+    customPhotos: appSettings.storePhotos === false ? {} : Object.assign({}, customPhotoData),
+    gatePhoto: appSettings.storePhotos === false ? null : (gatePhotoController.getData() || null),
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
   };
@@ -2463,11 +2474,11 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   const reading = {
     id: 'spa_' + Date.now(),
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
-    customPhotos: Object.assign({}, customPhotoData),
+    customPhotos: appSettings.storePhotos === false ? {} : Object.assign({}, customPhotoData),
     date: new Date().toISOString(),
     notes: document.getElementById('inSpaNotes').value.trim(),
-    photo: spaPhotoController.getData() || null,
-    beforePhoto: beforeControllerFor('spa').getData() || null
+    photo: appSettings.storePhotos === false ? null : (spaPhotoController.getData() || null),
+    beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('spa').getData() || null)
   };
   chemConfig.spa.chemicals.forEach(item=>{
     reading[item.key] = padLeadingZero(document.getElementById(fieldId('spa','chem',item.key)).value);
@@ -2500,11 +2511,11 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   const reading = {
     id: 'fountain_' + Date.now(),
     isRedo: !!(customers.find(x => x.id === customerId) || {}).pendingRedo,
-    customPhotos: Object.assign({}, customPhotoData),
+    customPhotos: appSettings.storePhotos === false ? {} : Object.assign({}, customPhotoData),
     date: new Date().toISOString(),
     notes: document.getElementById('inFountainNotes').value.trim(),
-    photo: fountainPhotoController.getData() || null,
-    beforePhoto: beforeControllerFor('fountain').getData() || null
+    photo: appSettings.storePhotos === false ? null : (fountainPhotoController.getData() || null),
+    beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('fountain').getData() || null)
   };
   chemConfig.fountain.chemicals.forEach(item=>{
     reading[item.key] = padLeadingZero(document.getElementById(fieldId('fountain','chem',item.key)).value);
@@ -3574,8 +3585,27 @@ let pendingVisit = null;
 // sectionId is 'pool', 'spa', or a fountain's id
 
 // Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
-const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, requireBeforePhotos: false, requireAfterPhotos: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false };
+const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
+
+// One-time correction. requireAfterPhotos used to default to ON, so devices
+// set up before this carry a stored `true` they never chose — which is why
+// spa and fountain kept demanding a photo with the tick box unticked.
+// Clear it once so the setting starts from off; anyone who genuinely wants it
+// can switch it on and that choice sticks.
+(function clearForcedAfterPhotoRequirement(){
+  try{
+    if(lsGet('afterPhotoDefaultFixed')) return;
+    const s = lsGet('settings');
+    if(s && s.requireAfterPhotos === true){
+      s.requireAfterPhotos = false;
+      lsSet('settings', s);
+      if(typeof appSettings === 'object' && appSettings) appSettings.requireAfterPhotos = false;
+    }
+    lsSet('afterPhotoDefaultFixed', true);
+  }catch(e){}
+})();
+
 // Voice entry has been removed — the browser chimed on every restart and that
 // sound can't be muted from a web app.
 appSettings.voiceModeEnabled = false;
@@ -4581,14 +4611,19 @@ function missingRequiredPhoto(){
   // Required either everywhere (Settings) or just for this section
   // Track WHY a photo is required, so a technician blocked by a setting they
   // thought was off can see where it comes from.
+  // This body of water's own setting wins outright, either way
   let beforeWhy = '', afterWhy = '';
-  if(appSettings.requireBeforePhotos === true) beforeWhy = 'app-wide setting';
-  else if(lists.requireBeforePhoto === true) beforeWhy = 'this list\u2019s own setting';
-  else if(techRequires('requireBeforePhoto')) beforeWhy = 'your technician profile';
+  if(!showsBeforePhotoStep(type)) beforeWhy = '';
+  if(!showsAfterPhotoStep(type)) afterWhy = '';
+  if(typeof lists.requireBeforePhoto === 'boolean'){
+    beforeWhy = lists.requireBeforePhoto ? 'this list\u2019s own setting' : '';
+  } else if(techRequires('requireBeforePhoto')) beforeWhy = 'your technician profile';
+  else if(appSettings.requireBeforePhotos === true) beforeWhy = 'app-wide setting';
 
-  if(appSettings.requireAfterPhotos === true) afterWhy = 'app-wide setting';
-  else if(lists.requireAfterPhoto === true) afterWhy = 'this list\u2019s own setting';
-  else if(techRequires('requireAfterPhoto')) afterWhy = 'your technician profile';
+  if(typeof lists.requireAfterPhoto === 'boolean'){
+    afterWhy = lists.requireAfterPhoto ? 'this list\u2019s own setting' : '';
+  } else if(techRequires('requireAfterPhoto')) afterWhy = 'your technician profile';
+  else if(appSettings.requireAfterPhotos === true) afterWhy = 'app-wide setting';
 
   const beforeNeeded = !!beforeWhy;
   const afterNeeded = !!afterWhy;
@@ -4675,6 +4710,21 @@ function flagMissingReadings(missing){
   }
 }
 
+
+// Does this body of water show an after-photo step? Normally the app-wide
+// setting decides, but a section that explicitly requires one must have
+// somewhere to take it — otherwise the requirement could never be met.
+// Only the "After photos" setting decides whether the step and its Take photo
+// button appear. The require settings never affect this — they only decide
+// whether a photo must be taken before submitting.
+function showsAfterPhotoStep(type){
+  return appSettings.showAfterPhotos !== false;
+}
+
+function showsBeforePhotoStep(type){
+  return appSettings.showBeforePhotos !== false;
+}
+
 function visitStepCardsFor(type){
   const cap = type.charAt(0).toUpperCase() + type.slice(1);
   const steps = [];
@@ -4686,14 +4736,14 @@ function visitStepCardsFor(type){
     return steps;
   }
 
-  if(appSettings.showBeforePhotos !== false){
+  if(showsBeforePhotoStep(type)){
     steps.push('visit' + cap + 'BeforePhotoSection');
   }
   steps.push('visit' + cap + 'Section');
   steps.push('visit' + cap + 'ProductsSection');
   // The save card always rides along with the final step, whether or not
   // the After photos card is part of it.
-  steps.push(appSettings.showAfterPhotos !== false
+  steps.push(showsAfterPhotoStep(type)
     ? ['visit' + cap + 'PhotoSection', 'visit' + cap + 'SaveSection']
     : ['visit' + cap + 'SaveSection']);
   return steps;
@@ -4849,6 +4899,7 @@ function syncStepChrome(){
 // One tap, one listen, one chime. Fills chemical readings and dosages for the
 // current section wherever they live, so you can speak them from any step.
 let pttRecognition = null;
+let pttHolding = false;   // true while the mic button is held down
 let pttListening = false;
 let pttHeardSoFar = '';
 
@@ -4940,7 +4991,7 @@ function parseSpokenReadings(transcript){
 
     // A decimal said without a leading zero: "point one", "point two five",
     // ".5" — nobody says "zero point one" out loud.
-    const bare = t.match(/^[^0-9a-z]*(?:point|decimal)\s+(.+)$/);
+    const bare = t.match(/^[^0-9a-z]*(?:point|decimal)[^0-9a-z]*(.+)$/);
     if(bare){
       const digits = [];
       const words0to9 = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,
@@ -4963,7 +5014,7 @@ function parseSpokenReadings(transcript){
     if(m){
       let val = m[1];
       // "7 point 5" written half in digits
-      const pt = t.match(/^[^0-9a-z]*\d+\s*(?:point|decimal)\s*(\d+)/);
+      const pt = t.match(/^[^0-9a-z]*\d+[^0-9a-z]*(?:point|decimal)[^0-9a-z]*(\d+)/);
       if(pt) val = m[1] + '.' + pt[1];
       return val;
     }
@@ -5109,10 +5160,31 @@ function startPushToTalk(){
       if(e.results[i].isFinal) pttHeardSoFar += e.results[i][0].transcript + ' ';
     }
   };
-  pttRecognition.onerror = ()=>{ setPttState(false); };
+  // Recognition stops itself after a pause. While the button is still held
+  // that is not the end of the hold, so start it again and keep listening.
+  pttRecognition.onerror = (e)=>{
+    // "no-speech" and "aborted" are just silence — keep going if still held
+    if(pttHolding && e && (e.error === 'no-speech' || e.error === 'aborted')) return;
+    if(!pttHolding) setPttState(false);
+  };
+
   pttRecognition.onend = ()=>{
+    if(pttHolding){
+      try{
+        pttRecognition.start();      // still held, so resume listening
+        return;
+      }catch(err){
+        // Occasionally the engine needs a moment before it will restart
+        setTimeout(()=>{
+          if(!pttHolding) return;
+          try{ pttRecognition.start(); }catch(e2){}
+        }, 120);
+        return;
+      }
+    }
+
     setPttState(false);
-    // Everything heard during the hold is applied in one go on release
+    // Everything heard across the whole hold is applied in one go on release
     const applied = parseSpokenReadings(pttHeardSoFar);
     if(applied.length) showToast('Got ' + applied.join(', '));
     else if(pttHeardSoFar.trim()) showToast('Didn\'t catch a reading in that');
@@ -5120,15 +5192,19 @@ function startPushToTalk(){
   };
 
   try{
+    pttHolding = true;
     pttRecognition.start();
     setPttState(true);
     showToast('Listening — keep holding');
   }catch(e){
+    pttHolding = false;
     setPttState(false);
   }
 }
 
 function stopPushToTalk(){
+  // Clearing this first is what tells onend the hold is genuinely over
+  pttHolding = false;
   if(pttRecognition){
     try{ pttRecognition.stop(); }catch(e){}
   }
@@ -5587,7 +5663,28 @@ function markSectionDone(sectionId, readingId){
     && pendingVisit.neededSections.every(id => pendingVisit.doneSections[id] !== undefined);
   if(allDone){
     finalizeVisitSend();
+    return;
   }
+
+  // Bodies of water still to do — move straight on to the next one, opening
+  // it at its chemical readings rather than leaving the tech on a finished
+  // section to find the right tab themselves.
+  const next = pendingVisit.neededSections.find(id =>
+    pendingVisit.doneSections[id] === undefined);
+  if(!next) return;
+
+  // Open at the chemical readings, which is not step 1 when the before photo
+  // step is switched on
+  const nextType = (next === 'pool' || next === 'spa') ? next : 'fountain';
+  const cap = nextType.charAt(0).toUpperCase() + nextType.slice(1);
+  const steps = visitStepCardsFor(nextType);
+  const readingsAt = steps.findIndex(s => stepId(s) === 'visit' + cap + 'Section');
+  visitStepBySection[next] = readingsAt >= 0 ? readingsAt + 1 : 1;
+
+  showVisitSection(next);
+
+  const cust = customers.find(x => x.id === currentVisitCustomerId);
+  showToast('Next: ' + sectionLabel(cust, next));
 }
 
 async function finalizeVisitSend(){
