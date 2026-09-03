@@ -486,8 +486,11 @@ input::placeholder{color:#A9BCB9;}
     </div>
 
     <div class="card" id="equipmentPhotosCard" style="display:none;">
-      <h2>Equipment</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Tap the camera icon next to any item to view or add its photos.</p>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Equipment</h2>
+        <button class="btn btn-ghost" id="btnResetEquipment" type="button" style="width:auto;padding:6px 12px;font-size:12px;">Reset to default</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:10px 0 14px;">Tap the camera icon next to any item to view or add its photos.</p>
       <div id="icEquipmentList"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-primary" id="btnNewEquipmentType" type="button" style="width:auto;">+ Add new equipment</button>
@@ -8172,7 +8175,7 @@ function openEquipmentOptionsModal(type, onDone){
   overlay.innerHTML = `
     <div class="confirm-box" style="max-width:440px;max-height:80vh;display:flex;flex-direction:column;">
       <h3 style="font-size:15px;margin:0 0 4px;">Quick buttons for ${base}</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">These appear for every customer who has ${base}, so you only set them up once.</p>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">These are added alongside the built-in choices and appear for every customer who has ${base}, so you only set them up once.</p>
       <div id="eqOptList" style="flex:1;overflow-y:auto;"></div>
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="eqOptAdd" style="flex:1;">+ Add a button</button>
@@ -8251,6 +8254,16 @@ function openEquipmentOptionsModal(type, onDone){
 
 function renderChoicePicker(container, type, options, choiceField, customField, onChange){
   container.innerHTML = '';
+
+  // Anything previously typed into "Other" for this kind of equipment becomes
+  // a button here too, for every customer — so a one-off only has to be typed
+  // once rather than on each customer in turn.
+  const saved = customEquipmentOptions(type);
+  const merged = [];
+  options.forEach(o => { if(o !== 'Other' && merged.indexOf(o) === -1) merged.push(o); });
+  saved.forEach(o => { if(o && merged.indexOf(o) === -1) merged.push(o); });
+  if(options.indexOf('Other') !== -1) merged.push('Other');
+  options = merged;
   const item = currentEquipmentItems.find(i => i.type === type);
   const choice = item ? item[choiceField] : '';
   if(choice){
@@ -8273,21 +8286,34 @@ function renderChoicePicker(container, type, options, choiceField, customField, 
     displayText.style.color = '#fff';
     displayText.style.fontSize = '14.4px';
     displayText.style.fontWeight = '600';
+    // The × sits on top of the text rather than beside it, so the label keeps
+    // the full width and never gets truncated. Hovering swaps one for the
+    // other, both centred in the same place.
     displayText.textContent = '';
-    displayText.style.gap = '6px';
+    displayText.style.position = 'relative';
 
     const chosenText = document.createElement('span');
-    chosenText.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    chosenText.style.cssText = 'display:block;width:100%;text-align:center;'
+      + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+      + 'transition:opacity .12s ease;';
     chosenText.textContent = (choice === 'Other' && customField) ? (item[customField] || 'Other') : choice;
     displayText.appendChild(chosenText);
 
-    // Only shows on hover, so the button reads cleanly the rest of the time
     const hoverX = document.createElement('span');
     hoverX.textContent = '\u00D7';
-    hoverX.style.cssText = 'flex-shrink:0;font-size:15px;line-height:1;opacity:0;transition:opacity .12s ease;';
+    hoverX.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;'
+      + 'justify-content:center;font-size:19px;line-height:1;opacity:0;'
+      + 'transition:opacity .12s ease;pointer-events:none;';
     displayText.appendChild(hoverX);
-    displayText.addEventListener('mouseenter', ()=>{ hoverX.style.opacity = '1'; });
-    displayText.addEventListener('mouseleave', ()=>{ hoverX.style.opacity = '0'; });
+
+    displayText.addEventListener('mouseenter', ()=>{
+      chosenText.style.opacity = '0';
+      hoverX.style.opacity = '1';
+    });
+    displayText.addEventListener('mouseleave', ()=>{
+      chosenText.style.opacity = '1';
+      hoverX.style.opacity = '0';
+    });
 
     displayText.style.cursor = 'pointer';
     displayText.title = 'Press again to clear';
@@ -8324,8 +8350,18 @@ function renderChoicePicker(container, type, options, choiceField, customField, 
         if(opt === 'Other' && customField){
           const customName = await promptDialog('Describe the ' + type.toLowerCase() + ' type', 'Type here');
           if(!customName) return;
+          const trimmedName = customName.trim();
           it[choiceField] = 'Other';
-          it[customField] = customName.trim();
+          it[customField] = trimmedName;
+
+          // Keep it as a button for this equipment type from now on
+          if(trimmedName){
+            const list = customEquipmentOptions(type);
+            if(list.indexOf(trimmedName) === -1){
+              list.push(trimmedName);
+              saveCustomEquipmentOptions(type, list);
+            }
+          }
         } else {
           it[choiceField] = opt;
           if(customField) it[customField] = '';
@@ -8346,6 +8382,90 @@ function renderChoicePicker(container, type, options, choiceField, customField, 
 function baseEquipmentType(type){
   return String(type || '').replace(/\s+\d+$/, '').trim();
 }
+
+
+// Deleting a piece of equipment: from this customer alone, or from everyone
+// who has the same thing. Says how many others have it before asking.
+function openDeleteEquipmentModal(typeName){
+  return new Promise((resolve)=>{
+    const others = customers.filter(x =>
+      x.active !== false
+      && x.id !== editingId
+      && (x.equipmentTypeOptions || []).includes(typeName));
+
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:440px;">
+        <h3 style="font-size:15px;margin:0 0 6px;">Delete ${typeName}?</h3>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">
+          ${others.length
+            ? others.length + ' other customer' + (others.length === 1 ? ' has' : 's have')
+              + ' this equipment. Photos and notes on it go too, and this cannot be undone.'
+            : 'No other customer has this equipment. Photos and notes on it go too, and this cannot be undone.'}
+        </p>
+        <div class="btn-row" style="flex-direction:column;gap:8px;">
+          <button class="btn btn-primary" id="delEqOne" style="width:100%;">Just this customer</button>
+          ${others.length
+            ? '<button class="btn btn-ghost" id="delEqAll" style="width:100%;color:var(--rust);border-color:#EFC9BC;">Delete from all '
+              + (others.length + 1) + ' customers</button>'
+            : ''}
+          <button class="btn btn-ghost" id="delEqCancel" style="width:100%;">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const finish = (choice)=>{ document.body.removeChild(overlay); resolve(choice); };
+    overlay.querySelector('#delEqOne').addEventListener('click', ()=> finish('one'));
+    const allBtn = overlay.querySelector('#delEqAll');
+    if(allBtn) allBtn.addEventListener('click', ()=> finish('all'));
+    overlay.querySelector('#delEqCancel').addEventListener('click', ()=> finish(null));
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) finish(null); });
+  });
+}
+
+// Takes an equipment type off every other customer that has it
+function removeEquipmentTypeFromOthers(typeName){
+  let removed = 0;
+  customers.forEach(cust=>{
+    if(cust.id === editingId) return;
+    // Same as above — an unedited customer is showing the defaults
+    const list = Array.isArray(cust.equipmentTypeOptions)
+      ? cust.equipmentTypeOptions
+      : [...DEFAULT_EQUIPMENT_TYPES];
+    if(!list.includes(typeName)) return;
+    cust.equipmentTypeOptions = list.filter(t => t !== typeName);
+    if(Array.isArray(cust.equipment)){
+      cust.equipment = cust.equipment.filter(i => i.type !== typeName);
+    }
+    removed++;
+  });
+  if(removed) saveCustomers();
+  return removed;
+}
+
+
+document.getElementById('btnResetEquipment').addEventListener('click', async ()=>{
+  if(!editingId){ showToast('Open a customer first'); return; }
+
+  const ok = await confirmDialog(
+    'Put this customer\u2019s equipment back to the standard list \u2014 '
+    + DEFAULT_EQUIPMENT_TYPES.join(', ') + '? '
+    + 'Anything added beyond that is removed, along with its photos and notes. '
+    + 'This cannot be undone.',
+    'Reset to default');
+  if(!ok) return;
+
+  currentEquipmentTypeOptions = [...DEFAULT_EQUIPMENT_TYPES];
+  // Keep the records for the default items so their photos and notes survive
+  currentEquipmentItems = currentEquipmentItems.filter(i =>
+    DEFAULT_EQUIPMENT_TYPES.includes(i.type));
+
+  persistCurrentEquipmentTypeOptions();
+  persistCurrentEquipmentItems();
+  renderEquipmentTypeList();
+  showToast('Equipment reset to default');
+});
 
 function renderEquipmentTypeList(){
   const container = document.getElementById('icEquipmentList');
@@ -8382,23 +8502,22 @@ function renderEquipmentTypeList(){
     deleteBtn.style.marginLeft = 'auto';
     deleteBtn.addEventListener('click', async (e)=>{
       e.stopPropagation();
-      const confirmed = await confirmDialog('Are you sure you want to delete this equipment? It cannot be undone.');
-      if(!confirmed) return;
+      const choice = await openDeleteEquipmentModal(type);
+      if(!choice) return;
+
       currentEquipmentTypeOptions = currentEquipmentTypeOptions.filter(t => t !== type);
       currentEquipmentItems = currentEquipmentItems.filter(i => i.type !== type);
       persistCurrentEquipmentTypeOptions();
       persistCurrentEquipmentItems();
-      renderEquipmentTypeList();
-      showToast(type + ' deleted');
-    });
 
-    const label = document.createElement('div');
-    label.style.fontSize = '16px';
-    label.style.fontWeight = '600';
-    label.style.flexShrink = '0';
-    label.style.width = '150px';
-    label.textContent = type;
-    row.appendChild(label);
+      let alsoRemoved = 0;
+      if(choice === 'all') alsoRemoved = removeEquipmentTypeFromOthers(type);
+
+      renderEquipmentTypeList();
+      showToast(alsoRemoved
+        ? type + ' deleted from ' + (alsoRemoved + 1) + ' customers'
+        : type + ' deleted');
+    });
 
     // Only the original carries the plus. A numbered copy like "Filter 2"
     // doesn't, so there's one place to add from rather than several.
@@ -8441,6 +8560,14 @@ function renderEquipmentTypeList(){
       row.appendChild(spacer);
     }
 
+    const label = document.createElement('div');
+    label.style.fontSize = '16px';
+    label.style.fontWeight = '600';
+    label.style.flexShrink = '0';
+    label.style.width = '150px';
+    label.textContent = type;
+    row.appendChild(label);
+
     const middleArea = document.createElement('div');
     middleArea.style.flex = '1';
     middleArea.style.display = 'flex';
@@ -8458,26 +8585,28 @@ function renderEquipmentTypeList(){
     } else if(baseEquipmentType(type) === 'Heater'){
       renderChoicePicker(middleArea, type, ['Solar', 'Heat Pump', 'Gas', 'Other'], 'heaterChoice', 'heaterCustom', ()=> renderEquipmentTypeList());
     } else {
-      // An equipment type the user created — their own buttons, shared by
-      // every customer who has this equipment
-      const own = customEquipmentOptions(type);
-      if(own.length){
-        renderChoicePicker(middleArea, type, own.concat(['Other']),
-          'customChoice', 'customChoiceOther', ()=> renderEquipmentTypeList());
-      }
-
-      const setupBtn = document.createElement('button');
-      setupBtn.type = 'button';
-      setupBtn.className = 'btn btn-ghost';
-      setupBtn.style.cssText = 'width:auto;flex:0 0 auto;padding:5px 10px;font-size:11.5px;margin-left:6px;';
-      setupBtn.textContent = own.length ? 'Edit buttons' : '+ Quick buttons';
-      setupBtn.title = 'Set the choices shown for ' + baseEquipmentType(type);
-      setupBtn.addEventListener('click', (e)=>{
-        e.stopPropagation();
-        openEquipmentOptionsModal(type, ()=> renderEquipmentTypeList());
-      });
-      middleArea.appendChild(setupBtn);
+      // An equipment type the user created — its buttons come from the saved
+      // list, which renderChoicePicker merges in
+      renderChoicePicker(middleArea, type, ['Other'],
+        'customChoice', 'customChoiceOther', ()=> renderEquipmentTypeList());
     }
+
+    // Every type, built-in or not, can have buttons added. They are stored
+    // against the type name, so adding one here adds it for every customer
+    // who has that same equipment.
+    const setupBtn = document.createElement('button');
+    setupBtn.type = 'button';
+    setupBtn.className = 'btn btn-ghost';
+    setupBtn.style.cssText = 'width:auto;flex:0 0 auto;padding:5px 10px;font-size:11.5px;margin-left:6px;';
+    const extraCount = customEquipmentOptions(type).length;
+    setupBtn.textContent = extraCount ? 'Edit buttons' : '+ Quick buttons';
+    setupBtn.title = 'Add choices for ' + baseEquipmentType(type)
+      + ' \u2014 they appear for every customer with this equipment';
+    setupBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openEquipmentOptionsModal(type, ()=> renderEquipmentTypeList());
+    });
+    middleArea.appendChild(setupBtn);
 
     const existingItem = currentEquipmentItems.find(i => i.type === type);
 
@@ -8687,8 +8816,14 @@ function addEquipmentTypeToCustomers(typeName, ids){
   ids.forEach(id=>{
     const cust = customers.find(x => x.id === id);
     if(!cust) return;
+
+    // A customer who has never had their equipment edited has no saved list —
+    // they show the defaults instead. Starting from an empty array would
+    // replace that implicit default and wipe their standard equipment.
     const list = Array.isArray(cust.equipmentTypeOptions)
-      ? cust.equipmentTypeOptions.slice() : [];
+      ? cust.equipmentTypeOptions.slice()
+      : [...DEFAULT_EQUIPMENT_TYPES];
+
     if(list.includes(typeName)) return;
     list.push(typeName);
     cust.equipmentTypeOptions = list;
@@ -9428,9 +9563,13 @@ function viewCustomer(c){
   profileCustomerId = c.id;
   editingId = c.id;
 
-  document.querySelectorAll('#profileTabControl .history-type-btn').forEach(b=>{
-    b.classList.toggle('active', b.dataset.tab === 'profile');
-  });
+  // Opening a customer from the list starts on Profile. Stepping between
+  // customers with Next/Previous keeps whichever tab is already open.
+  if(!keepProfileTab){
+    document.querySelectorAll('#profileTabControl .history-type-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.tab === 'profile');
+    });
+  }
 
   // Name — click to edit
   const nameEl = document.getElementById('profileName');
