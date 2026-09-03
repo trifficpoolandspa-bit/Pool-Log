@@ -1196,6 +1196,7 @@ input::placeholder{color:#A9BCB9;}
 
 <script>
 const STORAGE_PREFIX = 'poollog:';
+let keepProfileTab = false;   // true while stepping between customers
 
 // ---------- Leading zero on decimals ----------
 // Typing ".5" is quicker than "0.5", so accept it and tidy it up. One
@@ -8076,9 +8077,11 @@ function showCustomerForm(){
   const profileTabsCard = document.getElementById('profileTabsCard');
   document.getElementById('allCustomersCard').style.display = 'none';
   isEditingCustomerForm = true;
-  document.querySelectorAll('#profileTabControl .history-type-btn').forEach(b=>{
-    b.classList.toggle('active', b.dataset.tab === 'profile');
-  });
+  if(!keepProfileTab){
+    document.querySelectorAll('#profileTabControl .history-type-btn').forEach(b=>{
+      b.classList.toggle('active', b.dataset.tab === 'profile');
+    });
+  }
   profileTabsCard.style.display = 'block';
   applyProfileTab();
   document.getElementById('customerList').style.display = 'none';
@@ -8330,6 +8333,13 @@ function renderEquipmentTypeList(){
         showToast(newName + ' added');
       });
       row.appendChild(addBtn);
+    } else {
+      // A copy has no plus, so hold the same width to keep every row's
+      // controls lined up down the column
+      const spacer = document.createElement('span');
+      spacer.style.cssText = 'flex:0 0 26px;width:26px;';
+      spacer.setAttribute('aria-hidden', 'true');
+      row.appendChild(spacer);
     }
 
     const middleArea = document.createElement('div');
@@ -9258,7 +9268,13 @@ function stepToCustomer(delta){
   if(i === -1) return;
   const target = list[i + delta];
   if(!target) return;
-  viewCustomer(target);
+
+  // Stay on whichever tab is open — stepping through Equipment should keep
+  // showing Equipment rather than dropping back to Profile each time
+  keepProfileTab = true;
+  try{ viewCustomer(target); }
+  finally{ keepProfileTab = false; }
+
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
