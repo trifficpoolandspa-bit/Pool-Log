@@ -7045,25 +7045,33 @@ function discardVisitInProgress(){
 // throttled the pushes silently failed, the stack ran dry, and Back closed the
 // app. Tracking whether a guard is already armed keeps this to a handful of
 // calls per session.
+// A buffer of guard entries rather than a single one. With only one, pressing
+// Back twice quickly meant the second press arrived before the replacement had
+// landed and the app closed. Six gives ample slack for rapid presses while
+// staying far below the browser's pushState throttle.
+const BACK_GUARD_DEPTH = 6;
+let backGuardCount = 0;
+
 function armBackButton(){
-  if(backGuardArmed) return;
-  try{
-    history.pushState({poollog:true}, '');
-    backGuardArmed = true;
-  }catch(e){
-    // Throttled or blocked — try again shortly rather than giving up
-    setTimeout(()=>{
-      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
-    }, 400);
+  while(backGuardCount < BACK_GUARD_DEPTH){
+    try{
+      history.pushState({poollog:true}, '');
+      backGuardCount++;
+    }catch(e){
+      // Throttled — top up shortly rather than leaving the stack short
+      setTimeout(armBackButton, 400);
+      break;
+    }
   }
+  backGuardArmed = backGuardCount > 0;
 }
 
 let backPromptOpen = false;
 
 window.addEventListener('popstate', async ()=>{
-  // The guard entry was just consumed by this Back press, so put one back
-  // immediately — before anything else can fail and leave the stack empty.
-  backGuardArmed = false;
+  // One guard entry was just consumed by this Back press. Top the buffer back
+  // up immediately, before anything else can fail and leave it empty.
+  backGuardCount = Math.max(0, backGuardCount - 1);
   armBackButton();
 
   if(currentViewName === 'visit'){

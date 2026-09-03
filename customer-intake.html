@@ -2332,15 +2332,27 @@ function saveActiveConfig(){
   }
 }
 
+
+// A genuinely independent copy of a chemical or dosage. A spread only copies
+// the top level, so doseRules and customPhotos stayed SHARED between bodies of
+// water — editing a rule on the spa silently changed the pool's too.
+function cloneListItem(item){
+  return JSON.parse(JSON.stringify(item));
+}
+
+function cloneList(list){
+  return (list || []).map(cloneListItem);
+}
+
 function saveChemConfig(){
   // Each list tracks the pool only if its own checkbox is on
   if(selectedChemConfigType === 'pool'){
     ['spa','fountain'].forEach(t=>{
       if(appSettings.applyPoolChemicalsToAll){
-        chemConfig[t].chemicals = chemConfig.pool.chemicals.map(i => ({...i, buttons: (i.buttons || []).slice()}));
+        chemConfig[t].chemicals = cloneList(chemConfig.pool.chemicals);
       }
       if(appSettings.applyPoolDosagesToAll){
-        chemConfig[t].dosages = chemConfig.pool.dosages.map(i => ({...i, buttons: (i.buttons || []).slice()}));
+        chemConfig[t].dosages = cloneList(chemConfig.pool.dosages);
       }
     });
   }
@@ -5433,7 +5445,7 @@ function makeConfigRow(item, listKey){
 // Copies one of the pool's lists onto spa and fountain
 function applyPoolListToAllBodies(listKey){
   ['spa','fountain'].forEach(t=>{
-    chemConfig[t][listKey] = chemConfig.pool[listKey].map(i => ({...i, buttons: (i.buttons || []).slice()}));
+    chemConfig[t][listKey] = cloneList(chemConfig.pool[listKey]);
   });
   saveActiveConfig();
 }
@@ -5719,8 +5731,8 @@ function activeConfigLists(){
       const base = customBodyKey === 'pool' ? 'pool'
         : (customBodyKey === 'spa' ? 'spa' : 'fountain');
       customWorking = {
-        chemicals: chemConfig[base].chemicals.map(i => ({...i, buttons:(i.buttons||[]).slice()})),
-        dosages: chemConfig[base].dosages.map(i => ({...i, buttons:(i.buttons||[]).slice()}))
+        chemicals: cloneList(chemConfig[base].chemicals),
+        dosages: cloneList(chemConfig[base].dosages)
       };
       customWorkingFor = slot;
     }
