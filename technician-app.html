@@ -994,8 +994,8 @@ function noteRuleProblem(msg){
 function isSaltPool(){
   const cust = customers.find(x => x.id === currentVisitCustomerId);
   if(!cust) return false;
-  const chlor = (cust.equipment || []).find(i => i.type === 'Chlorination');
-  return !!(chlor && chlor.chlorinationChoice === 'Salt Cell');
+  return (cust.equipment || []).some(i =>
+    baseEquipmentType(i.type) === 'Chlorination' && i.chlorinationChoice === 'Salt Cell');
 }
 
 // Which readings a salt pool should not trigger dosing from
@@ -3665,6 +3665,12 @@ function detectFilterCleanVisit(customerId){
     .some(s => s.status === 'scheduled' && s.customerId === customerId && s.date === iso);
 }
 
+
+// "Filter 2" is still a filter — a customer may have more than one of a kind
+function baseEquipmentType(type){
+  return String(type || '').replace(/\s+\d+$/, '').trim();
+}
+
 function computeNeededSections(customer){
   // Filter cleans are a single simple pass — no chemistry
   if(isFilterCleanVisit) return ['pool'];
@@ -3706,8 +3712,8 @@ async function renderPoolServiceChecks(customer){
   box.innerHTML = '';
 
   const equipment = (customer && customer.equipment) || [];
-  const filterItem = equipment.find(i => i.type === 'Filter');
-  const chlorItem = equipment.find(i => i.type === 'Chlorination');
+  const filterItem = equipment.find(i => baseEquipmentType(i.type) === 'Filter');
+  const chlorItem = equipment.find(i => baseEquipmentType(i.type) === 'Chlorination');
 
   const checks = [];
   if(filterItem && (filterItem.filterTypeChoice === 'Sand' || filterItem.filterTypeChoice === 'DE')){
