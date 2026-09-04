@@ -960,7 +960,9 @@ input::placeholder{color:#A9BCB9;}
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
         <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear service report photos</button>
-      </div>
+      
+      <div id="storageBreakdown" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;"></div>
+    </div>
       <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Removes photos from all but the four most recent visits per body of water. Readings, notes and service records are kept in full — only the images go.</p>
     </div>
 
@@ -1093,6 +1095,16 @@ input::placeholder{color:#A9BCB9;}
         </label>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, a technician cannot skip a service without attaching a photo showing why &mdash; a locked gate, a dog in the yard, an empty pool. Turning this on also requires a reason, since the two are asked for on the same screen.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require readings before moving on</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireReadings">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, every chemical reading must be filled in before a technician can move past the readings step. Dosages are not affected &mdash; those are only required where a dosage has its own tick on Readings and Dosages.</p>
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -2390,7 +2402,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -2427,6 +2439,14 @@ document.getElementById('settingRequireSkipReason').addEventListener('change', (
   saveSettings();
   showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
 });
+document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
+  appSettings.requireReadings = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireReadings
+    ? 'Readings are now required before moving on'
+    : 'Readings are no longer required');
+});
+
 document.getElementById('settingRequireSkipPhoto').addEventListener('change', (e)=>{
   appSettings.requireSkipPhoto = e.target.checked;
   saveSettings();
@@ -7645,6 +7665,69 @@ function renderStorageMeter(){
   text.textContent = mb + ' MB used — about ' + pct + '% of the usual limit'
     + (pct > 85 ? '. Download a backup and clear old photos soon.' : '');
   text.style.color = pct > 85 ? 'var(--rust)' : 'var(--muted)';
+
+  renderStorageBreakdown();
+}
+
+// What is actually taking the space. Without this the meter says a number but
+// gives no clue which data to deal with.
+function renderStorageBreakdown(){
+  const box = document.getElementById('storageBreakdown');
+  if(!box) return;
+
+  const groups = {};
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX) !== 0) continue;
+      const key = full.slice(STORAGE_PREFIX.length);
+      const size = (localStorage.getItem(full) || '').length;
+
+      let label;
+      if(key === 'customers') label = 'Customers (incl. equipment photos)';
+      else if(key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+              || key.indexOf('fountainReadings:') === 0) label = 'Service reports and their photos';
+      else if(key.indexOf('skipped:') === 0) label = 'Skipped visits';
+      else if(key === 'chemConfig' || key === 'customChemConfig') label = 'Readings and dosages setup';
+      else label = 'Everything else';
+
+      groups[label] = (groups[label] || 0) + size;
+    }
+  }catch(e){ return; }
+
+  const rows = Object.keys(groups)
+    .map(k => ({label: k, bytes: groups[k]}))
+    .sort((a,b)=> b.bytes - a.bytes);
+
+  box.innerHTML = '';
+  rows.forEach(r=>{
+    const line = document.createElement('div');
+    line.style.cssText = 'display:flex;justify-content:space-between;gap:10px;'
+      + 'font-size:11.5px;color:var(--muted);padding:2px 0;';
+    const name = document.createElement('span');
+    name.textContent = r.label;
+    const amt = document.createElement('span');
+    amt.style.cssText = "font-family:'JetBrains Mono',monospace;flex-shrink:0;";
+    amt.textContent = (r.bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    line.appendChild(name);
+    line.appendChild(amt);
+    box.appendChild(line);
+  });
+
+  // Whether equipment photos are still held in the old storage
+  let inline = 0;
+  (customers || []).forEach(cust=>{
+    (cust.equipment || []).forEach(item=>{
+      (item.photos || []).forEach(p=>{ if(p && p.dataUrl) inline++; });
+    });
+  });
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:11.5px;margin-top:8px;'
+    + 'color:' + (inline ? 'var(--rust)' : 'var(--muted)') + ';';
+  note.textContent = inline
+    ? inline + ' equipment photo' + (inline === 1 ? '' : 's') + ' still in browser storage — reload to move them'
+    : 'Equipment photos are in the larger database';
+  box.appendChild(note);
 }
 
 function collectBackup(){
@@ -10772,6 +10855,7 @@ document.getElementById('settingBeforePhotos').checked = appSettings.showBeforeP
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
 document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
 document.getElementById('settingRequireSkipPhoto').checked = appSettings.requireSkipPhoto === true;
+document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
 

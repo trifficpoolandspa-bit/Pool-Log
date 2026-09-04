@@ -1569,6 +1569,9 @@ function switchView(view, opts){
     t.classList.toggle('active', t.dataset.view === view);
   });
   armBackButton();
+
+// Move any visit photos still held in localStorage across to the database
+setTimeout(()=>{ migrateVisitPhotos(); }, 1200);
   if(view !== 'visit'){
     captureVisitDraft();
     hideStepBar();
@@ -1750,6 +1753,104 @@ async function saveCustomers(){
   }
 }
 
+
+// ---------- Photo storage ----------
+// Visit photos are far too large for localStorage once a route builds up, so
+// the image data lives in IndexedDB and the reading keeps a short reference.
+const PHOTO_DB = 'poollogPhotos';
+const PHOTO_STORE = 'photos';
+let photoDbPromise = null;
+
+function openPhotoDb(){
+  if(photoDbPromise) return photoDbPromise;
+  photoDbPromise = new Promise((resolve, reject)=>{
+    if(!window.indexedDB){ reject(new Error('no indexeddb')); return; }
+    let req;
+    try{ req = indexedDB.open(PHOTO_DB, 1); }
+    catch(e){ reject(e); return; }
+    req.onupgradeneeded = ()=>{
+      const db = req.result;
+      if(!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE);
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error || new Error('indexeddb failed'));
+  });
+  return photoDbPromise;
+}
+
+function photoDbDo(mode, fn){
+  return openPhotoDb().then(db => new Promise((resolve, reject)=>{
+    const tx = db.transaction(PHOTO_STORE, mode);
+    const store = tx.objectStore(PHOTO_STORE);
+    let req;
+    try{ req = fn(store); }
+    catch(e){ reject(e); return; }
+    tx.oncomplete = ()=> resolve(req && 'result' in req ? req.result : undefined);
+    tx.onerror = ()=> reject(tx.error || new Error('transaction failed'));
+  }));
+}
+
+async function savePhotoData(id, dataUrl){
+  await photoDbDo('readwrite', s => s.put(dataUrl, id));
+  return id;
+}
+
+async function loadPhotoData(id){
+  if(!id) return null;
+  try{
+    const v = await photoDbDo('readonly', s => s.get(id));
+    return v === undefined ? null : v;
+  }catch(e){ return null; }
+}
+
+async function deletePhotoData(id){
+  if(!id) return;
+  try{ await photoDbDo('readwrite', s => s.delete(id)); }catch(e){}
+}
+
+// A photo field holds either the image itself (older readings) or a reference
+// like "idb:abc123". Everything reads through here so both keep working.
+const PHOTO_REF = 'idb:';
+
+function isPhotoRef(v){
+  return typeof v === 'string' && v.indexOf(PHOTO_REF) === 0;
+}
+
+async function resolvePhoto(v){
+  if(!v) return null;
+  if(isPhotoRef(v)) return await loadPhotoData(v.slice(PHOTO_REF.length));
+  return v;                                  // still held inline
+}
+
+// Writes an image to the database and hands back the reference to store
+async function storePhoto(dataUrl, hint){
+  if(!dataUrl) return null;
+  if(isPhotoRef(dataUrl)) return dataUrl;    // already stored
+  const id = (hint || 'photo') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  try{
+    await savePhotoData(id, dataUrl);
+    return PHOTO_REF + id;
+  }catch(e){
+    return dataUrl;                          // database unavailable — keep it inline
+  }
+}
+
+// Moves every photo on a reading into the database, returning the reading
+async function storeReadingPhotos(reading, hint){
+  if(!reading) return reading;
+  for(const field of ['photo','beforePhoto','gatePhoto']){
+    if(reading[field]) reading[field] = await storePhoto(reading[field], hint + '_' + field);
+  }
+  if(reading.customPhotos){
+    for(const id of Object.keys(reading.customPhotos)){
+      if(reading.customPhotos[id]){
+        reading.customPhotos[id] = await storePhoto(reading.customPhotos[id], hint + '_' + id);
+      }
+    }
+  }
+  return reading;
+}
+
 function readingsStorageKey(customerId, type){
   return (type === 'spa' ? 'spaReadings:' : 'readings:') + customerId;
 }
@@ -1766,7 +1867,57 @@ async function loadReadings(customerId, type='pool'){
   return list;
 }
 
+
+// Moves visit photos already held in localStorage into the database. Runs once,
+// in the background, so a full route's history doesn't delay the app.
+async function migrateVisitPhotos(){
+  if(lsGet('visitPhotosMigrated')) return;
+  let moved = 0;
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX) !== 0) continue;
+      const key = full.slice(STORAGE_PREFIX.length);
+      if(!(key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+           || key.indexOf('fountainReadings:') === 0)) continue;
+
+      const list = lsGet(key);
+      if(!Array.isArray(list) || !list.length) continue;
+
+      let changed = false;
+      for(const r of list){
+        for(const field of ['photo','beforePhoto','gatePhoto']){
+          if(r[field] && !isPhotoRef(r[field])){
+            r[field] = await storePhoto(r[field], key + '_' + field);
+            moved++; changed = true;
+          }
+        }
+        if(r.customPhotos){
+          for(const id of Object.keys(r.customPhotos)){
+            if(r.customPhotos[id] && !isPhotoRef(r.customPhotos[id])){
+              r.customPhotos[id] = await storePhoto(r.customPhotos[id], key + '_' + id);
+              moved++; changed = true;
+            }
+          }
+        }
+      }
+      if(changed) lsSet(key, list);
+    }
+    readingsCache = {};                      // cached copies now hold references
+    lsSet('visitPhotosMigrated', true);
+    if(moved) showToast('Moved ' + moved + ' report photo' + (moved === 1 ? '' : 's') + ' to larger storage');
+  }catch(e){
+    console.warn('Visit photo migration stopped early:', e);
+  }
+}
+
 async function saveReadings(customerId, list, type='pool'){
+  // Images go to the database first; only short references are written here,
+  // which is what keeps a route's worth of photos under the storage limit.
+  for(const r of (list || [])){
+    await storeReadingPhotos(r, type + '_' + customerId);
+  }
+
   const cacheKey = readingsCacheKey(customerId, type);
   readingsCache[cacheKey] = list;
   const ok = lsSet(readingsStorageKey(customerId, type), list);
@@ -1807,6 +1958,9 @@ async function loadFountainReadings(customerId, fountainId){
 }
 
 async function saveFountainReadings(customerId, fountainId, list){
+  for(const r of (list || [])){
+    await storeReadingPhotos(r, 'fountain_' + customerId + '_' + fountainId);
+  }
   const cacheKey = fountainReadingsCacheKey(customerId, fountainId);
   readingsCache[cacheKey] = list;
   const ok = lsSet(fountainReadingsStorageKey(customerId, fountainId), list);
@@ -4561,15 +4715,18 @@ function openEquipmentPhotoModal(item){
       card.style.background = '#fff';
 
       const img = document.createElement('img');
-      img.src = photo.dataUrl;
+      // May be inline or a reference — resolve either
+      (photo.dataUrl ? Promise.resolve(photo.dataUrl) : loadPhotoData(photo.id))
+        .then(src => { if(src) img.src = src; });
       img.style.width = '100%';
       img.style.height = '140px';
       img.style.objectFit = 'cover';
       img.style.display = 'block';
       img.style.cursor = 'zoom-in';
       img.title = 'Tap to view full size';
-      img.addEventListener('click', ()=>{
-        openHistoryPhotoModal(photo.dataUrl, item.type + (item.photos.length > 1 ? ' — photo ' + (i + 1) : ''));
+      img.addEventListener('click', async ()=>{
+        const src = photo.dataUrl || await loadPhotoData(photo.id);
+        if(src) openHistoryPhotoModal(src, item.type + (item.photos.length > 1 ? ' — photo ' + (i + 1) : ''));
       });
 
       const captionInput = document.createElement('input');
@@ -4813,13 +4970,16 @@ function missingReadingFields(){
   const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
                     : chemConfig[type];
 
+  const requireAll = appSettings.requireReadings === true;
   const items = onReadings ? (lists.chemicals || []) : (lists.dosages || []);
   const kind = onReadings ? 'chem' : 'dose';
 
   const out = [];
   items.forEach(item=>{
-    // Each reading or dosage carries its own required tick
-    if(item.required !== true) return;
+    // The blanket setting covers READINGS only. Dosages are required solely
+    // where a dosage carries its own tick.
+    const needed = item.required === true || (requireAll && onReadings);
+    if(!needed) return;
     const el = document.getElementById(fieldId(type, kind, item.key));
     if(el && String(el.value).trim() === ''){
       out.push({label: item.label || item.key, el});
@@ -6084,6 +6244,21 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   }
 
   if(sections.length === 0) return;
+
+  // Pull the images back out of the database for display. Only the photos on
+  // this one report are loaded, not the whole library.
+  for(const s of sections){
+    for(const field of ['photo','beforePhoto','gatePhoto']){
+      if(s.reading[field]) s.reading[field] = await resolvePhoto(s.reading[field]);
+    }
+    if(s.reading.customPhotos){
+      for(const id of Object.keys(s.reading.customPhotos)){
+        if(s.reading.customPhotos[id]){
+          s.reading.customPhotos[id] = await resolvePhoto(s.reading.customPhotos[id]);
+        }
+      }
+    }
+  }
 
   const labelParts = sections.map(s => s.label);
   const reportLabel = labelParts.length > 1
