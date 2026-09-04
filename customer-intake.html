@@ -1096,37 +1096,24 @@ input::placeholder{color:#A9BCB9;}
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require readings before moving on</h2>
+        <h2 style="margin:0;">Dosage suggestion buttons</h2>
         <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireReadings">
+          <input type="checkbox" id="settingShowDosageSuggestions">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must fill in every chemical reading before they can leave the readings step of a visit. Filter clean visits are exempt.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each dosage field shows quick buttons for its common amounts so a technician can tap instead of typing.</p>
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Allow technicians to rearrange routes</h2>
         <label class="toggle-switch">
-          <input type="checkbox" id="settingRouteReorder" checked>
+          <input type="checkbox" id="settingRouteReorder">
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can drag customers into a different order on their Today list in the field apps. Turning this off locks the route order for everyone.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can drag customers into a different order on their route for the day.</p>
     </div>
-    
-    
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Dosage suggestion buttons</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingShowDosageSuggestions" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, dosage fields in the field app show quick-tap buttons with suggested amounts, instead of just a blank number field.</p>
-    </div>
-  </div>
 
   <div class="view" id="view-productsservices">
     <div class="card">
@@ -2403,7 +2390,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -2449,11 +2436,6 @@ document.getElementById('settingRequireSkipPhoto').addEventListener('change', (e
 });
 
 
-document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
-  appSettings.requireReadings = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireReadings ? 'Readings are now required in the field apps' : 'Readings are no longer required');
-});
 
 document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
   appSettings.allowRouteReorder = e.target.checked;
@@ -10788,7 +10770,6 @@ renderMicSideButtons();
 document.getElementById('settingShowDosageSuggestions').checked = appSettings.showDosageSuggestions;
 document.getElementById('settingBeforePhotos').checked = appSettings.showBeforePhotos !== false;
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
-document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
 document.getElementById('settingRequireSkipPhoto').checked = appSettings.requireSkipPhoto === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;

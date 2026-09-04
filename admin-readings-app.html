@@ -1351,8 +1351,21 @@ function isSaltPool(){
     baseEquipmentType(i.type) === 'Chlorination' && i.chlorinationChoice === 'Salt Cell');
 }
 
-// Which readings a salt pool should not trigger dosing from
-const SALT_EXEMPT_KEYS = ['chlorine'];
+// A salt pool makes its own chlorine, so a rule that adds a chlorine PRODUCT
+// doesn't apply. Judged by the dosage being added, not the reading driving it —
+// a salt pool is still shocked, and that is usually driven off chlorine.
+function isChlorineProduct(doseKey, lists){
+  const key = String(doseKey || '').toLowerCase();
+  const item = ((lists && lists.dosages) || []).find(d => d.key === doseKey);
+  const label = String((item && item.label) || '').toLowerCase();
+  const text = key + ' ' + label;
+
+  // Shock is added to salt pools as normal, so it is never exempt
+  if(text.indexOf('shock') !== -1) return false;
+
+  // Whole words only — "stabiliser" contains "tab" but is not a chlorine product
+  return /\b(tab|tabs|chlorine|bleach|hypochlorite|trichlor|dichlor|cal-hypo)\b/.test(text);
+}
 
 function applyDoseRules(type){
   const cid = currentVisitCustomerId;
@@ -1371,9 +1384,6 @@ function applyDoseRules(type){
   const saltPool = isSaltPool();
 
   (lists.chemicals || []).forEach(chem=>{
-    // Salt pools generate their own chlorine, so skip chlorine-driven rules
-    if(saltPool && SALT_EXEMPT_KEYS.indexOf(chem.key) !== -1) return;
-
     const rules = resolveDoseRules(chem, type);
     if(!rules.length) return;
 
@@ -1386,6 +1396,9 @@ function applyDoseRules(type){
         noteRuleProblem((chem.label || chem.key) + ': a rule has no dosage chosen');
         return;
       }
+      // A salt pool makes its own chlorine, so skip rules that add a chlorine
+      // product. Shock and everything else still apply.
+      if(saltPool && isChlorineProduct(rule.doseKey, lists)) return;
       if(rule.value === '' || rule.value === undefined || rule.value === null){
         noteRuleProblem((chem.label || chem.key) + ': a rule has no value set');
         return;
@@ -4981,6 +4994,8 @@ function renderHomeList(){
 
   const movedInCustomers = customers.filter(c =>
     movedHere.has(c.id) && c.active !== false &&
+    // Once serviced they drop off, exactly as a customer whose regular day it is
+    (weekOffset !== 0 || c.lastServicedDate !== today) &&
     !baseCustomers.some(b => b.id === c.id));
 
   const todaysCustomers = orderCustomersForDay(selectedHomeDay,
@@ -6032,11 +6047,6 @@ document.getElementById('settingRequireSkipReason').addEventListener('change', (
   showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
 });
 
-document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
-  appSettings.requireReadings = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireReadings ? 'Readings are now required' : 'Readings are no longer required');
-});
 
 document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
   appSettings.allowRouteReorder = e.target.checked;
@@ -6466,15 +6476,13 @@ function missingReadingFields(){
   const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
                     : chemConfig[type];
 
-  const requireAll = appSettings.requireReadings === true;
   const items = onReadings ? (lists.chemicals || []) : (lists.dosages || []);
   const kind = onReadings ? 'chem' : 'dose';
 
   const out = [];
   items.forEach(item=>{
-    // Blanket setting only covers readings; dosages rely on their own tick
-    const needed = item.required === true || (requireAll && onReadings);
-    if(!needed) return;
+    // Each reading or dosage carries its own required tick
+    if(item.required !== true) return;
     const el = document.getElementById(fieldId(type, kind, item.key));
     if(el && String(el.value).trim() === ''){
       out.push({label: item.label || item.key, el});
@@ -7285,16 +7293,29 @@ function discardVisitInProgress(){
 // drifted, the stack ran dry and the browser left the page. Pushing on every
 // popstate means there is always exactly one entry waiting, whatever happened
 // before, so Back can never close the app.
+// A cushion of history entries, not one. Two fast Back presses are processed
+// by the browser before our handler can push a replacement, so a single entry
+// is consumed and the page is left. The cushion absorbs a burst; each Back
+// press then tops it back up.
+const BACK_CUSHION = 8;
+let backEntries = 0;
+
 function armBackButton(){
-  try{
-    history.pushState({poollog:true}, '');
-    backGuardArmed = true;
-  }catch(e){
-    // Refused — try again shortly rather than leaving nothing behind
-    setTimeout(()=>{
-      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
-    }, 200);
+  let pushed = 0;
+  while(backEntries < BACK_CUSHION){
+    try{
+      history.pushState({poollog:true}, '');
+      backEntries++;
+      pushed++;
+    }catch(e){
+      // Refused, most likely throttled — top up again shortly
+      setTimeout(armBackButton, 250);
+      break;
+    }
+    // Don't push the whole cushion in one go after a single Back press
+    if(pushed >= 3) break;
   }
+  backGuardArmed = backEntries > 0;
 }
 
 // Where the technician has actually been, so Back retraces their steps rather
@@ -7340,8 +7361,9 @@ window.addEventListener('focus', ()=> armBackButton());
 window.addEventListener('pageshow', ()=> armBackButton());
 
 window.addEventListener('popstate', async ()=>{
-  // The entry this Back press consumed is replaced immediately, before any
-  // decision is made, so the stack can never be left empty.
+  // One entry was just consumed. Account for it and top the cushion back up
+  // before anything else runs, so a burst of presses can't empty it.
+  backEntries = Math.max(0, backEntries - 1);
   armBackButton();
 
   if(currentViewName === 'visit'){
@@ -8186,8 +8208,7 @@ async function init(){
   document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
   document.getElementById('settingTechniciansTab').checked = appSettings.showTechniciansTab !== false;
   document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
-  document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
-  document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
+    document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
   document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
   document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
   document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
