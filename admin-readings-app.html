@@ -3407,11 +3407,15 @@ document.getElementById('icEquipmentPhotoInput').addEventListener('change', asyn
   if(!item){ e.target.value = ''; return; }
   try{
     const dataUrl = await resizeImageFile(file, 1200, 0.7);
-    item.photos.push({
-      id: 'eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-      dataUrl,
-      caption: ''
-    });
+    // Straight to the database — only a reference is kept on the customer
+    const photoId = 'eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    try{
+      await savePhotoData(photoId, dataUrl);
+      item.photos.push({id: photoId, stored: true, caption: ''});
+    }catch(err){
+      // Database unavailable — keep it inline so the photo isn't lost
+      item.photos.push({id: photoId, dataUrl, caption: ''});
+    }
     persistCurrentEquipmentItems();
     if(typeof window.__renderEquipmentPhotoModalBody === 'function'){
       window.__renderEquipmentPhotoModalBody();
