@@ -960,6 +960,7 @@ input::placeholder{color:#A9BCB9;}
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
         <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear service report photos</button>
+        <button class="btn btn-secondary" id="btnMovePhotos" style="width:auto;">Move photos to database</button>
       
       <div id="storageBreakdown" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;"></div>
     </div>
@@ -2495,7 +2496,11 @@ document.querySelectorAll('#micSideRow [data-micside]').forEach(btn=>{
 
 // Move any equipment photos still held in localStorage across to the database.
 // Runs once, in the background, so a large library doesn't delay the page.
-setTimeout(()=>{ migrateEquipmentPhotos(); }, 800);
+setTimeout(async ()=>{
+  const r = await migrateEquipmentPhotos();
+  if(r && r.moved) showToast('Moved ' + r.moved + ' equipment photo' + (r.moved === 1 ? '' : 's') + ' to larger storage');
+  renderStorageMeter();
+}, 800);
     showToast('Microphone moved to the ' + btn.dataset.micside);
   });
 });
@@ -7652,6 +7657,29 @@ document.getElementById('settingStorePhotos').addEventListener('change', (e)=>{
     : 'Photos will be sent with reports but not kept');
 });
 
+
+document.getElementById('btnMovePhotos').addEventListener('click', async ()=>{
+  const before = storageUsage();
+  showToast('Moving photos…');
+  const r = await migrateEquipmentPhotos({force: true});
+  renderStorageMeter();
+
+  if(!r || r.found === 0){
+    showToast('No equipment photos are held in browser storage');
+    return;
+  }
+  if(r.failed){
+    await confirmDialog(
+      'Moved ' + r.moved + ' of ' + r.found + ' photos. ' + r.failed + ' could not be moved.\n\n'
+      + (r.lastError || 'The browser refused the database.')
+      + '\n\nThis usually means private browsing is on, or the browser is blocking storage for this site.',
+      'OK');
+    return;
+  }
+  const freed = Math.max(0, (before - storageUsage()) / (1024 * 1024)).toFixed(2);
+  showToast('Moved ' + r.moved + ' photos — freed ' + freed + ' MB');
+});
+
 function renderStorageMeter(){
   const fill = document.getElementById('storageBarFill');
   const text = document.getElementById('storageBarText');
@@ -8770,27 +8798,54 @@ async function photoDataUrl(photo){
 
 // Moves any inline equipment photos into the database, once. Runs quietly in
 // the background so a big library doesn't hold up the page.
-async function migrateEquipmentPhotos(){
-  if(lsGet('equipmentPhotosMigrated')) return;
-  let moved = 0;
-  try{
-    for(const cust of customers){
-      for(const item of (cust.equipment || [])){
-        for(const photo of (item.photos || [])){
-          if(!photo || !photo.dataUrl) continue;
-          await savePhotoData(photo.id, photo.dataUrl);
-          delete photo.dataUrl;
+// Moves equipment photos into the database. Reports what it found so a failure
+// is visible rather than silent, and never marks itself done unless it either
+// moved something or genuinely found nothing left to move.
+async function migrateEquipmentPhotos(opts){
+  opts = opts || {};
+  if(!opts.force && lsGet('equipmentPhotosMigrated')) return {skipped: true};
+
+  let found = 0, moved = 0, failed = 0, lastError = '';
+
+  // Any image held on a photo record, whatever the property is called
+  const imageFieldOf = (photo)=>{
+    if(!photo || typeof photo !== 'object') return null;
+    for(const k of Object.keys(photo)){
+      const v = photo[k];
+      if(typeof v === 'string' && v.indexOf('data:image') === 0) return k;
+    }
+    return null;
+  };
+
+  for(const cust of (customers || [])){
+    for(const item of (cust.equipment || [])){
+      for(const photo of (item.photos || [])){
+        const field = imageFieldOf(photo);
+        if(!field) continue;
+        found++;
+        try{
+          const id = photo.id || ('eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7));
+          await savePhotoData(id, photo[field]);
+          delete photo[field];
+          photo.id = id;
           photo.stored = true;
           moved++;
+        }catch(e){
+          failed++;
+          lastError = (e && e.message) || String(e);
         }
       }
     }
-    if(moved){ saveCustomers(); }
-    lsSet('equipmentPhotosMigrated', true);
-    if(moved) showToast('Moved ' + moved + ' equipment photo' + (moved === 1 ? '' : 's') + ' to larger storage');
-  }catch(e){
-    console.warn('Photo migration stopped early:', e);
   }
+
+  if(moved) saveCustomers();
+
+  // Only consider it done when nothing failed. On failure the flag is cleared
+  // so the next load tries again rather than giving up permanently.
+  if(failed === 0) lsSet('equipmentPhotosMigrated', true);
+  else lsSet('equipmentPhotosMigrated', false);
+
+  return {found, moved, failed, lastError};
 }
 
 function renderEquipmentTypeList(){
