@@ -1538,6 +1538,13 @@ document.addEventListener('visibilitychange', ()=>{
 
 function switchView(view, opts){
   opts = opts || {};
+
+  // Leaving an open report to another tab — remember it so Today can bring it
+  // back. Going to the route itself means they are done with it.
+  if(currentViewName === 'visit' && view !== 'visit'){
+    visitLeftOpenFor = (view === 'home') ? null : currentVisitCustomerId;
+  }
+
   if(currentViewName && currentViewName !== view) rememberPlace();
   currentViewName = view;
   viewChangedAt = Date.now();
@@ -1575,7 +1582,9 @@ document.querySelectorAll('.tab').forEach(t=>{
     // so merely having a customerId is not enough — that reopened a report
     // the tech had never actually started.
     if(t.dataset.view === 'home' && visitHasWorkInProgress()){
-      openVisit(visitDraft.customerId);
+      const back = visitLeftOpenFor;
+      visitLeftOpenFor = null;
+      openVisit(back);
       return;
     }
     switchView(t.dataset.view);
@@ -2211,20 +2220,12 @@ function captureFromCamera(maxDim, quality){
         <button type="button" id="camShutter" aria-label="Take photo"
           style="flex:0 0 auto;width:74px;height:74px;border-radius:50%;border:5px solid rgba(255,255,255,0.35);
                  background:#fff;cursor:pointer;"></button>
-        <button type="button" id="camFlip"
+        <button type="button" id="camFlash"
           style="flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;border-radius:10px;
-                 background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;">Flip</button>
+                 background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;visibility:hidden;">Flash off</button>
       </div>`;
 
-    // Flash sits above the preview, out of the way of the shutter
-    const flashBtn = document.createElement('button');
-    flashBtn.type = 'button';
-    flashBtn.id = 'camFlash';
-    flashBtn.style.cssText = 'position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;'
-      + 'z-index:2;padding:10px 14px;font-size:15px;border:none;border-radius:10px;'
-      + 'background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;display:none;';
-    flashBtn.textContent = 'Flash off';
-    overlay.appendChild(flashBtn);
+    const flashBtn = overlay.querySelector('#camFlash');
     document.body.appendChild(overlay);
 
     const video = overlay.querySelector('#camPreview');
@@ -2248,7 +2249,8 @@ function captureFromCamera(maxDim, quality){
     }
 
     function showFlashButton(supported){
-      flashBtn.style.display = supported ? 'block' : 'none';
+      // Kept in the layout even when unsupported, so the shutter stays centred
+      flashBtn.style.visibility = supported ? 'visible' : 'hidden';
       flashBtn.textContent = flashOn ? 'Flash on' : 'Flash off';
       flashBtn.style.background = flashOn ? 'rgba(255,214,102,0.9)' : 'rgba(255,255,255,0.15)';
       flashBtn.style.color = flashOn ? '#231a08' : '#fff';
@@ -2362,11 +2364,6 @@ function captureFromCamera(maxDim, quality){
         }
       }
     }
-
-    overlay.querySelector('#camFlip').addEventListener('click', ()=>{
-      facing = facing === 'environment' ? 'user' : 'environment';
-      open();
-    });
 
     overlay.querySelector('#camCancel').addEventListener('click', ()=>{
       if(done) return;
@@ -3415,7 +3412,7 @@ function openSkipReasonModal(customer){
         </div>
         <div class="field">
           <label>Photo (optional)</label>
-          <button type="button" class="btn btn-ghost" id="skipPhotoBtn" style="width:auto;">Take photo</button>
+          <button type="button" class="btn btn-ghost" id="skipPhotoBtn" style="width:auto;">${appSettings.requireSkipPhoto === true ? 'Take photo (required)' : 'Take photo'}</button>
           <input type="file" accept="image/*" capture="environment" id="skipPhotoInput" style="display:none;">
           <div id="skipPhotoWrap" style="display:none;margin-top:10px;">
             <img id="skipPhotoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Skip photo">
@@ -3459,6 +3456,10 @@ function openSkipReasonModal(customer){
     overlay.querySelector('#skipReasonSave').addEventListener('click', ()=>{
       const reason = textEl.value.trim();
       if(!reason){ showToast('Add a reason first'); textEl.focus(); return; }
+      if(appSettings.requireSkipPhoto === true && !photoData){
+        showToast('A photo is required to skip a service');
+        return;
+      }
       done({reason, photo: photoData});
     });
   });
@@ -3466,7 +3467,7 @@ function openSkipReasonModal(customer){
 
 async function skipService(customer){
   let skipInfo = null;
-  if(appSettings.requireSkipReason === true){
+  if(appSettings.requireSkipReason === true || appSettings.requireSkipPhoto === true){
     skipInfo = await openSkipReasonModal(customer);
     if(!skipInfo) return;
   } else {
@@ -4995,6 +4996,7 @@ function syncStepChrome(){
       discardVisitInProgress();
     }
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  visitLeftOpenFor = null;
     switchView('home');
   });
 
@@ -5521,6 +5523,7 @@ document.addEventListener('visibilitychange', async ()=>{
 // Field values live only in the DOM, so leaving the visit view and coming back
 // would otherwise lose them. Stash them on the way out, put them back on return.
 let visitDraft = {customerId: null, values: {}, section: null, step: 1};
+let visitLeftOpenFor = null;   // a report open when another tab was tapped
 
 function captureVisitDraft(){
   if(!currentVisitCustomerId) return;
@@ -5542,25 +5545,11 @@ function captureVisitDraft(){
 }
 
 
-// Is there genuinely something to come back to? A reading typed, a checkbox
-// ticked, a photo taken, or a body of water already submitted.
+// Was a report still open when the technician switched tabs? If so, coming
+// back to Today reopens it. If they had already returned to the route, Today
+// shows the route — which is what it should have done all along.
 function visitHasWorkInProgress(){
-  if(!visitDraft || !visitDraft.customerId) return false;
-
-  const values = visitDraft.values || {};
-  const typed = Object.keys(values).some(id=>{
-    const v = values[id];
-    if(v === true) return true;                       // a ticked checkbox
-    return typeof v === 'string' && v.trim() !== '';  // something entered
-  });
-  if(typed) return true;
-
-  // A section already saved during this visit counts too
-  if(pendingVisit && pendingVisit.customerId === visitDraft.customerId
-     && pendingVisit.doneSections
-     && Object.keys(pendingVisit.doneSections).length) return true;
-
-  return false;
+  return !!(visitLeftOpenFor && customers.some(c => c.id === visitLeftOpenFor));
 }
 
 function restoreVisitDraft(customerId){
@@ -5595,6 +5584,7 @@ function discardVisitInProgress(){
     if(b) b.clear();
   });
   visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  visitLeftOpenFor = null;
   fountainDraftValues = {};
   visitStepBySection = {};
   currentVisibleSection = null;
@@ -5661,6 +5651,14 @@ function goBackOnePlace(){
 
 let backPromptOpen = false;
 
+// Coming back to the app is another chance to make sure there is something
+// for Back to consume — a suspended tab can lose its history entry.
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden) armBackButton();
+});
+window.addEventListener('focus', ()=> armBackButton());
+window.addEventListener('pageshow', ()=> armBackButton());
+
 window.addEventListener('popstate', async ()=>{
   // The entry this Back press consumed is replaced immediately, before any
   // decision is made, so the stack can never be left empty.
@@ -5692,6 +5690,7 @@ window.addEventListener('popstate', async ()=>{
       discardVisitInProgress();
     }
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  visitLeftOpenFor = null;
     switchView('home');
     return;
   }
@@ -5881,6 +5880,7 @@ async function finalizeVisitSend(){
 
   pendingVisit = null;
   visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  visitLeftOpenFor = null;
 
   const elapsedMs = stopVisitTimer();
   const customer = customers.find(c => c.id === customerId);
@@ -5912,6 +5912,7 @@ async function finalizeVisitSend(){
   visitStepBySection = {};
   fountainDraftValues = {};
   visitDraft = {customerId: null, values: {}, section: null, step: 1};
+  visitLeftOpenFor = null;
 
   renderHomeList();
   renderServicedList();
@@ -6415,7 +6416,10 @@ function attachLoginHandlers(afterLogin){
   if(pass) pass.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') attempt(); });
   if(skip) skip.addEventListener('click', ()=>{
     const techs = lsGet('technicians') || [];
-    afterLogin(techs[0] || null);
+    const who = techs[0] || null;
+    // Remember it, so reopening the app doesn't drop back to the login screen
+    if(who) lsSet('session', {techId: who.id});
+    afterLogin(who);
   });
 }
 

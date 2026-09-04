@@ -1086,6 +1086,16 @@ input::placeholder{color:#A9BCB9;}
     </div>
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Require a photo to skip a service</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingRequireSkipPhoto">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, a technician cannot skip a service without attaching a photo showing why &mdash; a locked gate, a dog in the yard, an empty pool. Turning this on also requires a reason, since the two are asked for on the same screen.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Require readings before moving on</h2>
         <label class="toggle-switch">
           <input type="checkbox" id="settingRequireReadings">
@@ -2393,7 +2403,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -2430,6 +2440,14 @@ document.getElementById('settingRequireSkipReason').addEventListener('change', (
   saveSettings();
   showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
 });
+document.getElementById('settingRequireSkipPhoto').addEventListener('change', (e)=>{
+  appSettings.requireSkipPhoto = e.target.checked;
+  saveSettings();
+  showToast(appSettings.requireSkipPhoto
+    ? 'A photo is now required to skip a service'
+    : 'A photo is no longer required to skip a service');
+});
+
 
 document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
   appSettings.requireReadings = e.target.checked;
@@ -4399,10 +4417,18 @@ function renderWcSuggest(term){
   const box = document.getElementById('wcCustomerSuggest');
   if(!box) return;
   const t = (term || '').trim().toLowerCase();
+
+  // No list until something is typed
+  if(!t){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
   const matches = customers
     .filter(c => c.active !== false)
     .filter(c => !wcSelectedCustomerIds.includes(c.id))
-    .filter(c => !t || [c.name, c.address, c.phone, c.email]
+    .filter(c => [c.name, c.address, c.phone, c.email]
       .filter(Boolean).join(' ').toLowerCase().includes(t))
     .slice()
     .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)))
@@ -5911,13 +5937,21 @@ function renderCustomCustSuggest(term){
   const box = document.getElementById('customCustSuggest');
   if(!box) return;
   const t = (term || '').trim().toLowerCase();
+
+  // No list until something is typed
+  if(!t){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
   const matches = customers
     .filter(c => c.active !== false)
-    .filter(c => !t || [c.name, c.address, c.phone, c.email]
+    .filter(c => [c.name, c.address, c.phone, c.email]
       .filter(Boolean).join(' ').toLowerCase().includes(t))
     .slice()
     .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)))
-    .slice(0, t ? 10 : 200);
+    .slice(0, 10);
 
   box.innerHTML = '';
   if(matches.length === 0){
@@ -10679,7 +10713,8 @@ function clearCustomerSearchField(){
 
 function renderCustomerSearchSuggestions(term){
   const box = document.getElementById('customerSearchSuggestions');
-  if(!term){
+  // Spaces alone are not a search — trim before deciding
+  if(!term || !term.trim()){
     hideCustomerSearchSuggestions();
     return;
   }
@@ -10755,6 +10790,7 @@ document.getElementById('settingBeforePhotos').checked = appSettings.showBeforeP
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
 document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
+document.getElementById('settingRequireSkipPhoto').checked = appSettings.requireSkipPhoto === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
 
