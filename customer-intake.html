@@ -2472,6 +2472,10 @@ document.querySelectorAll('#micSideRow [data-micside]').forEach(btn=>{
     appSettings.micSide = btn.dataset.micside;
     saveSettings();
     renderMicSideButtons();
+
+// Move any equipment photos still held in localStorage across to the database.
+// Runs once, in the background, so a large library doesn't delay the page.
+setTimeout(()=>{ migrateEquipmentPhotos(); }, 800);
     showToast('Microphone moved to the ' + btn.dataset.micside);
   });
 });
@@ -7821,10 +7825,13 @@ function openCustomerEquipmentPhotos(customer){
           const holder = document.createElement('div');
           holder.style.cssText = 'width:96px;';
           const img = document.createElement('img');
-          img.src = p.dataUrl;
+          photoDataUrl(p).then(src => { if(src) img.src = src; });
           img.alt = type + ' photo';
           img.style.cssText = 'width:100%;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:zoom-in;';
-          img.addEventListener('click', ()=> openHistoryPhotoModal(p.dataUrl, type));
+          img.addEventListener('click', async ()=>{
+            const src = await photoDataUrl(p);
+            if(src) openHistoryPhotoModal(src, type);
+          });
           const del = document.createElement('button');
           del.type = 'button';
           del.textContent = 'Remove';
@@ -7865,11 +7872,9 @@ document.getElementById('techEquipPhotoInput').addEventListener('change', async 
   if(!item){ e.target.value = ''; return; }
   try{
     const dataUrl = await resizeImageFile(file, 1200, 0.7);
-    item.photos.push({
-      id: 'eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
-      dataUrl,
-      caption: ''
-    });
+    const photoId = 'eqphoto_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+    await savePhotoData(photoId, dataUrl);
+    item.photos.push({id: photoId, stored: true, caption: ''});
     saveCustomers();
     if(rerender) rerender();
     showToast('Photo saved to ' + cust.name);
@@ -8596,6 +8601,99 @@ document.getElementById('btnResetEquipment').addEventListener('click', async ()=
   showToast('Equipment reset to default');
 });
 
+
+// ---------- Photo storage ----------
+// localStorage tops out around 5MB, which a hundred customers' equipment
+// photos pass easily. IndexedDB holds hundreds of megabytes, so the image data
+// lives there and only a short reference is kept on the customer record.
+const PHOTO_DB = 'poollogPhotos';
+const PHOTO_STORE = 'photos';
+let photoDbPromise = null;
+
+function openPhotoDb(){
+  if(photoDbPromise) return photoDbPromise;
+  photoDbPromise = new Promise((resolve, reject)=>{
+    if(!window.indexedDB){ reject(new Error('no indexeddb')); return; }
+    let req;
+    try{ req = indexedDB.open(PHOTO_DB, 1); }
+    catch(e){ reject(e); return; }
+    req.onupgradeneeded = ()=>{
+      const db = req.result;
+      if(!db.objectStoreNames.contains(PHOTO_STORE)) db.createObjectStore(PHOTO_STORE);
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error || new Error('indexeddb failed'));
+  });
+  return photoDbPromise;
+}
+
+function photoDbDo(mode, fn){
+  return openPhotoDb().then(db => new Promise((resolve, reject)=>{
+    const tx = db.transaction(PHOTO_STORE, mode);
+    const store = tx.objectStore(PHOTO_STORE);
+    let req;
+    try{ req = fn(store); }
+    catch(e){ reject(e); return; }
+    // A missing key resolves with undefined rather than the request object,
+    // which would otherwise look like a value and be handed back to callers.
+    tx.oncomplete = ()=> resolve(req && 'result' in req ? req.result : undefined);
+    tx.onerror = ()=> reject(tx.error || new Error('transaction failed'));
+  }));
+}
+
+async function savePhotoData(id, dataUrl){
+  await photoDbDo('readwrite', s => s.put(dataUrl, id));
+  return id;
+}
+
+async function loadPhotoData(id){
+  if(!id) return null;
+  try{
+    const v = await photoDbDo('readonly', s => s.get(id));
+    return v === undefined ? null : v;
+  }
+  catch(e){ return null; }
+}
+
+async function deletePhotoData(id){
+  if(!id) return;
+  try{ await photoDbDo('readwrite', s => s.delete(id)); }catch(e){}
+}
+
+// A photo record may hold its image inline (the old way) or point at the
+// database. Reading goes through here so both keep working.
+async function photoDataUrl(photo){
+  if(!photo) return null;
+  if(photo.dataUrl) return photo.dataUrl;          // not migrated yet
+  if(photo.stored) return await loadPhotoData(photo.id);
+  return null;
+}
+
+// Moves any inline equipment photos into the database, once. Runs quietly in
+// the background so a big library doesn't hold up the page.
+async function migrateEquipmentPhotos(){
+  if(lsGet('equipmentPhotosMigrated')) return;
+  let moved = 0;
+  try{
+    for(const cust of customers){
+      for(const item of (cust.equipment || [])){
+        for(const photo of (item.photos || [])){
+          if(!photo || !photo.dataUrl) continue;
+          await savePhotoData(photo.id, photo.dataUrl);
+          delete photo.dataUrl;
+          photo.stored = true;
+          moved++;
+        }
+      }
+    }
+    if(moved){ saveCustomers(); }
+    lsSet('equipmentPhotosMigrated', true);
+    if(moved) showToast('Moved ' + moved + ' equipment photo' + (moved === 1 ? '' : 's') + ' to larger storage');
+  }catch(e){
+    console.warn('Photo migration stopped early:', e);
+  }
+}
+
 function renderEquipmentTypeList(){
   const container = document.getElementById('icEquipmentList');
   container.innerHTML = '';
@@ -9059,15 +9157,17 @@ function openEquipmentPhotoModal(item){
       card.style.background = '#fff';
 
       const img = document.createElement('img');
-      img.src = photo.dataUrl;
+      // The image may live in the database, so fill it in when it arrives
+      photoDataUrl(photo).then(src => { if(src) img.src = src; });
       img.style.width = '100%';
       img.style.height = '140px';
       img.style.objectFit = 'cover';
       img.style.display = 'block';
       img.style.cursor = 'zoom-in';
       img.title = 'Tap to view full size';
-      img.addEventListener('click', ()=>{
-        openHistoryPhotoModal(photo.dataUrl, item.type + (item.photos.length > 1 ? ' — photo ' + (i + 1) : ''));
+      img.addEventListener('click', async ()=>{
+        const src = await photoDataUrl(photo);
+        if(src) openHistoryPhotoModal(src, item.type + (item.photos.length > 1 ? ' — photo ' + (i + 1) : ''));
       });
 
       const captionInput = document.createElement('input');

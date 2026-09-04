@@ -341,6 +341,15 @@ textarea{min-height:52px;resize:vertical;}
   margin-bottom:12px;
   box-shadow:0 4px 12px rgba(15,46,46,0.06);
 }
+
+/* The body-of-water tabs stay put while the readings scroll under them */
+#visitSectionCard{
+  position:sticky;
+  top:0;
+  z-index:25;
+  margin-bottom:12px;
+  box-shadow:0 4px 12px rgba(15,46,46,0.06);
+}
 .step-bar{
   /* Clear of the tab bar with room to spare — a thumb on the step button used
      to land within a few pixels of the tabs underneath. */
@@ -485,7 +494,7 @@ select#customerSelect{font-weight:600;}
 
   <!-- VISIT VIEW -->
   <div class="view" id="view-visit">
-    <div class="card">
+    <div class="card" id="visitSectionCard">
       <h2 id="visitCustomerName" style="display:none;">Customer</h2>
       <div class="btn-row" id="visitSectionButtons" style="flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;"></div>
     </div>
@@ -1067,6 +1076,12 @@ function applyDoseRules(type){
     if(!el) return;
     if(manuallyEditedDoses[doseId]) return;   // the tech's own entry wins
 
+    // Cleared by hand and the readings haven't changed since — leave it empty
+    if(clearedDoses[doseId] !== undefined){
+      if(clearedDoses[doseId] === readingsFingerprint()) return;
+      delete clearedDoses[doseId];          // readings moved on, rules resume
+    }
+
     const want = intended[doseId];
 
     if(want !== undefined){
@@ -1088,14 +1103,42 @@ function applyDoseRules(type){
   });
 }
 
+// A dosage the technician cleared. Kept empty while the readings stay as they
+// are, but released as soon as a reading changes — clearing means "not for
+// this reading", not "never again this visit".
+const clearedDoses = {};
+
 function markDoseEditedByHand(el){
   if(!el) return;
   if(el.dataset.autoFilled === 'true'){ delete el.dataset.autoFilled; }
+
+  if(String(el.value || '').trim() === ''){
+    // Remember what the readings were, so a change can release it
+    delete manuallyEditedDoses[el.id];
+    clearedDoses[el.id] = readingsFingerprint();
+    return;
+  }
+
+  delete clearedDoses[el.id];
   manuallyEditedDoses[el.id] = true;
+}
+
+// A cheap snapshot of every reading on screen, used only to notice a change
+function readingsFingerprint(){
+  const vals = [];
+  ['pool','spa','fountain'].forEach(t=>{
+    const lists = chemConfig[t];
+    ((lists && lists.chemicals) || []).forEach(ch=>{
+      const el = document.getElementById(fieldId(t, 'chem', ch.key));
+      if(el) vals.push(t + ':' + ch.key + '=' + el.value);
+    });
+  });
+  return vals.join('|');
 }
 
 function resetDoseRuleTracking(){
   ruleProblemsShown = {};
+  Object.keys(clearedDoses).forEach(k => delete clearedDoses[k]);
   Object.keys(manuallyEditedDoses).forEach(k => delete manuallyEditedDoses[k]);
 }
 
@@ -1495,6 +1538,7 @@ document.addEventListener('visibilitychange', ()=>{
 
 function switchView(view, opts){
   opts = opts || {};
+  if(currentViewName && currentViewName !== view) rememberPlace();
   currentViewName = view;
   viewChangedAt = Date.now();
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -1526,8 +1570,11 @@ document.querySelectorAll('.tab').forEach(t=>{
     // straight into a customer's report.
     if(t.dataset.view === currentViewName) return;
 
-    // A visit left part-finished resumes rather than dumping you on the list
-    if(t.dataset.view === 'home' && visitDraft.customerId){
+    // A visit with work in it resumes rather than dumping you on the list.
+    // A draft is saved the moment a visit is opened, even with nothing typed,
+    // so merely having a customerId is not enough — that reopened a report
+    // the tech had never actually started.
+    if(t.dataset.view === 'home' && visitHasWorkInProgress()){
       openVisit(visitDraft.customerId);
       return;
     }
@@ -2168,14 +2215,65 @@ function captureFromCamera(maxDim, quality){
           style="flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;border-radius:10px;
                  background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;">Flip</button>
       </div>`;
+
+    // Flash sits above the preview, out of the way of the shutter
+    const flashBtn = document.createElement('button');
+    flashBtn.type = 'button';
+    flashBtn.id = 'camFlash';
+    flashBtn.style.cssText = 'position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;'
+      + 'z-index:2;padding:10px 14px;font-size:15px;border:none;border-radius:10px;'
+      + 'background:rgba(255,255,255,0.15);color:#fff;cursor:pointer;display:none;';
+    flashBtn.textContent = 'Flash off';
+    overlay.appendChild(flashBtn);
     document.body.appendChild(overlay);
 
     const video = overlay.querySelector('#camPreview');
     let stream = null;
     let facing = 'environment';
     let done = false;
+    let flashOn = false;
+
+    // The torch is a track capability, not a camera setting, so it is turned on
+    // and off live rather than reopening the stream.
+    async function applyFlash(){
+      const track = stream && stream.getVideoTracks()[0];
+      if(!track || !track.getCapabilities) return false;
+      let caps = {};
+      try{ caps = track.getCapabilities() || {}; }catch(e){ return false; }
+      if(!caps.torch) return false;
+      try{
+        await track.applyConstraints({advanced: [{torch: flashOn}]});
+        return true;
+      }catch(e){ return false; }
+    }
+
+    function showFlashButton(supported){
+      flashBtn.style.display = supported ? 'block' : 'none';
+      flashBtn.textContent = flashOn ? 'Flash on' : 'Flash off';
+      flashBtn.style.background = flashOn ? 'rgba(255,214,102,0.9)' : 'rgba(255,255,255,0.15)';
+      flashBtn.style.color = flashOn ? '#231a08' : '#fff';
+    }
+
+    flashBtn.addEventListener('click', async ()=>{
+      flashOn = !flashOn;
+      const worked = await applyFlash();
+      if(!worked){
+        flashOn = false;
+        flashBtn.textContent = 'No flash';
+        setTimeout(()=> showFlashButton(true), 1200);
+        return;
+      }
+      showFlashButton(true);
+    });
 
     function stop(){
+      // Turn the torch off before releasing the camera, or it can stay lit
+      try{
+        const track = stream && stream.getVideoTracks()[0];
+        if(track && track.getCapabilities && (track.getCapabilities() || {}).torch){
+          track.applyConstraints({advanced: [{torch: false}]});
+        }
+      }catch(e){}
       if(stream) stream.getTracks().forEach(t => t.stop());
       if(overlay.parentNode) document.body.removeChild(overlay);
     }
@@ -2223,6 +2321,16 @@ function captureFromCamera(maxDim, quality){
 
         const track = stream.getVideoTracks()[0];
         if(track) await zoomOut(track);
+
+        // Only the rear camera usually has a torch, and only on some devices
+        let torchAvailable = false;
+        try{
+          const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+          torchAvailable = !!(caps && caps.torch);
+        }catch(e){ torchAvailable = false; }
+        if(!torchAvailable) flashOn = false;
+        showFlashButton(torchAvailable);
+        if(flashOn) await applyFlash();
 
         // If this was the first open, the wide lens may only now be nameable
         if(!wideId && facing === 'environment'){
@@ -3046,7 +3154,7 @@ function renderHomeList(){
     rightWrap.style.alignItems = 'center';
     rightWrap.style.gap = '10px';
     rightWrap.style.flexShrink = '0';
-    // Directions and Skip Service now live inside the drop-down panel
+    // Directions and Skip Service live inside the drop-down panel
     const onWayBtn = document.createElement('button');
     onWayBtn.className = 'btn btn-secondary';
     // Fixed size on two lines so every row matches, whatever the address length
@@ -3056,10 +3164,10 @@ function renderHomeList(){
       + 'height:46px !important;min-height:46px;padding:0;'
       + 'margin-left:10px;font-size:11.5px;line-height:1.25;text-align:center;'
       + 'display:flex;align-items:center;justify-content:center;';
-    onWayBtn.textContent = 'Directions';
+    onWayBtn.textContent = 'On my way';
     onWayBtn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      openDirections(c);
+      sendOnMyWay(c);
     });
     rightWrap.appendChild(onWayBtn);
     const chev = document.createElement('div');
@@ -3129,15 +3237,15 @@ function renderHomeList(){
         btnRow.appendChild(reschedBtn);
       }
 
-      const onWayBtn = document.createElement('button');
-      onWayBtn.className = 'btn btn-ghost';
-      onWayBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
-      onWayBtn.textContent = 'On my way';
-      onWayBtn.addEventListener('click', (e)=>{
+      const directionsBtn = document.createElement('button');
+      directionsBtn.className = 'btn btn-ghost';
+      directionsBtn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;';
+      directionsBtn.textContent = 'Directions';
+      directionsBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
-        sendOnMyWay(c);
+        openDirections(c);
       });
-      btnRow.appendChild(onWayBtn);
+      btnRow.appendChild(directionsBtn);
 
       const skipBtn2 = document.createElement('button');
       skipBtn2.className = 'btn btn-ghost';
@@ -5433,6 +5541,28 @@ function captureVisitDraft(){
   };
 }
 
+
+// Is there genuinely something to come back to? A reading typed, a checkbox
+// ticked, a photo taken, or a body of water already submitted.
+function visitHasWorkInProgress(){
+  if(!visitDraft || !visitDraft.customerId) return false;
+
+  const values = visitDraft.values || {};
+  const typed = Object.keys(values).some(id=>{
+    const v = values[id];
+    if(v === true) return true;                       // a ticked checkbox
+    return typeof v === 'string' && v.trim() !== '';  // something entered
+  });
+  if(typed) return true;
+
+  // A section already saved during this visit counts too
+  if(pendingVisit && pendingVisit.customerId === visitDraft.customerId
+     && pendingVisit.doneSections
+     && Object.keys(pendingVisit.doneSections).length) return true;
+
+  return false;
+}
+
 function restoreVisitDraft(customerId){
   if(!visitDraft.customerId || visitDraft.customerId !== customerId) return false;
   Object.keys(visitDraft.values).forEach(id=>{
@@ -5480,33 +5610,60 @@ function discardVisitInProgress(){
 // throttled the pushes silently failed, the stack ran dry, and Back closed the
 // app. Tracking whether a guard is already armed keeps this to a handful of
 // calls per session.
-// A buffer of guard entries rather than a single one. With only one, pressing
-// Back twice quickly meant the second press arrived before the replacement had
-// landed and the app closed. Six gives ample slack for rapid presses while
-// staying far below the browser's pushState throttle.
-const BACK_GUARD_DEPTH = 6;
-let backGuardCount = 0;
-
+// Every Back press is answered by pushing a replacement entry, unconditionally.
+// Counting entries was the weak point: if a push was ever refused the count
+// drifted, the stack ran dry and the browser left the page. Pushing on every
+// popstate means there is always exactly one entry waiting, whatever happened
+// before, so Back can never close the app.
 function armBackButton(){
-  while(backGuardCount < BACK_GUARD_DEPTH){
-    try{
-      history.pushState({poollog:true}, '');
-      backGuardCount++;
-    }catch(e){
-      // Throttled — top up shortly rather than leaving the stack short
-      setTimeout(armBackButton, 400);
-      break;
-    }
+  try{
+    history.pushState({poollog:true}, '');
+    backGuardArmed = true;
+  }catch(e){
+    // Refused — try again shortly rather than leaving nothing behind
+    setTimeout(()=>{
+      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
+    }, 200);
   }
-  backGuardArmed = backGuardCount > 0;
+}
+
+// Where the technician has actually been, so Back retraces their steps rather
+// than guessing. Each entry is a place in the app they can be returned to.
+const navStack = [];
+
+function rememberPlace(){
+  const place = {
+    view: currentViewName,
+    section: currentVisibleSection,
+    fountainId: currentVisitFountainId,
+    step: currentVisitStep,
+    customerId: currentVisitCustomerId
+  };
+  const last = navStack[navStack.length - 1];
+  if(last && last.view === place.view && last.section === place.section
+     && last.step === place.step && last.customerId === place.customerId) return;
+  navStack.push(place);
+  if(navStack.length > 40) navStack.shift();
+}
+
+// Returns to the most recent place that is not where we already are
+function goBackOnePlace(){
+  // The stack holds places already left — the current one was never pushed —
+  // so the top of it IS the previous place. Popping first would skip one.
+  while(navStack.length){
+    const p = navStack.pop();
+    if(p.view === 'visit' && p.customerId !== currentVisitCustomerId) continue;
+    if(p.view === currentViewName) continue;   // already there
+    return p;
+  }
+  return null;
 }
 
 let backPromptOpen = false;
 
 window.addEventListener('popstate', async ()=>{
-  // One guard entry was just consumed by this Back press. Top the buffer back
-  // up immediately, before anything else can fail and leave it empty.
-  backGuardCount = Math.max(0, backGuardCount - 1);
+  // The entry this Back press consumed is replaced immediately, before any
+  // decision is made, so the stack can never be left empty.
   armBackButton();
 
   if(currentViewName === 'visit'){
@@ -5539,7 +5696,13 @@ window.addEventListener('popstate', async ()=>{
     return;
   }
 
-  // Anywhere else, back returns to the route rather than closing the app
+  // Anywhere else, retrace to wherever they came from. Falling back to the
+  // route only when there is no history left to walk.
+  const place = goBackOnePlace();
+  if(place && place.view && place.view !== currentViewName){
+    switchView(place.view);
+    return;
+  }
   if(currentViewName !== 'home') switchView('home');
 });
 
@@ -5688,7 +5851,9 @@ function markSectionDone(sectionId, readingId){
   const nextType = (next === 'pool' || next === 'spa') ? next : 'fountain';
   const cap = nextType.charAt(0).toUpperCase() + nextType.slice(1);
   const steps = visitStepCardsFor(nextType);
-  const readingsAt = steps.findIndex(s => stepId(s) === 'visit' + cap + 'Section');
+  // A step entry can be a single card or a pair, so read the first either way
+  const firstCardOf = s => Array.isArray(s) ? s[0] : s;
+  const readingsAt = steps.findIndex(s => firstCardOf(s) === 'visit' + cap + 'Section');
   visitStepBySection[next] = readingsAt >= 0 ? readingsAt + 1 : 1;
 
   showVisitSection(next);
