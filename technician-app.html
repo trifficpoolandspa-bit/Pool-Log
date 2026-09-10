@@ -488,6 +488,11 @@ select#customerSelect{font-weight:600;}
       </div>
       <p id="homeDateInfo" style="display:none;"></p>
       <div id="dayTabs" style="display:none;"></div>
+      <div class="card" id="routeTaskCard" style="display:none;margin-bottom:12px;padding:14px;">
+        <h2 style="margin:0 0 4px;font-size:15px;">Jobs for today</h2>
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 4px;">Sent from the office</p>
+        <div id="routeTaskList"></div>
+      </div>
       <div id="homeCustomerList"></div>
     </div>
   </div>
@@ -532,6 +537,10 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitPoolSection" style="display:none;">
       <h2>Chemical Readings</h2>
+      <!-- Filter backwash / salt cell sit here rather than by the submit
+           button: the dosages fill themselves in, so that step gets skipped
+           past, but the readings are typed one by one. -->
+      <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
       <div id="poolChemFields"></div>
     </div>
 
@@ -555,7 +564,6 @@ select#customerSelect{font-weight:600;}
         </div>
       </div>
 
-      <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
       <div id="photoPreviewWrap" style="display:none;margin-bottom:12px;">
         <img id="photoPreview" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
       </div>
@@ -1052,9 +1060,10 @@ function applyDoseRules(type){
         noteRuleProblem((chem.label || chem.key) + ': a rule has no dosage chosen');
         return;
       }
-      // A salt pool makes its own chlorine, so skip rules that add a chlorine
-      // product. Shock and everything else still apply.
-      if(saltPool && isChlorineProduct(rule.doseKey, lists)) return;
+      // A salt pool makes its own chlorine, so rules adding a chlorine product
+      // are skipped. Turned off per reading (and per customer) where the office
+      // still wants them to fire — a failing cell, or a pool that gets both.
+      if(saltPool && chem.saltSkip !== false && isChlorineProduct(rule.doseKey, lists)) return;
       if(rule.value === '' || rule.value === undefined || rule.value === null){
         noteRuleProblem((chem.label || chem.key) + ': a rule has no value set');
         return;
@@ -1572,6 +1581,15 @@ function switchView(view, opts){
 
 // Move any visit photos still held in localStorage across to the database
 setTimeout(()=>{ migrateVisitPhotos(); }, 1200);
+
+// Clear out photos past the keep window, at most once a day so it never
+// slows a technician down mid-route.
+setTimeout(async ()=>{
+  const last = lsGet('lastPhotoCleanup');
+  if(last && (Date.now() - new Date(last).getTime()) < 86400000) return;
+  const n = await removeExpiredPhotos();
+  if(n) showToast(n + ' photo' + (n === 1 ? '' : 's') + ' over 3 years old removed \u2014 the reports themselves are kept');
+}, 4000);
   if(view !== 'visit'){
     captureVisitDraft();
     hideStepBar();
@@ -1870,6 +1888,110 @@ async function loadReadings(customerId, type='pool'){
 
 // Moves visit photos already held in localStorage into the database. Runs once,
 // in the background, so a full route's history doesn't delay the app.
+
+// ---------- Photo retention ----------
+// Photos are kept for three years, then removed. Long enough to cover a
+// dispute or an insurance claim, short enough that storage doesn't grow
+// without limit. Warnings start well before anything is actually deleted.
+const PHOTO_KEEP_YEARS = 3;
+const PHOTO_WARN_DAYS = 60;      // how long before removal the warning starts
+
+function photoCutoffDate(){
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - PHOTO_KEEP_YEARS);
+  return d;
+}
+
+// Walks the stored readings and reports what is old, without changing anything
+function surveyOldPhotos(){
+  const cutoff = photoCutoffDate().getTime();
+  const warnFrom = cutoff + PHOTO_WARN_DAYS * 86400000;
+
+  let expiring = 0, expired = 0, oldest = null;
+  const countOn = (r)=>{
+    let n = 0;
+    ['photo','beforePhoto','gatePhoto'].forEach(f => { if(r[f]) n++; });
+    if(r.customPhotos) n += Object.keys(r.customPhotos).filter(k => r.customPhotos[k]).length;
+    return n;
+  };
+
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX) !== 0) continue;
+      const key = full.slice(STORAGE_PREFIX.length);
+      if(!(key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+           || key.indexOf('fountainReadings:') === 0)) continue;
+
+      const list = lsGet(key);
+      if(!Array.isArray(list)) continue;
+
+      list.forEach(r=>{
+        if(!r || !r.date) return;
+        const t = new Date(r.date).getTime();
+        if(isNaN(t)) return;
+        const n = countOn(r);
+        if(!n) return;
+        if(oldest === null || t < oldest) oldest = t;
+        if(t < cutoff) expired += n;
+        else if(t < warnFrom) expiring += n;
+      });
+    }
+  }catch(e){ return {expiring:0, expired:0, oldest:null}; }
+
+  return {expiring, expired, oldest};
+}
+
+// Removes photos from visits older than the keep window. The readings stay —
+// only the images go, so the chemistry history is never lost.
+async function removeExpiredPhotos(){
+  const cutoff = photoCutoffDate().getTime();
+  let removed = 0;
+
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX) !== 0) continue;
+      const key = full.slice(STORAGE_PREFIX.length);
+      if(!(key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+           || key.indexOf('fountainReadings:') === 0)) continue;
+
+      const list = lsGet(key);
+      if(!Array.isArray(list)) continue;
+
+      let changed = false;
+      for(const r of list){
+        if(!r || !r.date) continue;
+        const t = new Date(r.date).getTime();
+        if(isNaN(t) || t >= cutoff) continue;
+
+        for(const f of ['photo','beforePhoto','gatePhoto']){
+          if(r[f]){
+            if(isPhotoRef(r[f])) await deletePhotoData(r[f].slice(PHOTO_REF.length));
+            r[f] = null;
+            removed++; changed = true;
+          }
+        }
+        if(r.customPhotos){
+          for(const id of Object.keys(r.customPhotos)){
+            if(r.customPhotos[id]){
+              if(isPhotoRef(r.customPhotos[id])) await deletePhotoData(r.customPhotos[id].slice(PHOTO_REF.length));
+              r.customPhotos[id] = null;
+              removed++; changed = true;
+            }
+          }
+        }
+      }
+      if(changed) lsSet(key, list);
+    }
+    readingsCache = {};
+    lsSet('lastPhotoCleanup', new Date().toISOString());
+  }catch(e){
+    console.warn('Photo cleanup stopped early:', e);
+  }
+  return removed;
+}
+
 async function migrateVisitPhotos(){
   if(lsGet('visitPhotosMigrated')) return;
   let moved = 0;
@@ -2578,7 +2700,14 @@ function resizeImageFile(file, maxDim, quality){
         canvas.width = width;
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+
+        // WebP is about a third smaller than JPEG at the same size and quality,
+        // with no visible difference. Falls back to JPEG if a browser refuses.
+        let out = canvas.toDataURL('image/webp', quality);
+        if(out.indexOf('data:image/webp') !== 0){
+          out = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(out);
       };
       img.src = reader.result;
     };
@@ -3180,9 +3309,81 @@ function moveRouteCustomer(day, draggedId, targetId, visibleList){
   renderHomeList();
 }
 
+
+// ---------- Tasks on the route ----------
+// Things the office needs doing that aren't a normal service. Shown at the top
+// of the day, or against the stop they belong to.
+function tasksForToday(){
+  const all = lsGet('tasks') || [];
+  const selDate = dateForWeekday(selectedHomeDay);
+  if(!selDate) return [];
+  const day = new Date(selDate.getTime() - selDate.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 10);
+  return all.filter(t => !t.done
+    && t.date === day
+    && (currentUser ? t.technicianId === currentUser.id : false));
+}
+
+function renderRouteTasks(){
+  const box = document.getElementById('routeTaskCard');
+  const list = document.getElementById('routeTaskList');
+  if(!box || !list) return;
+
+  // Only the ones not tied to a particular stop show at the top
+  const loose = tasksForToday().filter(t => !(t.customerIds || []).length && !t.customerId);
+  if(!loose.length){ box.style.display = 'none'; return; }
+
+  box.style.display = 'block';
+  list.innerHTML = '';
+
+  loose.forEach(t=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:10px 0;'
+      + 'border-bottom:1px solid var(--line);';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '\u2713';
+    btn.title = 'Mark done';
+    btn.style.cssText = 'flex-shrink:0;width:30px;height:30px;padding:0;border-radius:8px;'
+      + 'border:1.5px solid var(--teal-mid);background:#fff;color:var(--teal-deep);'
+      + 'font-size:15px;cursor:pointer;';
+    btn.addEventListener('click', async ()=>{
+      const ok = await confirmDialog('Mark "' + t.title + '" as done?', 'Done');
+      if(!ok) return;
+      const all = lsGet('tasks') || [];
+      const hit = all.find(x => x.id === t.id);
+      if(hit){
+        hit.done = true;
+        hit.doneAt = new Date().toISOString();
+        lsSet('tasks', all);
+      }
+      renderRouteTasks();
+      showToast('Task done');
+    });
+    row.appendChild(btn);
+
+    const text = document.createElement('div');
+    text.style.flex = '1';
+    text.innerHTML = '<div style="font-weight:600;font-size:13.5px;">' + t.title + '</div>'
+      + (t.details ? '<div style="font-size:12px;color:var(--muted);margin-top:3px;'
+          + 'white-space:pre-line;">' + t.details + '</div>' : '');
+    row.appendChild(text);
+
+    list.appendChild(row);
+  });
+}
+
+// Tasks attached to one customer, shown on that stop
+function tasksForCustomer(customerId){
+  return tasksForToday().filter(t =>
+    (t.customerIds || []).indexOf(customerId) !== -1 || t.customerId === customerId);
+}
+
 function renderHomeList(){
   renderDayTabs();
   renderWeekLabel();
+  renderRouteTasks();
   const container = document.getElementById('homeCustomerList');
   const today = todayDateStr();
   const selDate = dateForWeekday(selectedHomeDay);
@@ -3682,6 +3883,84 @@ function openDirections(customer){
   window.open(url, '_blank');
 }
 
+
+// ---------- Heads-up reminders ----------
+// After a stop is finished, look ahead on today's route. If a customer that
+// many stops away wants warning, bring their message up now rather than when
+// the technician is already parked outside.
+function routeOrderToday(){
+  const today = todayDateStr();
+  const reschedules = loadReschedules();
+  const iso = today;
+  const movedHere = new Set(reschedules.filter(r => r.toDate === iso).map(r => r.customerId));
+  const movedAway = new Set(reschedules.filter(r => r.fromDate === iso).map(r => r.customerId));
+
+  const base = customers
+    .filter(c => c.day === selectedHomeDay && c.active !== false)
+    .filter(c => currentUser ? c.technicianId === currentUser.id : false)
+    .filter(c => !movedAway.has(c.id));
+
+  const extra = customers.filter(c => movedHere.has(c.id) && c.active !== false
+    && !base.some(b => b.id === c.id)
+    && (currentUser ? c.technicianId === currentUser.id : false));
+
+  return orderCustomersForDay(selectedHomeDay, base.concat(extra));
+}
+
+
+// A customer's own choice always wins. Only where they have never been set
+// either way does the app-wide setting decide.
+function autoNotifyOn(cust){
+  if(!cust) return false;
+  if(cust.autoNotify === true) return true;
+  if(cust.autoNotify === false) return false;
+  return appSettings.autoNotifyAll === true;
+}
+
+function autoNotifyLeadFor(cust){
+  if(cust && cust.autoNotifyLead) return cust.autoNotifyLead;
+  return appSettings.autoNotifyAllLead || 2;
+}
+
+async function checkHeadsUpAfter(finishedCustomerId){
+  let route;
+  try{ route = routeOrderToday(); }catch(e){ return; }
+  if(!route || !route.length) return;
+
+  const at = route.findIndex(c => c.id === finishedCustomerId);
+  if(at === -1) return;
+
+  // Anyone further along who asked to be warned this many stops out
+  for(let i = at + 1; i < route.length; i++){
+    const cand = route[i];
+    if(!autoNotifyOn(cand)) continue;
+
+    const lead = autoNotifyLeadFor(cand);
+    if((i - at) !== lead) continue;
+    if(cand.lastServicedDate === todayDateStr()) continue;
+
+    // No prompt — the office already decided this customer gets one
+    showToast('Automatic message for ' + cand.name);
+    dispatchHeadsUp(cand);
+    return;                     // one at a time, never a queue of messages
+  }
+}
+
+
+// How a heads-up actually reaches the customer. Today it opens a text, because
+// a browser cannot send one without the technician pressing send. When emails
+// send from a backend this is the only function that has to change: swap the
+// sendOnMyWay call for the email send and everything else stays as it is.
+const HEADS_UP_METHOD = 'text';        // 'text' today, 'email' once there is a backend
+
+function dispatchHeadsUp(customer){
+  if(HEADS_UP_METHOD === 'email'){
+    // Not reachable yet — left here so the switch is one line, not a rewrite
+    if(typeof sendHeadsUpEmail === 'function'){ sendHeadsUpEmail(customer); return; }
+  }
+  sendOnMyWay(customer);
+}
+
 function sendOnMyWay(customer){
   // Some customers want the heads-up going to someone else — a property
   // manager, a spouse, whoever is actually there to open the gate.
@@ -4032,9 +4311,17 @@ async function renderPoolServiceChecks(customer){
   eyebrow.textContent = 'Service performed';
   box.appendChild(eyebrow);
 
+  // Both sit on one line, each button above its own "last done" note, so two
+  // of them cost about the height of one.
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:10px;margin-bottom:4px;flex-wrap:wrap;';
+
   checks.forEach(ch=>{
-    const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+    const cell = document.createElement('div');
+    // Longhand rather than the flex shorthand — equally valid, and it survives
+    // every parser, so the layout can actually be verified in tests
+    cell.style.cssText = 'flex-grow:1;flex-shrink:1;flex-basis:0;min-width:140px;'
+      + 'display:flex;flex-direction:column;gap:3px;';
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -4043,23 +4330,27 @@ async function renderPoolServiceChecks(customer){
     btn.textContent = ch.label;
     const off = 'background:#fff;color:var(--teal-deep);border:1.5px solid var(--teal-mid);';
     const on  = 'background:var(--teal-deep);color:#fff;border:1.5px solid var(--teal-deep);';
-    const base = 'padding:11px 18px;border-radius:10px;font-size:15px;font-weight:600;'
-      + "font-family:'Inter',sans-serif;cursor:pointer;flex-shrink:0;transition:background-color .15s ease,color .15s ease;";
+    const base = 'width:100%;padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:600;'
+      + "font-family:'Inter',sans-serif;cursor:pointer;"
+      + 'transition:background-color .15s ease,color .15s ease;';
     btn.style.cssText = base + off;
     btn.addEventListener('click', ()=>{
       const nowOn = btn.dataset.on !== 'true';
       btn.dataset.on = nowOn ? 'true' : 'false';
       btn.style.cssText = base + (nowOn ? on : off);
     });
-    row.appendChild(btn);
+    cell.appendChild(btn);
 
     const last = document.createElement('span');
-    last.style.cssText = 'font-size:12px;color:var(--muted);';
+    last.style.cssText = 'font-size:10.5px;color:var(--muted);text-align:center;'
+      + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
     last.textContent = lastDoneText(ch.field);
-    row.appendChild(last);
+    cell.appendChild(last);
 
-    box.appendChild(row);
+    row.appendChild(cell);
   });
+
+  box.appendChild(row);
 
   box.style.display = 'block';
 }
@@ -6083,6 +6374,9 @@ async function finalizeVisitSend(){
     if(elapsedMs !== null) customer.lastServiceDurationMs = elapsedMs;
     await saveCustomers();
   }
+
+  // Someone further down the route may want warning before you arrive
+  await checkHeadsUpAfter(customerId);
 
   populateCustomerSelect(document.getElementById('reportCustomerSelect'), 'Add a customer first');
   document.getElementById('reportCustomerSelect').value = customerId;

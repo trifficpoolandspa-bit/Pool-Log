@@ -290,7 +290,9 @@ input::placeholder{color:#A9BCB9;}
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(11,36,34,0.5);
   display:flex;align-items:center;justify-content:center;
-  z-index:100;padding:20px;
+  /* Above any picker or editor that might have opened it — those sit at 200
+     and 210, and a confirmation hidden behind one just darkens the screen. */
+  z-index:300;padding:20px;
 }
 .confirm-box{background:#fff;border-radius:14px;padding:20px;max-width:340px;width:100%;}
 .confirm-box p{font-size:14.5px;margin:0 0 16px;color:var(--ink);line-height:1.5;}
@@ -406,6 +408,7 @@ input::placeholder{color:#A9BCB9;}
     <nav>
       <button class="tab active" data-view="customers">Customers</button>
       <button class="tab" data-view="map">Route Scheduling</button>
+      <button class="tab" data-view="customerconfig">Customer Customization</button>
       <button class="tab" data-view="technicians">Technicians</button>
       <button class="tab" data-view="chemconfig">Readings and Dosages</button>
       <button class="tab" data-view="productsservices">Products and Services</button>
@@ -418,6 +421,17 @@ input::placeholder{color:#A9BCB9;}
 
   <div class="main-col">
     <header>
+      <button type="button" id="btnAccount" title="Your account"
+        style="position:absolute;top:16px;right:18px;z-index:5;display:flex;align-items:center;gap:8px;
+               padding:7px 13px;border-radius:999px;border:1px solid rgba(255,255,255,0.28);
+               background:rgba(255,255,255,0.12);color:#fff;font-family:'Inter',sans-serif;
+               font-size:12.5px;font-weight:600;cursor:pointer;">
+        <span id="accountInitials"
+          style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+                 border-radius:50%;background:#fff;color:var(--teal-deep);font-size:10.5px;
+                 font-weight:700;flex-shrink:0;">PL</span>
+        <span id="accountButtonLabel">Account</span>
+      </button>
       <div class="stat-strip">
         <div class="stat">
           <span class="stat-num" id="statTotal">0</span>
@@ -696,13 +710,12 @@ input::placeholder{color:#A9BCB9;}
 
   <div class="view" id="view-chemconfig">
     <div class="card">
-      <h2>Readings and Dosages</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Choose which chemicals get recorded and which dosages get tracked on visits — and set your own units for each. Pool, Spa, and Extra bodies of water each have their own list, and Custom lets you set one body of water on its own. Changes here apply immediately in the Technician and Admin apps.</p>
+      <h2 id="chemConfigHeading">Readings and Dosages</h2>
+      <p id="chemConfigDescription" style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Choose which chemicals get recorded and which dosages get tracked on visits — and set your own units for each. Pool, Spa, and Extra bodies of water each have their own list. To set up one customer differently, use Customer Customization. Changes here apply immediately in the Technician and Admin apps.</p>
       <div class="seg-control" id="chemConfigTypeControl">
         <button class="history-type-btn active" data-type="pool">Pool</button>
         <button class="history-type-btn" data-type="spa">Spa</button>
         <button class="history-type-btn" data-type="fountain">Extra</button>
-        <button class="history-type-btn" data-type="custom">Custom</button>
       </div>
       <button class="btn btn-ghost" id="btnRestoreChemDefaults" style="width:auto;margin-top:12px;color:var(--rust);border-color:#EFC9BC;">Restore default labels</button>
     </div>
@@ -731,6 +744,31 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-ghost" id="btnUndoCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;">Undo changes</button>
         <button class="btn btn-ghost" id="btnDeleteCustomConfig" style="width:auto;padding:7px 12px;font-size:12.5px;color:var(--rust);border-color:#EFC9BC;">Delete</button>
         <span id="customSaveNote" style="font-size:11.5px;color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div class="card" id="customerNotifyCard" style="display:none;">
+      <h2 id="customerNotifyHeading">Automatic on my way message</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Some customers want warning before you arrive. Turn this on and the message comes up on its own while you are still a few stops away.</p>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <label for="chkAutoNotify" style="margin:0;font-weight:600;cursor:pointer;">Send an automatic message to this customer</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="chkAutoNotify">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="field" id="autoNotifyLeadField" style="display:none;margin-top:16px;">
+        <label>How many stops before them?</label>
+        <select id="autoNotifyLead">
+          <option value="1">1 stop before</option>
+          <option value="2">2 stops before</option>
+          <option value="3">3 stops before</option>
+          <option value="4">4 stops before</option>
+          <option value="5">5 stops before</option>
+        </select>
+        <p style="font-size:12.5px;color:var(--muted);margin:10px 0 0;" id="autoNotifyExplain"></p>
       </div>
     </div>
 
@@ -792,7 +830,53 @@ input::placeholder{color:#A9BCB9;}
       <div class="seg-control" id="workCenterTypeControl">
         <button class="history-type-btn active" data-type="quotes">Work Orders & Quotes</button>
         <button class="history-type-btn" data-type="filters">Filter Cleans</button>
+        <button class="history-type-btn" data-type="broadcast">Email</button>
       </div>
+    </div>
+
+    <div class="card" id="wcBroadcastSection" style="display:none;">
+      <h2>Email</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Write a message and choose who gets it. Each customer is sent their own copy, so nobody sees anyone else's address.</p>
+
+      <div class="field" id="wcRecipientPicker">
+        <label>Send to</label>
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <input id="wcRecipientSearch" placeholder="Search customers" style="flex:1;">
+          <button class="btn btn-primary" id="wcRecipientAll" type="button" style="width:auto;padding:7px 14px;font-size:12.5px;font-weight:700;flex-shrink:0;">Select all</button>
+          <button class="btn btn-secondary" id="wcRecipientNone" type="button" style="width:auto;padding:7px 14px;font-size:12.5px;font-weight:700;flex-shrink:0;">Clear</button>
+        </div>
+        <div id="wcRecipientList" style="border:1px solid var(--line);border-radius:10px;padding:4px 10px;max-height:240px;overflow-y:auto;"></div>
+      </div>
+
+      <div class="field">
+        <label>Category</label>
+        <div class="btn-row" id="wcBroadcastCategories" style="gap:8px;flex-wrap:wrap;"></div>
+      </div>
+
+      <div class="field">
+        <label>Template</label>
+        <div class="btn-row" id="wcBroadcastTemplates" style="gap:8px;flex-wrap:wrap;"></div>
+      </div>
+
+      <div class="field">
+        <label>Subject</label>
+        <input id="wcBroadcastSubject" placeholder="e.g. Storm warning &mdash; please check your pool">
+      </div>
+
+      <div class="field">
+        <label>Message</label>
+        <textarea id="wcBroadcastBody" rows="10" style="min-height:190px;"></textarea>
+      </div>
+
+      <div id="wcBroadcastCount" style="font-size:12.5px;color:var(--muted);margin-bottom:12px;"></div>
+
+      <div class="btn-row" style="flex-wrap:wrap;gap:8px;">
+        <button class="btn btn-primary" id="wcBroadcastOpen" style="width:auto;">Send emails</button>
+        <button class="btn btn-ghost" id="wcBroadcastSave" style="width:auto;display:none;">Save as new</button>
+        <button class="btn btn-ghost" id="wcBroadcastUpdate" style="width:auto;display:none;">Save changes</button>
+        <button class="btn btn-ghost" id="wcBroadcastDelete" style="width:auto;display:none;color:var(--rust);border-color:#EFC9BC;">Delete</button>
+      </div>
+      <p id="wcBroadcastNote" style="font-size:11.5px;color:var(--muted);margin:12px 0 0;"></p>
     </div>
 
     <div class="card" id="wcQuotesSection">
@@ -800,10 +884,12 @@ input::placeholder{color:#A9BCB9;}
       <div class="btn-row" id="wcTypeToggle" style="gap:8px;margin-bottom:16px;">
         <button type="button" class="btn" id="btnTypeQuote" data-wctype="Quote" style="flex:1;">Quote</button>
         <button type="button" class="btn" id="btnTypeWorkOrder" data-wctype="Work Order" style="flex:1;">Work Order</button>
+        <button type="button" class="btn" id="btnTypeTask" data-wctype="Task" style="flex:1;">Task</button>
       </div>
       <select id="wcType" style="display:none;">
         <option value="Quote">Quote</option>
         <option value="Work Order">Work Order</option>
+        <option value="Task">Task</option>
       </select>
       <div class="field" id="wcDateField">
         <label>Scheduled date</label>
@@ -826,7 +912,7 @@ input::placeholder{color:#A9BCB9;}
         <textarea id="wcNotes" placeholder="Any additional details for the customer..."></textarea>
       </div>
       <div class="field" id="wcTechField">
-        <label>Assign to technician</label>
+        <label>Saved technician</label>
         <select id="wcTechnician"><option value="">Unassigned</option></select>
       </div>
       <div class="field" id="wcRepeatField">
@@ -861,6 +947,74 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-primary" id="btnSendWorkOrder" style="width:auto;">Send to customer</button>
         <button class="btn btn-ghost" id="btnClearWorkOrder">Clear</button>
       </div>
+    </div>
+
+    <div class="card" id="wcTaskSection" style="display:none;">
+      <div class="section-head">
+        <button class="btn btn-primary" id="btnTaskTemplates" style="width:auto;margin-right:auto;">Saved tasks</button>
+        <h2 id="wcTaskHeading" style="display:none;"></h2>
+      </div>
+
+      <div class="field">
+        <label>Scheduled date</label>
+        <input type="date" id="taskDate" style="width:auto;min-width:0;padding-right:12px;">
+      </div>
+
+      <div class="field" style="position:relative;">
+        <label>Customer <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <div id="taskCustomerChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;"></div>
+        <input id="taskCustomerSearch" placeholder="Start typing a name&hellip;" autocomplete="off">
+        <div id="taskCustomerSuggest" style="display:none;position:absolute;left:0;right:0;z-index:40;background:#fff;border:1px solid var(--line);border-radius:10px;margin-top:4px;box-shadow:0 4px 14px rgba(15,46,46,0.14);max-height:240px;overflow-y:auto;"></div>
+      </div>
+
+      <div class="field">
+        <label>Task</label>
+        <input id="taskTitle" placeholder="e.g. Take a photo of the heater model plate">
+      </div>
+
+      <div class="field">
+        <label>Details (optional)</label>
+        <textarea id="taskDetails" rows="4" placeholder="Anything the technician needs to know"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Saved technician</label>
+        <select id="taskTechnician"></select>
+      </div>
+
+      <div class="field">
+        <label>Repeat</label>
+        <select id="taskRepeat">
+          <option value="none">Just once</option>
+          <option value="1">Every week</option>
+          <option value="2">Every 2 weeks</option>
+          <option value="3">Every 3 weeks</option>
+          <option value="4">Every 4 weeks</option>
+          <option value="custom">Every&hellip; (choose)</option>
+        </select>
+        <div id="taskRepeatCustom" style="display:none;margin-top:10px;align-items:center;gap:10px;">
+          <span style="font-size:13px;color:var(--muted);">Every</span>
+          <input type="number" id="taskRepeatWeeks" min="1" max="52" value="6" style="width:80px;">
+          <span style="font-size:13px;color:var(--muted);">weeks</span>
+        </div>
+        <div id="taskRepeatUntilWrap" style="display:none;margin-top:12px;">
+          <label style="font-size:12.5px;">Until <span style="font-weight:400;color:var(--muted);">(optional &mdash; leave blank to keep going)</span></label>
+          <input type="date" id="taskRepeatUntil">
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnSaveTask" style="width:auto;">Add to route</button>
+        <button class="btn btn-ghost" id="btnSaveTaskTemplate" style="width:auto;">Save for reuse</button>
+        <button class="btn btn-ghost" id="btnClearTask" style="width:auto;">Clear</button>
+      </div>
+    </div>
+
+    <div class="card" id="wcTaskListCard" style="display:none;">
+      <div class="section-head">
+        <h2>Tasks on the schedule</h2>
+      </div>
+      <div id="wcTaskList"></div>
     </div>
 
     <div class="card" id="wcQuotesHistoryCard">
@@ -903,7 +1057,11 @@ input::placeholder{color:#A9BCB9;}
     <div class="card" id="wcFiltersSection" style="display:none;">
       <div class="section-head">
         <h2>Filter clean groups</h2>
-        <button class="btn btn-primary" id="btnNewFilterGroup" style="width:auto;">+ New group</button>
+        <div style="display:flex;gap:8px;margin-left:auto;">
+          <button class="btn btn-ghost" id="btnNewFilterGroup" style="width:auto;">+ New group</button>
+          <button class="btn btn-primary" id="btnScheduleFilterGroups" style="width:auto;">Schedule</button>
+          <button class="btn btn-primary" id="btnEmailFilterGroups" style="width:auto;">Email</button>
+        </div>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Group customers together, give the group a date and a technician, then finalize to push it onto that technician's route.</p>
       <div id="filterGroupList"></div>
@@ -945,11 +1103,117 @@ input::placeholder{color:#A9BCB9;}
 
   </div>
 
+
+  <div class="view" id="view-account">
+    <div class="card">
+      <div class="section-head">
+        <h2>Account</h2>
+        <button class="btn btn-ghost" id="btnAccountBack" style="width:auto;margin-left:auto;">Back</button>
+      </div>
+      <div class="seg-control" id="accountTabControl">
+        <button class="history-type-btn active" data-acct="business">Business</button>
+        <button class="history-type-btn" data-acct="contact">Contact</button>
+        <button class="history-type-btn" data-acct="plan">Plan</button>
+        <button class="history-type-btn" data-acct="data">Data</button>
+      </div>
+    </div>
+
+    <div class="card acct-panel" id="acctBusiness">
+      <h2>Business details</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Used on the messages and reports your customers receive.</p>
+
+      <div class="field">
+        <label>Company name</label>
+        <input id="acctCompanyName" placeholder="e.g. Trifific Pool and Spa">
+      </div>
+      <div class="field">
+        <label>Owner or main contact</label>
+        <input id="acctOwnerName" placeholder="Who runs the business">
+      </div>
+      <div class="field">
+        <label>License number <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input id="acctLicense" placeholder="Shown on quotes and invoices where required">
+      </div>
+      <div class="field">
+        <label>Service area <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input id="acctServiceArea" placeholder="e.g. Buckeye, Goodyear, Litchfield Park">
+      </div>
+    </div>
+
+    <div class="card acct-panel" id="acctContact" style="display:none;">
+      <h2>Contact details</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">How customers reach you, and where your own copies go.</p>
+
+      <div class="field">
+        <label>Email address</label>
+        <input id="acctEmail" type="email" placeholder="you@yourpoolcompany.com">
+      </div>
+      <div class="field">
+        <label>Phone</label>
+        <input id="acctPhone" type="tel" placeholder="Office or mobile">
+      </div>
+      <div class="field">
+        <label>Business address <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input id="acctAddress" placeholder="Street">
+      </div>
+      <div class="field-row">
+        <div class="field"><label>City</label><input id="acctCity"></div>
+        <div class="field"><label>State</label><input id="acctState"></div>
+        <div class="field"><label>ZIP</label><input id="acctZip"></div>
+      </div>
+      <div class="field">
+        <label>Website <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input id="acctWebsite" placeholder="yourpoolcompany.com">
+      </div>
+    </div>
+
+    <div class="card acct-panel" id="acctPlan" style="display:none;">
+      <h2>Your plan</h2>
+      <div id="acctPlanSummary" style="margin-top:6px;"></div>
+      <div id="acctPlanNote" style="margin-top:16px;padding:12px 14px;border-radius:10px;
+        background:var(--surface-alt);border:1px solid var(--line);font-size:12.5px;
+        color:var(--muted);line-height:1.55;"></div>
+    </div>
+
+    <div class="card acct-panel" id="acctData" style="display:none;">
+      <h2>Your data</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Everything lives on this device. Back it up regularly.</p>
+      <div id="acctDataSummary" style="margin-bottom:14px;"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnAcctBackup" style="width:auto;">Download a backup</button>
+        <label class="btn btn-ghost" id="btnAcctRestore" style="width:auto;cursor:pointer;">Restore from backup</label>
+      </div>
+      <input type="file" accept="application/json" id="acctRestoreInput" style="display:none;">
+    </div>
+  </div>
+
   <div class="view" id="view-settings">
     <div class="card">
       <h2>Settings</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">More settings will show up on this page as they're added.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">How the apps behave. Your company details live under Account, top right.</p>
     </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <h2 style="margin:0;">Automatic on my way message</h2>
+        <label class="toggle-switch">
+          <input type="checkbox" id="settingAutoNotifyAll">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, every customer gets an automatic message as the technician approaches. Individual customers can still be switched on or off in Customer Customization, which always wins over this.</p>
+      <div class="field" id="settingAutoNotifyLeadField" style="display:none;margin-top:16px;">
+        <label>How many stops before them?</label>
+        <select id="settingAutoNotifyLead">
+          <option value="1">1 stop before</option>
+          <option value="2">2 stops before</option>
+          <option value="3">3 stops before</option>
+          <option value="4">4 stops before</option>
+          <option value="5">5 stops before</option>
+        </select>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Storage</h2>
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Everything lives in this browser's storage, which browsers cap at roughly 5&ndash;10&nbsp;MB. Photos take up the most room by far. When it fills, nothing new can be saved.</p>
@@ -963,6 +1227,7 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-secondary" id="btnMovePhotos" style="width:auto;">Move photos to database</button>
       
       <div id="storageBreakdown" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;"></div>
+      <div id="photoRetentionNotice" style="display:none;margin-top:14px;padding:12px 14px;border-radius:10px;font-size:12.5px;line-height:1.5;"></div>
     </div>
       <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Removes photos from all but the four most recent visits per body of water. Readings, notes and service records are kept in full — only the images go.</p>
     </div>
@@ -1127,6 +1392,7 @@ input::placeholder{color:#A9BCB9;}
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can drag customers into a different order on their route for the day.</p>
     </div>
+  </div>
 
   <div class="view" id="view-productsservices">
     <div class="card">
@@ -2431,7 +2697,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -2484,8 +2750,6 @@ document.getElementById('settingRequireSkipPhoto').addEventListener('change', (e
     : 'A photo is no longer required to skip a service');
 });
 
-
-
 document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
   appSettings.allowRouteReorder = e.target.checked;
   saveSettings();
@@ -2521,6 +2785,12 @@ document.querySelectorAll('#micSideRow [data-micside]').forEach(btn=>{
     appSettings.micSide = btn.dataset.micside;
     saveSettings();
     renderMicSideButtons();
+    showToast('Microphone moved to the ' + btn.dataset.micside);
+  });
+});
+
+// The account button carries the company name, so it needs drawing at startup
+renderAccountButton();
 
 // Move any equipment photos still held in localStorage across to the database.
 // Runs once, in the background, so a large library doesn't delay the page.
@@ -2529,9 +2799,6 @@ setTimeout(async ()=>{
   if(r && r.moved) showToast('Moved ' + r.moved + ' equipment photo' + (r.moved === 1 ? '' : 's') + ' to larger storage');
   renderStorageMeter();
 }, 800);
-    showToast('Microphone moved to the ' + btn.dataset.micside);
-  });
-});
 
 document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
   appSettings.pushToTalkEnabled = e.target.checked;
@@ -3105,21 +3372,9 @@ let workCenterMode = 'quotes';
 
 document.querySelectorAll('#workCenterTypeControl .history-type-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
-    workCenterMode = btn.dataset.type;
-    document.querySelectorAll('#workCenterTypeControl .history-type-btn').forEach(b=>{
-      b.classList.toggle('active', b.dataset.type === workCenterMode);
-    });
-    const m = workCenterMode;
-    document.getElementById('wcQuotesSection').style.display = m === 'quotes' ? 'block' : 'none';
-    document.getElementById('wcQuotesHistoryCard').style.display = m === 'quotes' ? 'block' : 'none';
-    document.getElementById('wcCallsSection').style.display = m === 'calls' ? 'block' : 'none';
-    document.getElementById('wcCallsListCard').style.display = m === 'calls' ? 'block' : 'none';
-    document.getElementById('wcFiltersSection').style.display = m === 'filters' ? 'block' : 'none';
-    if(m === 'filters') renderFilterGroups();
+    applyWorkCenterMode(btn.dataset.type);
   });
 });
-
-
 
 // Reason box starts small and grows to fit what's typed
 (function(){
@@ -3132,8 +3387,6 @@ document.querySelectorAll('#workCenterTypeControl .history-type-btn').forEach(bt
   ta.addEventListener('input', autoGrow);
   ta.addEventListener('focus', autoGrow);
 })();
-
-
 
 // ---------- Global service report history ----------
 let globalHistPage = 1;
@@ -3738,6 +3991,532 @@ function saveFilterGroups(){ lsSet('filterGroups', filterGroups); }
 
 let openFilterGroupIds = new Set();
 
+
+
+// The business's own name, used wherever a message is signed. Falls back to a
+// neutral phrase so a template never goes out reading "undefined".
+
+// The address the business sends from. Nothing can be emailed until it is set.
+function accountEmail(){
+  return (lsGet('accountEmail') || '').trim();
+}
+
+function companyName(){
+  const n = (lsGet('companyName') || '').trim();
+  return n || 'Your pool service';
+}
+
+// ---------- Message all customers ----------
+// Opens the message in the user's own email app rather than sending from a
+// server. Nothing to pay for, and it arrives from their own address.
+
+// Shipped as a starting point. Once saved they live in storage and can be
+// edited, added to, or removed like any other.
+const DEFAULT_BROADCAST_TEMPLATES = [
+  {
+    id: 'bt_storm', category: 'Weather', name: 'Storm warning',
+    subject: 'Storm warning \u2014 a quick favour for your pool',
+    body: 'Hi there,\n\n'
+      + 'The weather coming through is putting an unusual amount of debris into pools, '
+      + 'which can pull the chemistry out of balance quickly.\n\n'
+      + 'If you get the chance before your next service, two things help enormously:\n\n'
+      + '1. Turn your system on and leave it running. The skimmer catches most debris '
+      + 'while it is still floating.\n'
+      + '2. Empty your skimmer and pump baskets. A full basket stops the skimmer working '
+      + 'at all, and anything that sinks has to be vacuumed or skimmed out by hand.\n\n'
+      + 'Doing this makes a real difference to how clear your water stays and keeps the '
+      + 'chemistry where it should be.\n\n'
+      + 'Thank you,\n' + companyName()
+  },
+  {
+    id: 'bt_freeze', category: 'Weather', name: 'Freeze warning',
+    subject: 'Freezing weather \u2014 please leave your system running',
+    body: 'Hi there,\n\n'
+      + 'Temperatures are due to drop below freezing. Please leave your pump running '
+      + 'continuously until the cold passes \u2014 moving water is far less likely to freeze, '
+      + 'and a frozen line or pump can be an expensive repair.\n\n'
+      + 'If you have a heater, setting it low will also help protect the equipment.\n\n'
+      + 'Thank you,\n' + companyName()
+  },
+  {
+    id: 'bt_holiday', category: 'Scheduling', name: 'Holiday schedule',
+    subject: 'Service schedule over the holiday',
+    body: 'Hi there,\n\n'
+      + 'A quick note about service over the coming holiday. Your regular day may shift '
+      + 'slightly that week \u2014 we will still service your pool, just possibly a day either '
+      + 'side of the usual.\n\n'
+      + 'Thank you for your patience,\n' + companyName()
+  },
+  {
+    id: 'bt_priceincrease', category: 'Announcements', name: 'Rate change',
+    subject: 'A note about your service rate',
+    body: 'Hi there,\n\n'
+      + 'I wanted to let you know about a change to your service rate, effective from '
+      + '[date]. Your new rate will be [amount] per month.\n\n'
+      + '[Reason for the change.]\n\n'
+      + 'Thank you for your business \u2014 please get in touch with any questions.\n\n'
+      + companyName()
+  }
+];
+
+let broadcastCategory = 'All';
+let broadcastSelectedId = null;
+
+function loadBroadcastTemplates(){
+  const saved = lsGet('broadcastTemplates');
+  if(Array.isArray(saved) && saved.length) return saved;
+  return DEFAULT_BROADCAST_TEMPLATES.map(t => Object.assign({}, t));
+}
+
+function saveBroadcastTemplates(list){
+  lsSet('broadcastTemplates', list);
+}
+
+// Categories the user made themselves. Kept separately so one can exist while
+// empty — otherwise a new category would vanish until a template used it.
+function loadBroadcastCategories(){
+  const saved = lsGet('broadcastCategories');
+  return Array.isArray(saved) ? saved : [];
+}
+
+function saveBroadcastCategories(list){
+  lsSet('broadcastCategories', list);
+}
+
+function broadcastCategories(list){
+  const out = ['All'];
+  // Ones in use
+  list.forEach(t=>{
+    const cat = (t.category || 'Uncategorised').trim() || 'Uncategorised';
+    if(out.indexOf(cat) === -1) out.push(cat);
+  });
+  // Ones created but not yet used
+  loadBroadcastCategories().forEach(cat=>{
+    if(cat && out.indexOf(cat) === -1) out.push(cat);
+  });
+  return out;
+}
+
+// Whoever is ticked in the list. Select all is the quick route to everyone.
+const broadcastPicked = new Set();
+
+function broadcastCandidates(){
+  return customers
+    .filter(c => c.active !== false && (c.email || '').trim())
+    .slice()
+    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
+}
+
+function broadcastRecipients(){
+  return broadcastCandidates()
+    .filter(c => broadcastPicked.has(c.id))
+    .map(c => (c.email || '').trim())
+    .filter(Boolean)
+    // one address each, even if two customers share one
+    .filter((e, i, arr) => arr.indexOf(e) === i);
+}
+
+function renderRecipientPicker(){
+  const box = document.getElementById('wcRecipientList');
+  if(!box) return;
+  const q = (document.getElementById('wcRecipientSearch').value || '').trim().toLowerCase();
+  const shown = broadcastCandidates()
+    .filter(c => !q || (c.name || '').toLowerCase().includes(q)
+                    || (c.email || '').toLowerCase().includes(q));
+
+  box.innerHTML = '';
+  if(shown.length === 0){
+    box.innerHTML = '<div style="font-size:12.5px;color:var(--muted);padding:10px 0;">No matches.</div>';
+    return;
+  }
+
+  shown.forEach(cust=>{
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;';
+
+    const box2 = document.createElement('input');
+    box2.type = 'checkbox';
+    box2.checked = broadcastPicked.has(cust.id);
+    box2.style.margin = '0';
+    box2.addEventListener('change', ()=>{
+      if(box2.checked) broadcastPicked.add(cust.id); else broadcastPicked.delete(cust.id);
+      updateBroadcastCount();
+    });
+    row.appendChild(box2);
+
+    const name = document.createElement('span');
+    name.style.flex = '1';
+    name.textContent = displayName(cust.name);
+    row.appendChild(name);
+
+    const em = document.createElement('span');
+    em.style.cssText = 'font-size:11px;color:var(--muted);flex-shrink:0;'
+      + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;';
+    em.textContent = cust.email;
+    row.appendChild(em);
+
+    box.appendChild(row);
+  });
+}
+
+function applyBroadcastAudience(){
+  renderRecipientPicker();
+  updateBroadcastCount();
+}
+
+function updateBroadcastCount(){
+  const picked = broadcastCandidates().filter(c => broadcastPicked.has(c.id)).length;
+  const total = broadcastCandidates().length;
+  const withoutEmail = customers.filter(c => c.active !== false && !(c.email || '').trim()).length;
+  const countEl = document.getElementById('wcBroadcastCount');
+  if(!countEl) return;
+
+  countEl.textContent = picked
+    ? picked + ' of ' + total + ' selected'
+      + (withoutEmail ? '  \u00b7  ' + withoutEmail + (withoutEmail === 1 ? ' has' : ' have') + ' no email on file' : '')
+    : 'Nobody selected yet \u2014 tick customers below, or use Select all';
+}
+
+function loadBroadcastIntoForm(t){
+  document.getElementById('wcBroadcastSubject').value = t ? t.subject : '';
+  document.getElementById('wcBroadcastBody').value = t ? t.body : '';
+  broadcastSelectedId = t ? t.id : null;
+  document.getElementById('wcBroadcastSave').style.display = t ? 'none' : 'inline-flex';
+  document.getElementById('wcBroadcastUpdate').style.display = t ? 'inline-flex' : 'none';
+  document.getElementById('wcBroadcastDelete').style.display = t ? 'inline-flex' : 'none';
+}
+
+
+async function addBroadcastCategory(){
+  const name = await promptDialog('Name the new category', 'e.g. Green Pools');
+  if(!name || !name.trim()) return;
+  const clean = name.trim();
+
+  const existing = broadcastCategories(loadBroadcastTemplates());
+  if(existing.indexOf(clean) !== -1){
+    broadcastCategory = clean;
+    renderBroadcast();
+    showToast('"' + clean + '" already exists');
+    return;
+  }
+
+  const own = loadBroadcastCategories();
+  own.push(clean);
+  saveBroadcastCategories(own);
+  broadcastCategory = clean;
+  renderBroadcast();
+  showToast('"' + clean + '" added');
+}
+
+// Rename moves every template in that category too, so nothing is orphaned
+async function manageBroadcastCategory(cat){
+  const templates = loadBroadcastTemplates();
+  const inUse = templates.filter(t => (t.category || 'Uncategorised') === cat).length;
+
+  const rename = await confirmDialog(
+    '"' + cat + '"' + (inUse ? ' holds ' + inUse + ' template' + (inUse === 1 ? '' : 's') + '.' : ' is empty.')
+    + '\n\nRename it, or remove it? Removing leaves its templates in place under Uncategorised.',
+    'Rename');
+
+  if(rename){
+    const name = await promptDialog('New name for "' + cat + '"', cat);
+    if(!name || !name.trim()) return;
+    const clean = name.trim();
+
+    templates.forEach(t=>{
+      if((t.category || 'Uncategorised') === cat) t.category = clean;
+    });
+    saveBroadcastTemplates(templates);
+
+    const own = loadBroadcastCategories().map(x => x === cat ? clean : x);
+    saveBroadcastCategories(own.filter((x,i,a)=> a.indexOf(x) === i));
+
+    if(broadcastCategory === cat) broadcastCategory = clean;
+    renderBroadcast();
+    showToast('Renamed to "' + clean + '"');
+    return;
+  }
+
+  const remove = await confirmDialog(
+    'Remove the "' + cat + '" category?'
+    + (inUse ? ' Its ' + inUse + ' template' + (inUse === 1 ? '' : 's') + ' will move to Uncategorised.' : ''),
+    'Remove');
+  if(!remove) return;
+
+  templates.forEach(t=>{
+    if((t.category || 'Uncategorised') === cat) t.category = 'Uncategorised';
+  });
+  saveBroadcastTemplates(templates);
+  saveBroadcastCategories(loadBroadcastCategories().filter(x => x !== cat));
+
+  if(broadcastCategory === cat) broadcastCategory = 'All';
+  renderBroadcast();
+  showToast('"' + cat + '" removed');
+}
+
+
+// One hover-to-delete treatment, used everywhere something is removable, so
+// the behaviour is the same wherever it appears. The x sits on the right and
+// only shows on hover, so a resting row is never cluttered with them.
+function attachHoverDelete(el, title, onDelete){
+  el.style.position = 'relative';
+  el.style.paddingRight = '26px';
+  el.title = title;
+
+  const x = document.createElement('span');
+  x.textContent = '\u00D7';
+  x.style.cssText = 'position:absolute;right:7px;top:50%;transform:translateY(-50%);'
+    + 'font-size:16px;line-height:1;opacity:0;transition:opacity .12s ease;'
+    + 'color:var(--rust);font-weight:700;cursor:pointer;padding:0 2px;';
+  el.appendChild(x);
+
+  el.addEventListener('mouseenter', ()=>{ x.style.opacity = '1'; });
+  el.addEventListener('mouseleave', ()=>{ x.style.opacity = '0'; });
+
+  x.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    onDelete();
+  });
+
+  return x;
+}
+
+function renderBroadcast(){
+  const list = loadBroadcastTemplates();
+
+  // Categories
+  const catBox = document.getElementById('wcBroadcastCategories');
+  if(catBox){
+    catBox.innerHTML = '';
+    broadcastCategories(list).forEach(cat=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = cat === broadcastCategory ? 'btn btn-primary' : 'btn btn-ghost';
+      b.style.cssText = 'width:auto;padding:7px 13px;font-size:12.5px;';
+      b.textContent = cat;
+      b.addEventListener('click', ()=>{ broadcastCategory = cat; renderBroadcast(); });
+      if(cat !== 'All'){
+        attachHoverDelete(b, 'Rename or remove "' + cat + '"',
+          ()=> manageBroadcastCategory(cat));
+      }
+      catBox.appendChild(b);
+    });
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-ghost';
+    addBtn.style.cssText = 'width:auto;padding:7px 13px;font-size:12.5px;';
+    addBtn.textContent = '+';
+    addBtn.title = 'Add a category';
+    addBtn.style.fontWeight = '700';
+    addBtn.addEventListener('click', addBroadcastCategory);
+    catBox.appendChild(addBtn);
+  }
+
+  // Templates in the chosen category
+  const box = document.getElementById('wcBroadcastTemplates');
+  if(box){
+    box.innerHTML = '';
+    const shown = list.filter(t => broadcastCategory === 'All'
+      || (t.category || 'Uncategorised') === broadcastCategory);
+
+    if(shown.length === 0){
+      const none = document.createElement('span');
+      none.style.cssText = 'font-size:12.5px;color:var(--muted);';
+      none.textContent = 'No templates in this category yet.';
+      box.appendChild(none);
+    }
+
+    shown.forEach(t=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = t.id === broadcastSelectedId ? 'btn btn-secondary' : 'btn btn-ghost';
+      b.style.cssText = 'width:auto;padding:7px 13px;font-size:12.5px;';
+      b.textContent = t.name;
+      b.addEventListener('click', ()=>{
+        loadBroadcastIntoForm(t);
+        renderBroadcast();
+      });
+      attachHoverDelete(b, 'Delete "' + t.name + '"', async ()=>{
+        const ok = await confirmDialog('Delete the "' + t.name + '" template? This cannot be undone.', 'Delete');
+        if(!ok) return;
+        saveBroadcastTemplates(loadBroadcastTemplates().filter(x => x.id !== t.id));
+        if(broadcastSelectedId === t.id) loadBroadcastIntoForm(null);
+        renderBroadcast();
+        showToast('"' + t.name + '" deleted');
+      });
+      box.appendChild(b);
+    });
+
+    // Starts a fresh message ready to be saved as a new template
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'btn btn-ghost';
+    add.title = 'Start a new template';
+    add.style.cssText = 'width:auto;padding:7px 13px;font-size:12.5px;font-weight:700;';
+    add.textContent = '+';
+    add.addEventListener('click', ()=>{ loadBroadcastIntoForm(null); renderBroadcast(); });
+    box.appendChild(add);
+  }
+
+  // Open on the storm warning the first time
+  if(!box || !box.dataset.started){
+    if(box) box.dataset.started = 'true';
+    const first = list.find(t => t.id === 'bt_storm') || list[0];
+    if(first) loadBroadcastIntoForm(first);
+  }
+
+  applyBroadcastAudience();
+}
+
+
+document.getElementById('wcRecipientSearch').addEventListener('input', renderRecipientPicker);
+document.getElementById('wcRecipientAll').addEventListener('click', ()=>{
+  const q = (document.getElementById('wcRecipientSearch').value || '').trim().toLowerCase();
+  broadcastCandidates()
+    .filter(c => !q || (c.name || '').toLowerCase().includes(q))
+    .forEach(c => broadcastPicked.add(c.id));
+  renderRecipientPicker();
+  updateBroadcastCount();
+});
+document.getElementById('wcRecipientNone').addEventListener('click', ()=>{
+  broadcastPicked.clear();
+  renderRecipientPicker();
+  updateBroadcastCount();
+});
+
+document.getElementById('wcBroadcastSave').addEventListener('click', async ()=>{
+  const subject = document.getElementById('wcBroadcastSubject').value.trim();
+  const body = document.getElementById('wcBroadcastBody').value;
+  if(!body.trim()){ showToast('Write a message first'); return; }
+
+  const name = await promptDialog('Name this template', 'e.g. Green pool notice');
+  if(!name || !name.trim()) return;
+  const category = await promptDialog('Category', 'e.g. Weather, Scheduling, Announcements');
+
+  const list = loadBroadcastTemplates();
+  const t = {
+    id: 'bt_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    name: name.trim(),
+    category: (category || '').trim() || 'Uncategorised',
+    subject, body
+  };
+  list.push(t);
+  saveBroadcastTemplates(list);
+  broadcastCategory = t.category;
+  loadBroadcastIntoForm(t);
+  renderBroadcast();
+  showToast('Saved to ' + t.category);
+});
+
+document.getElementById('wcBroadcastUpdate').addEventListener('click', ()=>{
+  if(!broadcastSelectedId) return;
+  const list = loadBroadcastTemplates();
+  const t = list.find(x => x.id === broadcastSelectedId);
+  if(!t){ showToast('That template is no longer saved'); return; }
+  t.subject = document.getElementById('wcBroadcastSubject').value.trim();
+  t.body = document.getElementById('wcBroadcastBody').value;
+  saveBroadcastTemplates(list);
+  showToast('"' + t.name + '" updated');
+});
+
+document.getElementById('wcBroadcastDelete').addEventListener('click', async ()=>{
+  if(!broadcastSelectedId) return;
+  const list = loadBroadcastTemplates();
+  const t = list.find(x => x.id === broadcastSelectedId);
+  if(!t) return;
+  const ok = await confirmDialog('Delete the "' + t.name + '" template? This cannot be undone.', 'Delete');
+  if(!ok) return;
+  saveBroadcastTemplates(list.filter(x => x.id !== t.id));
+  loadBroadcastIntoForm(null);
+  renderBroadcast();
+  showToast('"' + t.name + '" deleted');
+});
+
+document.getElementById('wcBroadcastOpen').addEventListener('click', async ()=>{
+  const btn = document.getElementById('wcBroadcastOpen');
+  const note = document.getElementById('wcBroadcastNote');
+
+  const chosen = broadcastCandidates().filter(c => broadcastPicked.has(c.id));
+  if(!chosen.length){
+    showToast('Choose at least one customer first');
+    return;
+  }
+
+  const subject = document.getElementById('wcBroadcastSubject').value.trim();
+  const body = document.getElementById('wcBroadcastBody').value;
+  if(!body.trim()){ showToast('Write a message first'); return; }
+
+  const ok = await confirmDialog(
+    'Send this to ' + chosen.length + ' customer' + (chosen.length === 1 ? '' : 's') + '?\n\n'
+    + 'Each one gets their own copy, so nobody sees anyone else\u2019s address.',
+    'Send');
+  if(!ok) return;
+
+  btn.disabled = true;
+  const wasLabel = btn.textContent;
+  btn.textContent = 'Sending\u2026';
+
+  let sent = 0, failed = 0;
+  for(const cust of chosen){
+    const to = (cust.email || '').trim();
+    if(!to) continue;
+    const good = await sendCustomerEmail(to, subject, body);
+    if(good) sent++; else failed++;
+  }
+
+  btn.disabled = false;
+  btn.textContent = wasLabel;
+
+  showToast(sent + ' email' + (sent === 1 ? '' : 's') + ' sent'
+    + (failed ? '  \u00b7  ' + failed + ' failed' : ''));
+  if(note){
+    note.textContent = failed
+      ? sent + ' sent, ' + failed + ' could not be delivered. Check those addresses are correct.'
+      : 'Sent to ' + sent + ' customer' + (sent === 1 ? '' : 's') + '. Each got their own copy.';
+  }
+});
+
+// Every WorkCenter mode in one place. Both the tab buttons and the reset on
+// entry go through this, so a new mode can't be added to one and forgotten in
+// the other — which is exactly how the Email section got left on screen while
+// the Quotes tab was selected.
+function applyWorkCenterMode(mode){
+  workCenterMode = mode;
+
+  document.querySelectorAll('#workCenterTypeControl .history-type-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.type === mode);
+  });
+
+  const sections = {
+    quotes:    ['wcQuotesSection', 'wcQuotesHistoryCard'],
+    calls:     ['wcCallsSection', 'wcCallsListCard'],
+    filters:   ['wcFiltersSection'],
+    broadcast: ['wcBroadcastSection']
+  };
+
+  Object.keys(sections).forEach(m=>{
+    sections[m].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.style.display = (m === mode) ? 'block' : 'none';
+    });
+  });
+
+  if(mode === 'filters') renderFilterGroups();
+  if(mode === 'broadcast') renderBroadcast();
+
+  // The task form lives inside the quotes mode, so its own visibility is
+  // decided by the Quote / Work Order / Task toggle rather than here
+  if(mode === 'quotes') applyWorkOrderType();
+  else {
+    ['wcTaskSection','wcTaskListCard'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.style.display = 'none';
+    });
+  }
+}
+
 function renderFilterGroups(){
   const container = document.getElementById('filterGroupList');
   if(!container) return;
@@ -3912,32 +4691,6 @@ function renderFilterGroups(){
     });
     actions.appendChild(saveBtn);
 
-    const finBtn = document.createElement('button');
-    finBtn.className = 'btn btn-primary';
-    finBtn.style.cssText = 'width:auto;padding:7px 14px;font-size:12.5px;';
-    finBtn.textContent = 'Schedule';
-    finBtn.addEventListener('click', ()=> finalizeFilterGroup(g));
-    actions.appendChild(finBtn);
-
-    if(g.finalized){
-      const undoBtn = document.createElement('button');
-      undoBtn.className = 'btn btn-ghost';
-      undoBtn.style.cssText = 'width:auto;padding:7px 12px;font-size:12.5px;';
-      undoBtn.textContent = 'Unschedule';
-      undoBtn.addEventListener('click', async ()=>{
-        const ok = await confirmDialog('Pull this group off the technician\'s route? The group stays here so you can reschedule it.', 'Remove');
-        if(!ok) return;
-        let sched = lsGet('scheduledFilterCleans') || [];
-        sched = sched.filter(s => s.groupId !== g.id);
-        lsSet('scheduledFilterCleans', sched);
-        g.finalized = false;
-        saveFilterGroups();
-        renderFilterGroups();
-        showToast('Removed from route');
-      });
-      actions.appendChild(undoBtn);
-    }
-
     card.appendChild(actions);
     container.appendChild(card);
   });
@@ -4066,6 +4819,1032 @@ function openGroupCustomerPicker(g){
   overlay.querySelector('#gcpCancel').addEventListener('click', cleanup);
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
 }
+
+
+// ---------- Emailing a filter clean group ----------
+// Tells customers when their filter clean is booked. The date comes from the
+// group itself, so it can't disagree with what's on the technician's route.
+function filterGroupDateText(g){
+  if(!g.date) return 'a date still to be confirmed';
+  const d = new Date(g.date + 'T12:00:00');
+  if(isNaN(d.getTime())) return g.date;
+  return d.toLocaleDateString(undefined,
+    {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+}
+
+// The editable message. {dates} is filled in per customer, so one wording
+// serves everybody however many groups they are in.
+const FILTER_EMAIL_PLACEHOLDER = '{dates}';
+
+const DEFAULT_FILTER_EMAIL = {
+  subject: 'Your filter clean is coming up',
+  body: 'Hi there,\n\n'
+    + 'Your filter clean is scheduled for {dates}.\n\n'
+    + 'A clean filter is what keeps your water clear and stops your pump working harder '
+    + 'than it needs to, so it is worth having done on time.\n\n'
+    + 'Nothing is needed from you \u2014 but if you can make sure the equipment pad is '
+    + 'reachable and any gates are unlocked, it makes the visit much quicker.\n\n'
+    + 'Thank you,\n{company}'
+};
+
+function loadFilterEmail(){
+  const saved = lsGet('filterCleanEmail');
+  if(saved && saved.body) return saved;
+  return Object.assign({}, DEFAULT_FILTER_EMAIL);
+}
+
+function saveFilterEmail(t){ lsSet('filterCleanEmail', t); }
+
+// Turns one or more dates into something that reads naturally in a sentence
+function joinDates(dates){
+  if(dates.length === 1) return dates[0];
+  if(dates.length === 2) return dates[0] + ' and ' + dates[1];
+  return dates.slice(0, -1).join(', ') + ', and ' + dates[dates.length - 1];
+}
+
+function fillFilterEmail(text, dates){
+  return text
+    .split(FILTER_EMAIL_PLACEHOLDER).join(joinDates(dates))
+    .split('{company}').join(companyName());
+}
+
+// Everyone in the chosen groups, each with every date that applies to them.
+// A customer in two groups gets one email listing both, not two emails.
+function filterEmailRecipients(groups){
+  const byCustomer = new Map();
+
+  groups.forEach(g=>{
+    const when = filterGroupDateText(g);
+    (g.customerIds || []).forEach(id=>{
+      const cust = customers.find(c => c.id === id);
+      if(!cust || !(cust.email || '').trim()) return;
+      const seen = byCustomer.get(cust.id) || {customer: cust, dates: []};
+      if(seen.dates.indexOf(when) === -1) seen.dates.push(when);
+      byCustomer.set(cust.id, seen);
+    });
+  });
+
+  return Array.from(byCustomer.values());
+}
+
+async function openFilterEmailEditor(onSaved){
+  const t = loadFilterEmail();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,46,46,0.45);'
+    + 'display:flex;align-items:center;justify-content:center;z-index:210;padding:18px;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:560px;'
+    + 'width:100%;max-height:86vh;overflow-y:auto;';
+
+  card.innerHTML = '<h2 style="margin:0 0 6px;">Edit the filter clean email</h2>'
+    + '<p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">'
+    + 'Write <strong>{dates}</strong> where the scheduled date should go, and '
+    + '<strong>{company}</strong> for your company name. If a customer is in several groups, '
+    + '{dates} becomes all of their dates listed in one sentence.</p>';
+
+  const subWrap = document.createElement('div');
+  subWrap.className = 'field';
+  subWrap.innerHTML = '<label>Subject</label>';
+  const sub = document.createElement('input');
+  sub.value = t.subject;
+  subWrap.appendChild(sub);
+  card.appendChild(subWrap);
+
+  const bodyWrap = document.createElement('div');
+  bodyWrap.className = 'field';
+  bodyWrap.innerHTML = '<label>Message</label>';
+  const body = document.createElement('textarea');
+  body.rows = 12;
+  body.style.minHeight = '220px';
+  body.value = t.body;
+  bodyWrap.appendChild(body);
+  card.appendChild(bodyWrap);
+
+  const row = document.createElement('div');
+  row.className = 'btn-row';
+  row.style.marginTop = '16px';
+
+  const save = document.createElement('button');
+  save.className = 'btn btn-primary';
+  save.style.width = 'auto';
+  save.textContent = 'Save';
+
+  const reset = document.createElement('button');
+  reset.className = 'btn btn-ghost';
+  reset.style.width = 'auto';
+  reset.textContent = 'Reset to default';
+
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-ghost';
+  cancel.style.width = 'auto';
+  cancel.textContent = 'Cancel';
+
+  row.appendChild(save);
+  row.appendChild(reset);
+  row.appendChild(cancel);
+  card.appendChild(row);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  cancel.addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  reset.addEventListener('click', ()=>{
+    sub.value = DEFAULT_FILTER_EMAIL.subject;
+    body.value = DEFAULT_FILTER_EMAIL.body;
+    refresh();
+  });
+
+  save.addEventListener('click', ()=>{
+    if(!body.value.trim()){ showToast('The message cannot be empty'); return; }
+    if(body.value.indexOf(FILTER_EMAIL_PLACEHOLDER) === -1){
+      showToast('Keep {dates} somewhere in the message, or nobody is told when');
+      return;
+    }
+    saveFilterEmail({subject: sub.value.trim(), body: body.value});
+    close();
+    showToast('Email saved');
+    if(onSaved) onSaved();
+  });
+}
+
+
+
+
+// Today as YYYY-MM-DD in the user's own timezone, not UTC — a visit late in
+// the evening must not be filed under tomorrow.
+function taskTodayStr(){
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+
+// ---------- Account ----------
+// One place for who the business is, rather than business details scattered
+// through Settings alongside app behaviour.
+const ACCOUNT_FIELDS = [
+  ['acctCompanyName', 'companyName'],
+  ['acctOwnerName',   'ownerName'],
+  ['acctLicense',     'licenseNumber'],
+  ['acctServiceArea', 'serviceArea'],
+  ['acctEmail',       'accountEmail'],
+  ['acctPhone',       'accountPhone'],
+  ['acctAddress',     'businessAddress'],
+  ['acctCity',        'businessCity'],
+  ['acctState',       'businessState'],
+  ['acctZip',         'businessZip'],
+  ['acctWebsite',     'businessWebsite']
+];
+
+let accountTab = 'business';
+
+function renderAccountButton(){
+  const name = (lsGet('companyName') || '').trim();
+  const label = document.getElementById('accountButtonLabel');
+  const mark = document.getElementById('accountInitials');
+  if(label) label.textContent = name || 'Account';
+  if(mark){
+    const initials = name
+      ? name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+      : 'PL';
+    mark.textContent = initials;
+  }
+}
+
+function renderAccountPlan(){
+  const box = document.getElementById('acctPlanSummary');
+  const note = document.getElementById('acctPlanNote');
+  if(!box) return;
+
+  const active = customers.filter(c => c.active !== false).length;
+  const bodies = customers.filter(c => c.active !== false).reduce((n, c)=>{
+    let count = 0;
+    if(c.hasPool) count++;
+    if(c.hasSpa) count++;
+    count += (c.fountains || []).length;
+    return n + count;
+  }, 0);
+  const techs = technicians.length;
+
+  box.innerHTML = '';
+  [['Customers', active], ['Bodies of water', bodies], ['Technicians', techs]].forEach(([k, v])=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:13.5px;';
+    row.innerHTML = '<span style="color:var(--muted);">' + k + '</span>'
+      + '<span style="font-weight:600;">' + v + '</span>';
+    box.appendChild(row);
+  });
+
+  if(note){
+    note.textContent = 'PoolLog runs entirely in this browser at the moment \u2014 there is no '
+      + 'subscription, no server and nothing to pay for. Billing and per-account sign-in arrive '
+      + 'with the hosted version.';
+  }
+}
+
+function renderAccountData(){
+  const box = document.getElementById('acctDataSummary');
+  if(!box) return;
+
+  const readingCount = ()=>{
+    let n = 0;
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i) || '';
+        if(k.indexOf(STORAGE_PREFIX + 'readings:') === 0
+           || k.indexOf(STORAGE_PREFIX + 'spaReadings:') === 0
+           || k.indexOf(STORAGE_PREFIX + 'fountainReadings:') === 0){
+          const list = lsGet(k.slice(STORAGE_PREFIX.length));
+          if(Array.isArray(list)) n += list.length;
+        }
+      }
+    }catch(e){}
+    return n;
+  };
+
+  box.innerHTML = '';
+  [['Customers on file', customers.length],
+   ['Service reports kept', readingCount()],
+   ['Storage used', (storageUsage() / 1024 / 1024).toFixed(2) + ' MB']
+  ].forEach(([k, v])=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:8px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:13.5px;';
+    row.innerHTML = '<span style="color:var(--muted);">' + k + '</span>'
+      + '<span style="font-weight:600;">' + v + '</span>';
+    box.appendChild(row);
+  });
+}
+
+function applyAccountTab(tab){
+  accountTab = tab;
+  document.querySelectorAll('#accountTabControl .history-type-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.acct === tab);
+  });
+  const panels = {business:'acctBusiness', contact:'acctContact', plan:'acctPlan', data:'acctData'};
+  Object.keys(panels).forEach(k=>{
+    const el = document.getElementById(panels[k]);
+    if(el) el.style.display = (k === tab) ? 'block' : 'none';
+  });
+  if(tab === 'plan') renderAccountPlan();
+  if(tab === 'data') renderAccountData();
+}
+
+function renderAccount(){
+  ACCOUNT_FIELDS.forEach(([elId, key])=>{
+    const el = document.getElementById(elId);
+    if(el) el.value = lsGet(key) || '';
+  });
+  applyAccountTab(accountTab);
+  renderAccountButton();
+}
+
+ACCOUNT_FIELDS.forEach(([elId, key])=>{
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.addEventListener('change', ()=>{
+    lsSet(key, el.value.trim());
+    if(key === 'companyName') renderAccountButton();
+    showToast('Saved');
+  });
+});
+
+document.querySelectorAll('#accountTabControl .history-type-btn').forEach(b=>{
+  b.addEventListener('click', ()=> applyAccountTab(b.dataset.acct));
+});
+
+document.getElementById('btnAccount').addEventListener('click', ()=> switchView('account'));
+document.getElementById('btnAccountBack').addEventListener('click', ()=> switchView('customers'));
+
+// Reuse the Settings backup controls rather than duplicating the logic
+document.getElementById('btnAcctBackup').addEventListener('click', ()=>{
+  const btn = document.getElementById('btnBackupDownload');
+  if(btn) btn.click();
+  else showToast('Backup is on the Settings page');
+});
+
+document.getElementById('btnAcctRestore').addEventListener('click', ()=>{
+  const btn = document.getElementById('btnBackupRestore');
+  if(btn) btn.click();
+  else showToast('Restore is on the Settings page');
+});
+
+// ---------- Tasks ----------
+// Anything a technician needs to do that is not a normal service. Lands on
+// their route for the chosen day, either against a customer or on its own.
+let tasks = lsGet('tasks') || [];
+function saveTasks(){ lsSet('tasks', tasks); }
+
+function loadTaskTemplates(){ return lsGet('taskTemplates') || []; }
+function saveTaskTemplates(list){ lsSet('taskTemplates', list); }
+
+let editingTaskId = null;
+
+// Customers chosen for the task being written, shown as chips exactly as a
+// work order does. Empty means the task belongs to the day, not to a stop.
+const taskPicked = new Set();
+
+function renderTaskChips(){
+  const box = document.getElementById('taskCustomerChips');
+  if(!box) return;
+  box.innerHTML = '';
+
+  Array.from(taskPicked).forEach(id=>{
+    const cust = customers.find(c => c.id === id);
+    if(!cust) return;
+
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;padding:5px 10px;'
+      + 'border-radius:999px;background:var(--surface-alt);border:1px solid var(--line);'
+      + 'font-size:12.5px;';
+    chip.textContent = displayName(cust.name);
+
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '\u00d7';
+    x.style.cssText = 'border:none;background:none;color:var(--rust);font-size:15px;'
+      + 'line-height:1;cursor:pointer;padding:0;';
+    x.addEventListener('click', ()=>{
+      taskPicked.delete(id);
+      renderTaskChips();
+    });
+    chip.appendChild(x);
+
+    box.appendChild(chip);
+  });
+}
+
+function renderTaskSuggest(term){
+  const box = document.getElementById('taskCustomerSuggest');
+  if(!box) return;
+  const t = (term || '').trim().toLowerCase();
+
+  // No list until something is typed, as everywhere else
+  if(!t){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
+  const matches = customers
+    .filter(c => c.active !== false)
+    .filter(c => !taskPicked.has(c.id))
+    .filter(c => [c.name, c.address, c.phone, c.email]
+      .filter(Boolean).join(' ').toLowerCase().includes(t))
+    .slice()
+    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)))
+    .slice(0, 10);
+
+  box.innerHTML = '';
+  if(!matches.length){
+    box.style.display = 'none';
+    return;
+  }
+
+  matches.forEach(cust=>{
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.style.cssText = 'display:block;width:100%;text-align:left;padding:9px 12px;'
+      + 'border:none;background:none;font-size:13px;cursor:pointer;'
+      + 'border-bottom:1px solid var(--line);';
+    row.textContent = displayName(cust.name);
+    row.addEventListener('click', ()=>{
+      taskPicked.add(cust.id);
+      document.getElementById('taskCustomerSearch').value = '';
+      renderTaskChips();
+      renderTaskSuggest('');
+    });
+    box.appendChild(row);
+  });
+  box.style.display = 'block';
+}
+
+function applyTaskRepeat(){
+  const mode = document.getElementById('taskRepeat').value;
+  document.getElementById('taskRepeatCustom').style.display = mode === 'custom' ? 'flex' : 'none';
+  document.getElementById('taskRepeatUntilWrap').style.display = mode === 'none' ? 'none' : 'block';
+}
+
+// How many weeks apart, or 0 for a one-off
+function taskRepeatWeeks(){
+  const mode = document.getElementById('taskRepeat').value;
+  if(mode === 'none') return 0;
+  if(mode === 'custom'){
+    const n = parseInt(document.getElementById('taskRepeatWeeks').value, 10);
+    return (n > 0 && n <= 52) ? n : 1;
+  }
+  return parseInt(mode, 10) || 1;
+}
+
+function renderTaskForm(){
+  const techSel = document.getElementById('taskTechnician');
+  if(!techSel) return;
+
+  const prevTech = techSel.value;
+  techSel.innerHTML = '';
+  if(!technicians.length){
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = 'Add a technician first';
+    techSel.appendChild(o);
+  }
+  technicians.forEach(t=>{
+    const o = document.createElement('option');
+    o.value = t.id; o.textContent = t.name;
+    techSel.appendChild(o);
+  });
+  if(prevTech) techSel.value = prevTech;
+
+  renderTaskChips();
+  applyTaskRepeat();
+
+  if(!document.getElementById('taskDate').value){
+    document.getElementById('taskDate').value = taskTodayStr();
+  }
+}
+
+function clearTaskForm(){
+  editingTaskId = null;
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDetails').value = '';
+  document.getElementById('taskDate').value = taskTodayStr();
+  document.getElementById('taskRepeat').value = 'none';
+  document.getElementById('taskRepeatUntil').value = '';
+  document.getElementById('taskCustomerSearch').value = '';
+  taskPicked.clear();
+  renderTaskChips();
+  renderTaskSuggest('');
+  applyTaskRepeat();
+  const heading = document.getElementById('wcTaskHeading');
+  heading.textContent = '';
+  heading.style.display = 'none';
+  document.getElementById('btnSaveTask').textContent = 'Add to route';
+}
+
+document.getElementById('taskCustomerSearch').addEventListener('input', (e)=>{
+  renderTaskSuggest(e.target.value);
+});
+document.getElementById('taskCustomerSearch').addEventListener('blur', ()=>{
+  setTimeout(()=> renderTaskSuggest(''), 150);
+});
+document.getElementById('taskRepeat').addEventListener('change', applyTaskRepeat);
+
+function renderTaskList(){
+  const box = document.getElementById('wcTaskList');
+  if(!box) return;
+
+  const upcoming = tasks
+    .filter(t => !t.done)
+    .slice()
+    .sort((a,b)=> (a.date || '').localeCompare(b.date || ''));
+
+  if(!upcoming.length){
+    box.innerHTML = emptyState('No tasks scheduled.');
+    return;
+  }
+
+  box.innerHTML = '';
+  upcoming.forEach(t=>{
+    const tech = technicians.find(x => x.id === t.technicianId);
+    const ids = t.customerIds || (t.customerId ? [t.customerId] : []);
+    const named = ids.map(id => customers.find(x => x.id === id))
+                     .filter(Boolean).map(x => displayName(x.name));
+
+    const row = document.createElement('div');
+    row.style.cssText = 'border:1px solid var(--line);border-radius:10px;padding:12px;'
+      + 'margin-bottom:8px;background:#fff;';
+
+    const head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:flex-start;gap:10px;';
+
+    const text = document.createElement('div');
+    text.style.flex = '1';
+    const when = t.date ? new Date(t.date + 'T12:00:00')
+      .toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'}) : 'no day set';
+    text.innerHTML = '<div style="font-weight:600;font-size:13.5px;">' + t.title + '</div>'
+      + '<div style="font-size:11.5px;color:var(--muted);margin-top:3px;">'
+      + when + '  \u00b7  ' + (tech ? tech.name : 'no technician')
+      + (named.length ? '  \u00b7  ' + (named.length <= 2 ? named.join(', ')
+          : named.length + ' customers') : '')
+      + (t.everyWeeks ? '  \u00b7  every '
+          + (t.everyWeeks === 1 ? 'week' : t.everyWeeks + ' weeks') : '')
+      + '</div>'
+      + (t.details ? '<div style="font-size:12px;color:var(--muted);margin-top:6px;white-space:pre-line;">'
+          + t.details + '</div>' : '');
+    head.appendChild(text);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-ghost';
+    editBtn.style.cssText = 'width:auto;padding:5px 10px;font-size:11.5px;flex-shrink:0;';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', ()=>{
+      editingTaskId = t.id;
+      document.getElementById('taskTitle').value = t.title;
+      document.getElementById('taskDetails').value = t.details || '';
+      document.getElementById('taskTechnician').value = t.technicianId || '';
+      document.getElementById('taskDate').value = t.date || '';
+      taskPicked.clear();
+      (t.customerIds || (t.customerId ? [t.customerId] : [])).forEach(id => taskPicked.add(id));
+      renderTaskChips();
+      // Editing changes this one occurrence, not the whole series
+      document.getElementById('taskRepeat').value = 'none';
+      applyTaskRepeat();
+      const h = document.getElementById('wcTaskHeading');
+      h.textContent = 'Editing "' + t.title + '"';
+      h.style.display = '';
+      document.getElementById('btnSaveTask').textContent = 'Save changes';
+      document.getElementById('wcTaskSection').scrollIntoView({behavior:'smooth', block:'start'});
+    });
+    head.appendChild(editBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn btn-ghost';
+    delBtn.style.cssText = 'width:auto;padding:5px 10px;font-size:11.5px;flex-shrink:0;'
+      + 'color:var(--rust);border-color:#EFC9BC;';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async ()=>{
+      const sameSeries = t.seriesId
+        ? tasks.filter(x => x.seriesId === t.seriesId && !x.done).length : 1;
+
+      if(sameSeries > 1){
+        const all = await confirmDialog(
+          '"' + t.title + '" repeats \u2014 there are ' + sameSeries + ' still to come.\n\n'
+          + 'Delete every one of them, or just this date?',
+          'Delete all ' + sameSeries);
+        if(all){
+          tasks = tasks.filter(x => x.seriesId !== t.seriesId);
+          saveTasks(); renderTaskList();
+          showToast('Deleted ' + sameSeries + ' repeats');
+          return;
+        }
+        const one = await confirmDialog('Delete just this one?', 'Delete this date');
+        if(!one) return;
+      } else {
+        const ok = await confirmDialog('Delete "' + t.title + '"?', 'Delete');
+        if(!ok) return;
+      }
+
+      tasks = tasks.filter(x => x.id !== t.id);
+      saveTasks();
+      renderTaskList();
+      showToast('Task deleted');
+    });
+    head.appendChild(delBtn);
+
+    row.appendChild(head);
+    box.appendChild(row);
+  });
+}
+
+document.getElementById('btnSaveTask').addEventListener('click', ()=>{
+  const title = document.getElementById('taskTitle').value.trim();
+  if(!title){ showToast('Say what needs doing first'); return; }
+
+  const techId = document.getElementById('taskTechnician').value;
+  if(!techId){ showToast('Choose a technician'); return; }
+
+  const date = document.getElementById('taskDate').value;
+  if(!date){ showToast('Choose a day'); return; }
+
+  const details = document.getElementById('taskDetails').value.trim();
+  const customerIds = Array.from(taskPicked);
+  const everyWeeks = taskRepeatWeeks();
+  const until = document.getElementById('taskRepeatUntil').value;
+
+  if(editingTaskId){
+    const t = tasks.find(x => x.id === editingTaskId);
+    if(t) Object.assign(t, {title, details, technicianId: techId, date,
+                            customerIds, everyWeeks, until, done: false});
+    saveTasks();
+    clearTaskForm();
+    renderTaskList();
+    showToast('Task updated');
+    return;
+  }
+
+  // A repeating task is stored as the dates it actually falls on, so a
+  // technician's route never has to work out a schedule in the field.
+  const dates = [date];
+  if(everyWeeks > 0){
+    const stop = until ? new Date(until + 'T12:00:00').getTime() : null;
+    let d = new Date(date + 'T12:00:00');
+    // A year ahead unless told otherwise — far enough to be useful, short
+    // enough that a mistake is not thousands of entries
+    const horizon = stop || (d.getTime() + 365 * 86400000);
+    for(let i = 0; i < 200; i++){
+      d = new Date(d.getTime() + everyWeeks * 7 * 86400000);
+      if(d.getTime() > horizon) break;
+      dates.push(new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 10));
+    }
+  }
+
+  const series = everyWeeks > 0
+    ? 'series_' + Date.now() + '_' + Math.random().toString(36).slice(2,7)
+    : '';
+
+  dates.forEach(dt=>{
+    tasks.push({
+      id: 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2,9),
+      title, details,
+      technicianId: techId,
+      date: dt,
+      customerIds,
+      everyWeeks,
+      seriesId: series,
+      done: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+
+  saveTasks();
+  clearTaskForm();
+  renderTaskList();
+  showToast(dates.length === 1
+    ? 'Task added to the route'
+    : 'Added ' + dates.length + ' times, every '
+      + (everyWeeks === 1 ? 'week' : everyWeeks + ' weeks'));
+});
+
+document.getElementById('btnClearTask').addEventListener('click', clearTaskForm);
+
+document.getElementById('btnSaveTaskTemplate').addEventListener('click', async ()=>{
+  const title = document.getElementById('taskTitle').value.trim();
+  if(!title){ showToast('Write the task first'); return; }
+  const name = await promptDialog('Name this saved task', title);
+  if(!name || !name.trim()) return;
+
+  const list = loadTaskTemplates();
+  list.push({
+    id: 'tt_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    name: name.trim(),
+    title,
+    details: document.getElementById('taskDetails').value.trim()
+  });
+  saveTaskTemplates(list);
+  showToast('Saved \u2014 find it under Saved tasks');
+});
+
+document.getElementById('btnTaskTemplates').addEventListener('click', ()=>{
+  const list = loadTaskTemplates();
+  if(!list.length){
+    showToast('Nothing saved yet \u2014 write a task and press Save for reuse');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,46,46,0.45);'
+    + 'display:flex;align-items:center;justify-content:center;z-index:200;padding:18px;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:480px;'
+    + 'width:100%;max-height:82vh;overflow-y:auto;';
+  card.innerHTML = '<h2 style="margin:0 0 6px;">Saved tasks</h2>'
+    + '<p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">'
+    + 'Pick one to fill the form, then choose a technician and a day.</p>';
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+
+  list.forEach(t=>{
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;'
+      + 'border-bottom:1px solid var(--line);';
+
+    const pick = document.createElement('button');
+    pick.className = 'btn btn-ghost';
+    pick.style.cssText = 'flex:1;text-align:left;width:auto;padding:8px 12px;font-size:13px;';
+    pick.innerHTML = '<strong>' + t.name + '</strong>'
+      + (t.details ? '<br><span style="font-size:11.5px;color:var(--muted);">'
+          + t.details.slice(0, 60) + (t.details.length > 60 ? '\u2026' : '') + '</span>' : '');
+    pick.addEventListener('click', ()=>{
+      document.getElementById('taskTitle').value = t.title;
+      document.getElementById('taskDetails').value = t.details || '';
+      close();
+      showToast('Filled from "' + t.name + '"');
+    });
+    row.appendChild(pick);
+
+    const del = document.createElement('button');
+    del.className = 'btn btn-ghost';
+    del.style.cssText = 'width:auto;padding:6px 10px;font-size:11.5px;flex-shrink:0;'
+      + 'color:var(--rust);border-color:#EFC9BC;';
+    del.textContent = '\u00d7';
+    del.addEventListener('click', async ()=>{
+      const ok = await confirmDialog('Delete the saved task "' + t.name + '"?', 'Delete');
+      if(!ok) return;
+      saveTaskTemplates(loadTaskTemplates().filter(x => x.id !== t.id));
+      close();
+      showToast('Deleted');
+    });
+    row.appendChild(del);
+
+    card.appendChild(row);
+  });
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+  btnRow.style.marginTop = '16px';
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-ghost';
+  cancel.style.width = 'auto';
+  cancel.textContent = 'Close';
+  cancel.addEventListener('click', close);
+  btnRow.appendChild(cancel);
+  card.appendChild(btnRow);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+});
+
+// ---------- Scheduling filter clean groups ----------
+// One place to put groups on a route or take them off again. Ticking a group
+// schedules it; unticking one that was scheduled pulls it back off.
+function filterGroupBlockers(g){
+  const out = [];
+  if(!(g.customerIds || []).length) out.push('no customers');
+  if(!g.date) out.push('no date');
+  if(!g.technicianId) out.push('no technician');
+  return out;
+}
+
+function scheduleFilterGroup(g){
+  let sched = lsGet('scheduledFilterCleans') || [];
+  // Re-scheduling replaces this group's previous entries rather than stacking
+  sched = sched.filter(s => s.groupId !== g.id);
+  (g.customerIds || []).forEach(cid=>{
+    sched.push({
+      id: 'fc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+      groupId: g.id,
+      groupName: g.name,
+      customerId: cid,
+      technicianId: g.technicianId,
+      date: g.date,
+      status: 'scheduled'
+    });
+  });
+  lsSet('scheduledFilterCleans', sched);
+  g.finalized = true;
+}
+
+function unscheduleFilterGroup(g){
+  const sched = (lsGet('scheduledFilterCleans') || []).filter(s => s.groupId !== g.id);
+  lsSet('scheduledFilterCleans', sched);
+  g.finalized = false;
+}
+
+async function openFilterGroupScheduler(){
+  if(!filterGroups.length){
+    showToast('Create a group first');
+    return;
+  }
+
+  // Starts reflecting what is already scheduled, so unticking removes
+  const picked = new Set(filterGroups.filter(g => g.finalized).map(g => g.id));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,46,46,0.45);'
+    + 'display:flex;align-items:center;justify-content:center;z-index:200;padding:18px;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:520px;'
+    + 'width:100%;max-height:82vh;overflow-y:auto;';
+
+  card.innerHTML = '<h2 style="margin:0 0 6px;">Schedule filter cleans</h2>'
+    + '<p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">'
+    + 'Ticked groups go onto their technician\u2019s route. Unticking one that is already '
+    + 'scheduled pulls it back off \u2014 the group itself stays here either way.</p>';
+
+  filterGroups.forEach(g=>{
+    const blockers = filterGroupBlockers(g);
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:13.5px;'
+      + (blockers.length ? 'opacity:0.55;' : 'cursor:pointer;');
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.style.margin = '0';
+    cb.checked = picked.has(g.id);
+    cb.disabled = blockers.length > 0;
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) picked.add(g.id); else picked.delete(g.id);
+    });
+    row.appendChild(cb);
+
+    const tech = technicians.find(t => t.id === g.technicianId);
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    label.innerHTML = '<strong>' + (g.name || 'Untitled group') + '</strong>'
+      + (g.finalized ? ' <span style="font-size:10.5px;color:var(--green);font-weight:700;">ON ROUTE</span>' : '')
+      + '<br><span style="font-size:11.5px;color:var(--muted);">'
+      + (blockers.length
+          ? 'Needs ' + blockers.join(', ')
+          : (g.customerIds || []).length + ' customer'
+            + ((g.customerIds || []).length === 1 ? '' : 's') + '  \u00b7  '
+            + filterGroupDateText(g)
+            + (tech ? '  \u00b7  ' + tech.name : ''))
+      + '</span>';
+    row.appendChild(label);
+
+    card.appendChild(row);
+  });
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+  btnRow.style.marginTop = '16px';
+
+  const go = document.createElement('button');
+  go.className = 'btn btn-primary';
+  go.style.width = 'auto';
+  go.textContent = 'Apply';
+
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-ghost';
+  cancel.style.width = 'auto';
+  cancel.textContent = 'Cancel';
+
+  btnRow.appendChild(go);
+  btnRow.appendChild(cancel);
+  card.appendChild(btnRow);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  cancel.addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  go.addEventListener('click', async ()=>{
+    const toAdd = filterGroups.filter(g => picked.has(g.id) && !g.finalized
+                                        && !filterGroupBlockers(g).length);
+    const toRemove = filterGroups.filter(g => !picked.has(g.id) && g.finalized);
+
+    if(!toAdd.length && !toRemove.length){
+      showToast('Nothing changed');
+      close();
+      return;
+    }
+
+    if(toRemove.length){
+      const ok = await confirmDialog(
+        'Take ' + toRemove.map(g => '"' + g.name + '"').join(', ')
+        + ' off the route? The group stays here so you can schedule it again.',
+        'Take off route');
+      if(!ok) return;
+    }
+
+    toAdd.forEach(scheduleFilterGroup);
+    toRemove.forEach(unscheduleFilterGroup);
+    saveFilterGroups();
+    renderFilterGroups();
+    close();
+
+    const bits = [];
+    if(toAdd.length) bits.push(toAdd.length + ' scheduled');
+    if(toRemove.length) bits.push(toRemove.length + ' taken off');
+    showToast(bits.join('  \u00b7  '));
+  });
+}
+
+document.getElementById('btnScheduleFilterGroups').addEventListener('click', openFilterGroupScheduler);
+
+async function openFilterGroupEmail(){
+  const usable = filterGroups.filter(g => (g.customerIds || []).length);
+  if(!usable.length){
+    showToast('No filter clean groups have customers in them yet');
+    return;
+  }
+
+  const picked = new Set();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,46,46,0.45);'
+    + 'display:flex;align-items:center;justify-content:center;z-index:200;padding:18px;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:14px;padding:20px;max-width:520px;'
+    + 'width:100%;max-height:82vh;overflow-y:auto;';
+
+  const h2 = document.createElement('h2');
+  h2.style.margin = '0 0 6px';
+  h2.textContent = 'Email a filter clean group';
+  card.appendChild(h2);
+
+  const sub = document.createElement('p');
+  sub.style.cssText = 'font-size:12.5px;color:var(--muted);margin:0 0 14px;';
+  sub.textContent = 'Each customer gets one email with their own scheduled date. Anyone in '
+    + 'several groups is told about all of their dates in a single message.';
+  card.appendChild(sub);
+
+  const count = document.createElement('div');
+  count.style.cssText = 'font-size:12.5px;color:var(--muted);margin-bottom:10px;';
+  card.appendChild(count);
+
+  const updateCount = ()=>{
+    const chosen = usable.filter(g => picked.has(g.id));
+    const people = filterEmailRecipients(chosen);
+    const multi = people.filter(p => p.dates.length > 1).length;
+    count.textContent = people.length
+      ? people.length + ' email' + (people.length === 1 ? '' : 's') + ' will go out'
+        + (multi ? '  \u00b7  ' + multi + ' covering more than one date' : '')
+      : 'No groups chosen yet';
+  };
+  updateCount();
+
+  usable.forEach(g=>{
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;'
+      + 'border-bottom:1px solid var(--line);font-size:13.5px;cursor:pointer;';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.style.margin = '0';
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) picked.add(g.id); else picked.delete(g.id);
+      updateCount();
+    });
+    row.appendChild(cb);
+
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    const withEmail = (g.customerIds || [])
+      .map(id => customers.find(c => c.id === id))
+      .filter(c => c && (c.email || '').trim()).length;
+    label.innerHTML = '<strong>' + (g.name || 'Untitled group') + '</strong>'
+      + '<br><span style="font-size:11.5px;color:var(--muted);">'
+      + withEmail + ' of ' + (g.customerIds || []).length
+      + (withEmail === 1 ? ' has' : ' have') + ' an email  \u00b7  '
+      + filterGroupDateText(g) + '</span>';
+    row.appendChild(label);
+
+    card.appendChild(row);
+  });
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'btn-row';
+  btnRow.style.marginTop = '16px';
+
+  const go = document.createElement('button');
+  go.className = 'btn btn-primary';
+  go.style.width = 'auto';
+  go.textContent = 'Send emails';
+
+  const edit = document.createElement('button');
+  edit.className = 'btn btn-ghost';
+  edit.style.width = 'auto';
+  edit.textContent = 'Edit email';
+
+  const cancel = document.createElement('button');
+  cancel.className = 'btn btn-ghost';
+  cancel.style.width = 'auto';
+  cancel.textContent = 'Cancel';
+
+  btnRow.appendChild(go);
+  btnRow.appendChild(edit);
+  btnRow.appendChild(cancel);
+  card.appendChild(btnRow);
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  cancel.addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+  edit.addEventListener('click', ()=> openFilterEmailEditor());
+
+  go.addEventListener('click', async ()=>{
+    const chosen = usable.filter(g => picked.has(g.id));
+    if(!chosen.length){ showToast('Choose at least one group first'); return; }
+
+    const people = filterEmailRecipients(chosen);
+    if(!people.length){ showToast('Nobody in those groups has an email on file'); return; }
+
+    go.disabled = true;
+    go.textContent = 'Sending\u2026';
+
+    const t = loadFilterEmail();
+    let sent = 0, failed = 0;
+
+    for(const p of people){
+      const subject = fillFilterEmail(t.subject, p.dates);
+      const body = fillFilterEmail(t.body, p.dates);
+      const ok = await sendCustomerEmail(p.customer.email.trim(), subject, body);
+      if(ok) sent++; else failed++;
+    }
+
+    close();
+    showToast(sent + ' email' + (sent === 1 ? '' : 's') + ' sent'
+      + (failed ? '  \u00b7  ' + failed + ' failed' : ''));
+  });
+}
+
+document.getElementById('btnEmailFilterGroups').addEventListener('click', openFilterGroupEmail);
 
 document.getElementById('btnNewFilterGroup').addEventListener('click', async ()=>{
   const name = await promptDialog('Name this group', 'e.g. Tuesday north route');
@@ -4308,12 +6087,31 @@ document.getElementById('wcHistorySearchClear').addEventListener('click', ()=>{
 
 // Work Order shows scheduling fields and finalizes; Quote just emails
 function applyWorkOrderType(){
-  const isWO = document.getElementById('wcType').value === 'Work Order';
+  const chosen = document.getElementById('wcType').value;
+  const isTask = chosen === 'Task';
+  const isWO = chosen === 'Work Order';
 
   document.querySelectorAll('#wcTypeToggle [data-wctype]').forEach(btn=>{
-    const selected = btn.dataset.wctype === (isWO ? 'Work Order' : 'Quote');
-    btn.className = selected ? 'btn btn-primary' : 'btn btn-ghost';
+    btn.className = btn.dataset.wctype === chosen ? 'btn btn-primary' : 'btn btn-ghost';
   });
+
+  // Tasks have their own form, so the quote fields step aside entirely
+  const quoteBits = document.getElementById('wcQuotesSection');
+  Array.from(quoteBits.children).forEach(el=>{
+    if(el.id === 'wcFormHeading' || el.id === 'wcTypeToggle' || el.id === 'wcType') return;
+    el.style.display = isTask ? 'none' : '';
+  });
+  document.getElementById('wcFormHeading').style.display = isTask ? 'none' : '';
+  document.getElementById('wcQuotesHistoryCard').style.display = isTask ? 'none' : 'block';
+  document.getElementById('wcTaskSection').style.display = isTask ? 'block' : 'none';
+  document.getElementById('wcTaskListCard').style.display = isTask ? 'block' : 'none';
+
+  if(isTask){
+    renderTaskForm();
+    renderTaskList();
+    return;
+  }
+
   document.getElementById('btnSendWorkOrder').textContent = isWO ? 'Finalize' : 'Send to customer';
 
   // Scheduling fields are work-order only; the date line shows on both
@@ -4895,53 +6693,6 @@ function makeButtonsEditor(item){
 
 
 // Nine-colour palette for a single quick button
-function openColorPicker(item, idx, onDone){
-  const overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.style.zIndex = '300';
-  overlay.innerHTML = `
-    <div class="confirm-box" style="max-width:320px;">
-      <h3 style="font-size:15px;margin:0 0 12px;">Button colour</h3>
-      <div id="colorGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
-      <div class="btn-row" style="margin-top:14px;">
-        <button class="btn btn-ghost" id="colorCancel" style="flex:1;">Cancel</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-
-  const grid = overlay.querySelector('#colorGrid');
-  const currentKey = btnColorKey(item.buttons[idx]);
-
-  Object.keys(QUICK_BUTTON_COLORS).forEach(key=>{
-    const p = QUICK_BUTTON_COLORS[key];
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:5px;'
-      + 'padding:9px 4px;border-radius:10px;cursor:pointer;background:' + p.fill + ';'
-      + 'border:' + (key === currentKey ? '2px solid ' + p.solid : '1.5px solid ' + p.border) + ';';
-    const dot = document.createElement('span');
-    dot.style.cssText = 'width:22px;height:22px;border-radius:50%;background:' + p.solid + ';';
-    const lbl = document.createElement('span');
-    lbl.style.cssText = 'font-size:11px;font-weight:700;color:' + p.text + ';';
-    lbl.textContent = p.label;
-    b.appendChild(dot);
-    b.appendChild(lbl);
-    b.addEventListener('click', ()=>{
-      const v = btnValue(item.buttons[idx]);
-      // Blue is the default, so it stays a plain number
-      item.buttons[idx] = key === 'blue' ? v : {v, c: key};
-      saveActiveConfig();
-      document.body.removeChild(overlay);
-      if(onDone) onDone();
-    });
-    grid.appendChild(b);
-  });
-
-  const close = ()=> document.body.removeChild(overlay);
-  overlay.querySelector('#colorCancel').addEventListener('click', close);
-  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
-}
-
 
 // ---------- Linking a reading to a dosage ----------
 // "When Free chlorine is 5, put 1 tab in" — saves the tech entering something
@@ -4991,6 +6742,17 @@ function openDoseRulesModal(item){
       <h3 style="font-size:15px;margin:0 0 4px;">Dosage rules for ${item.label || 'this reading'}</h3>
       <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">When a technician enters this reading, the dosage below fills in automatically. They can still change it.</p>
 
+      <div id="ruleSaltRow" style="display:none;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <span style="font-size:13.5px;font-weight:600;">Skip these rules on salt pools</span>
+          <label class="toggle-switch">
+            <input type="checkbox" id="ruleSaltSkip">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p id="ruleSaltNote" style="font-size:11.5px;color:var(--muted);margin:8px 0 0;"></p>
+      </div>
+
       <div id="ruleMimicRow" style="display:none;padding:10px 12px;margin-bottom:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);">
         <label style="display:flex;align-items:center;gap:10px;font-size:13.5px;cursor:pointer;">
           <input type="checkbox" id="ruleMimicOn" style="margin:0;flex-shrink:0;">
@@ -5013,6 +6775,37 @@ function openDoseRulesModal(item){
   const mimicOn = overlay.querySelector('#ruleMimicOn');
   const mimicSrc = overlay.querySelector('#ruleMimicSource');
   const mimicNote = overlay.querySelector('#ruleMimicNote');
+
+  // Salt pools make their own chlorine, so rules that add a chlorine product
+  // are normally skipped there. This is where that can be turned off.
+  const saltRow = overlay.querySelector('#ruleSaltRow');
+  const saltSkip = overlay.querySelector('#ruleSaltSkip');
+  const saltNote = overlay.querySelector('#ruleSaltNote');
+
+  const looksChlorine = /chlor/i.test(item.key || '') || /chlor/i.test(item.label || '');
+  if(looksChlorine){
+    saltRow.style.display = 'block';
+    // Default on — that has been the behaviour all along
+    saltSkip.checked = item.saltSkip !== false;
+
+    const describe = ()=>{
+      saltNote.textContent = saltSkip.checked
+        ? 'On a salt pool these rules will not fire, since the cell is already making '
+          + 'chlorine. Shock and everything else still applies.'
+        : 'These rules will fire on salt pools too. Useful if you still add chlorine '
+          + 'to a salt pool, or if a cell is failing.';
+    };
+    describe();
+
+    saltSkip.addEventListener('change', ()=>{
+      item.saltSkip = saltSkip.checked;
+      describe();
+      saveActiveConfig();
+      showToast(saltSkip.checked
+        ? 'Skipped on salt pools'
+        : 'Will fire on salt pools too');
+    });
+  }
 
   // Which other lists this one could follow
   const SOURCE_LABELS = {pool:'Pool', spa:'Spa', fountain:'Extra'};
@@ -5247,6 +7040,53 @@ function openDoseRulesModal(item){
   overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
 
   render();
+}
+
+function openColorPicker(item, idx, onDone){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.zIndex = '300';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:320px;">
+      <h3 style="font-size:15px;margin:0 0 12px;">Button colour</h3>
+      <div id="colorGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;"></div>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn btn-ghost" id="colorCancel" style="flex:1;">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const grid = overlay.querySelector('#colorGrid');
+  const currentKey = btnColorKey(item.buttons[idx]);
+
+  Object.keys(QUICK_BUTTON_COLORS).forEach(key=>{
+    const p = QUICK_BUTTON_COLORS[key];
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:5px;'
+      + 'padding:9px 4px;border-radius:10px;cursor:pointer;background:' + p.fill + ';'
+      + 'border:' + (key === currentKey ? '2px solid ' + p.solid : '1.5px solid ' + p.border) + ';';
+    const dot = document.createElement('span');
+    dot.style.cssText = 'width:22px;height:22px;border-radius:50%;background:' + p.solid + ';';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:11px;font-weight:700;color:' + p.text + ';';
+    lbl.textContent = p.label;
+    b.appendChild(dot);
+    b.appendChild(lbl);
+    b.addEventListener('click', ()=>{
+      const v = btnValue(item.buttons[idx]);
+      // Blue is the default, so it stays a plain number
+      item.buttons[idx] = key === 'blue' ? v : {v, c: key};
+      saveActiveConfig();
+      document.body.removeChild(overlay);
+      if(onDone) onDone();
+    });
+    grid.appendChild(b);
+  });
+
+  const close = ()=> document.body.removeChild(overlay);
+  overlay.querySelector('#colorCancel').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
 }
 
 function openQuickButtonsModal(item){
@@ -6359,6 +8199,77 @@ function renderCustomPhotoList(){
   });
 }
 
+
+// Switches the Readings and Dosages screen between its two roles: the default
+// lists every customer inherits, and one customer's own setup.
+function applyChemConfigMode(customerMode){
+  const heading = document.getElementById('chemConfigHeading');
+  const seg = document.getElementById('chemConfigTypeControl');
+  const desc = document.getElementById('chemConfigDescription');
+  const restore = document.getElementById('btnRestoreChemDefaults');
+
+  if(heading) heading.textContent = customerMode ? 'Customer Customization' : 'Readings and Dosages';
+  if(seg) seg.style.display = customerMode ? 'none' : '';
+  if(restore) restore.style.display = customerMode ? 'none' : '';
+  if(desc){
+    desc.textContent = customerMode
+      ? 'Set up one customer differently from your defaults \u2014 their own readings, dosages, dosage rules and photo requirements, per body of water. Everyone else keeps the standard lists.'
+      : 'Choose which chemicals get recorded and which dosages get tracked on visits \u2014 and set your own units for each. Pool, Spa, and Extra bodies of water each have their own list. To set up one customer differently, use Customer Customization. Changes here apply immediately in the Technician and Admin apps.';
+  }
+}
+
+
+// ---------- Per-customer heads-up settings ----------
+// Kept on the customer rather than per body of water: a heads-up is about
+// arriving at the property, not about which pool is being serviced.
+function renderCustomerNotify(){
+  const card = document.getElementById('customerNotifyCard');
+  if(!card) return;
+
+  const cust = customers.find(c => c.id === customCustomerId);
+  if(!cust){ card.style.display = 'none'; return; }
+
+  card.style.display = 'block';
+  document.getElementById('customerNotifyHeading').textContent =
+    'Automatic on my way message for ' + displayName(cust.name);
+
+  const on = cust.autoNotify === true;
+  document.getElementById('chkAutoNotify').checked = on;
+  document.getElementById('autoNotifyLeadField').style.display = on ? 'block' : 'none';
+  document.getElementById('autoNotifyLead').value = String(cust.autoNotifyLead || 2);
+
+  const explain = document.getElementById('autoNotifyExplain');
+  if(explain){
+    const n = cust.autoNotifyLead || 2;
+    const who = (cust.notifyName || '').trim() || displayName(cust.name);
+    explain.textContent = 'When a technician finishes the stop ' + n + ' before '
+      + displayName(cust.name) + ', the message to ' + who
+      + ' comes up on its own, ready to send.';
+  }
+}
+
+document.getElementById('chkAutoNotify').addEventListener('change', (e)=>{
+  const cust = customers.find(c => c.id === customCustomerId);
+  if(!cust) return;
+  cust.autoNotify = e.target.checked;
+  if(cust.autoNotify && !cust.autoNotifyLead) cust.autoNotifyLead = 2;
+  saveCustomers();
+  renderCustomerNotify();
+  showToast(cust.autoNotify
+    ? 'Automatic message on for ' + displayName(cust.name)
+    : 'Automatic message off');
+});
+
+document.getElementById('autoNotifyLead').addEventListener('change', (e)=>{
+  const cust = customers.find(c => c.id === customCustomerId);
+  if(!cust) return;
+  cust.autoNotifyLead = parseInt(e.target.value, 10) || 2;
+  saveCustomers();
+  renderCustomerNotify();
+  showToast('Set to ' + cust.autoNotifyLead + ' stop'
+    + (cust.autoNotifyLead === 1 ? '' : 's') + ' before');
+});
+
 function renderChemConfigLists(){
   applyAllBodiesVisibility();
   const chemBox = document.getElementById('chkApplyAllBodies');
@@ -6372,6 +8283,12 @@ function renderChemConfigLists(){
   const onCustom = selectedChemConfigType === 'custom';
   const picker = document.getElementById('customConfigPicker');
   if(picker) picker.style.display = onCustom ? 'block' : 'none';
+
+  const notify = document.getElementById('customerNotifyCard');
+  if(notify){
+    if(onCustom) renderCustomerNotify();
+    else notify.style.display = 'none';
+  }
 
   const chemContainer = document.getElementById('chemConfigChemicalsList');
   const doseContainer = document.getElementById('chemConfigDosagesList');
@@ -7595,8 +9512,6 @@ function openMultiReportPicker(){
 
 document.getElementById('btnMultiReport').addEventListener('click', openMultiReportPicker);
 
-
-
 // ---------- Backup & restore ----------
 
 // Rough gauge — browsers don't report the real cap, so 5MB is the safe assumption
@@ -7616,8 +9531,6 @@ document.getElementById('btnFreeSpace').addEventListener('click', async ()=>{
     ? 'Cleared ' + removed + ' photo' + (removed === 1 ? '' : 's') + ' — freed ' + savedMb + ' MB'
     : 'Nothing old enough to clear yet');
 });
-
-
 
 // Removes every stored image, everywhere. Readings, notes and service records
 // are untouched — only the pictures go.
@@ -7708,6 +9621,28 @@ document.getElementById('btnMovePhotos').addEventListener('click', async ()=>{
   showToast('Moved ' + r.moved + ' photos — freed ' + freed + ' MB');
 });
 
+
+
+
+
+
+document.getElementById('settingAutoNotifyAll').addEventListener('change', (e)=>{
+  appSettings.autoNotifyAll = e.target.checked;
+  saveSettings();
+  document.getElementById('settingAutoNotifyLeadField').style.display =
+    e.target.checked ? 'block' : 'none';
+  showToast(appSettings.autoNotifyAll
+    ? 'Every customer will get an automatic message'
+    : 'Automatic messages off unless set per customer');
+});
+
+document.getElementById('settingAutoNotifyLead').addEventListener('change', (e)=>{
+  appSettings.autoNotifyAllLead = parseInt(e.target.value, 10) || 2;
+  saveSettings();
+  showToast('Set to ' + appSettings.autoNotifyAllLead + ' stop'
+    + (appSettings.autoNotifyAllLead === 1 ? '' : 's') + ' before');
+});
+
 function renderStorageMeter(){
   const fill = document.getElementById('storageBarFill');
   const text = document.getElementById('storageBarText');
@@ -7723,10 +9658,105 @@ function renderStorageMeter(){
   text.style.color = pct > 85 ? 'var(--rust)' : 'var(--muted)';
 
   renderStorageBreakdown();
+  renderPhotoRetentionNotice();
 }
 
 // What is actually taking the space. Without this the meter says a number but
 // gives no clue which data to deal with.
+
+// ---------- Photo retention ----------
+// Visit photos are kept for three years. Long enough to answer a dispute or an
+// insurance claim; short enough that storage doesn't grow without limit.
+const PHOTO_KEEP_YEARS = 3;
+const PHOTO_WARN_DAYS = 60;
+
+function photoCutoffDate(){
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - PHOTO_KEEP_YEARS);
+  return d;
+}
+
+// How many photos are close to the three-year mark, and how many are past it
+function surveyOldPhotos(){
+  const cutoff = photoCutoffDate().getTime();
+  const warnFrom = cutoff + PHOTO_WARN_DAYS * 86400000;
+  let expiring = 0, expired = 0;
+
+  const countOn = (r)=>{
+    let n = 0;
+    ['photo','beforePhoto','gatePhoto'].forEach(f => { if(r[f]) n++; });
+    if(r.customPhotos) n += Object.keys(r.customPhotos).filter(k => r.customPhotos[k]).length;
+    return n;
+  };
+
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX) !== 0) continue;
+      const key = full.slice(STORAGE_PREFIX.length);
+      if(!(key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+           || key.indexOf('fountainReadings:') === 0)) continue;
+      const list = lsGet(key);
+      if(!Array.isArray(list)) continue;
+      list.forEach(r=>{
+        if(!r || !r.date) return;
+        const t = new Date(r.date).getTime();
+        if(isNaN(t)) return;
+        const n = countOn(r);
+        if(!n) return;
+        if(t < cutoff) expired += n;
+        else if(t < warnFrom) expiring += n;
+      });
+    }
+  }catch(e){ return {expiring:0, expired:0}; }
+  return {expiring, expired};
+}
+
+function renderPhotoRetentionNotice(){
+  const box = document.getElementById('photoRetentionNotice');
+  if(!box) return;
+
+  const {expiring, expired} = surveyOldPhotos();
+  if(!expiring && !expired){ box.style.display = 'none'; return; }
+
+  box.style.display = 'block';
+  const urgent = expiring > 0;
+  box.style.background = urgent ? '#FDF3E7' : 'var(--surface-alt)';
+  box.style.border = '1px solid ' + (urgent ? '#EDC79B' : 'var(--line)');
+  box.style.color = 'var(--teal-deep)';
+
+  const n = expiring || expired;
+  const word = n === 1 ? 'photo' : 'photos';
+
+  box.innerHTML = '';
+  const head = document.createElement('div');
+  head.style.cssText = 'font-weight:700;margin-bottom:6px;';
+  head.textContent = urgent
+    ? n + ' ' + word + ' will be deleted soon'
+    : n + ' ' + word + ' from over ' + PHOTO_KEEP_YEARS + ' years ago '
+      + (n === 1 ? 'has' : 'have') + ' been removed';
+  box.appendChild(head);
+
+  const body = document.createElement('div');
+  body.style.color = 'var(--muted)';
+  body.textContent = urgent
+    ? 'Photos are kept for ' + PHOTO_KEEP_YEARS + ' years, then removed automatically to stop your '
+      + 'storage filling up. These ones are approaching that mark.\n\n'
+      + 'Your service reports are NOT affected \u2014 every visit, reading, dosage and note stays '
+      + 'exactly where it is, for good. Only the photographs go.\n\n'
+      + 'So you will still be able to show that a pool was serviced and what the chemistry was. '
+      + 'What you lose is the picture. If you might ever need the images themselves \u2014 an '
+      + 'insurance claim, a dispute over when damage started, anything only a photograph would '
+      + 'settle \u2014 download a backup now. Once they are gone they are gone for good, and '
+      + 'there is no copy anywhere else.'
+    : 'Your service reports were not affected \u2014 every visit, reading, dosage and note is '
+      + 'still there. Only the photographs were removed.\n\n'
+      + 'Download a backup regularly if you want to keep the images beyond '
+      + PHOTO_KEEP_YEARS + ' years.';
+  body.style.whiteSpace = 'pre-line';
+  box.appendChild(body);
+}
+
 function renderStorageBreakdown(){
   const box = document.getElementById('storageBreakdown');
   if(!box) return;
@@ -8340,7 +10370,14 @@ function resizeImageFile(file, maxDim, quality){
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
+
+        // WebP is about a third smaller than JPEG at the same size and quality,
+        // with no visible difference. Falls back to JPEG if a browser refuses.
+        let out = canvas.toDataURL('image/webp', quality);
+        if(out.indexOf('data:image/webp') !== 0){
+          out = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(out);
       };
       img.src = reader.result;
     };
@@ -9088,8 +11125,6 @@ function renderEquipmentTypeList(){
 }
 
 
-
-
 let draggedEquipmentType = null;
 
 function reorderEquipmentType(draggedType, targetType){
@@ -9101,8 +11136,6 @@ function reorderEquipmentType(draggedType, targetType){
   renderEquipmentTypeList();
   persistCurrentEquipmentTypeOptions();
 }
-
-
 
 let currentEquipmentItems = [];
 
@@ -9481,16 +11514,34 @@ document.getElementById('btnAddCustomer').addEventListener('click', ()=>{
 
 function switchView(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.getElementById('view-'+view).classList.add('active');
+
+  // Customer Customization is its own tab but reuses the Readings and Dosages
+  // screen, so there is no separate element to show for it.
+  const el = document.getElementById('view-' + view);
+  if(el) el.classList.add('active');
+
   document.querySelectorAll('.tab').forEach(t=>{
     t.classList.toggle('active', t.dataset.view === view);
   });
   if(view === 'settings') renderStorageMeter();
+  if(view === 'account') renderAccount();
   if(view === 'chemconfig'){
     selectedChemConfigType = 'pool';
     document.querySelectorAll('#chemConfigTypeControl .history-type-btn').forEach(b=>{
       b.classList.toggle('active', b.dataset.type === 'pool');
     });
+    applyChemConfigMode(false);
+    renderChemConfigLists();
+  }
+  if(view === 'customerconfig'){
+    // Same editing screen, fixed to one customer. Sharing it avoids a second
+    // set of list containers with duplicate ids.
+    document.getElementById('view-chemconfig').classList.add('active');
+    selectedChemConfigType = 'custom';
+    // Start blank each time — coming back to a customer still loaded is a good
+    // way to edit the wrong person's setup without noticing.
+    closeCustomSetup();
+    applyChemConfigMode(true);
     renderChemConfigLists();
   }
   if(view === 'productsservices') renderProductsServicesList();
@@ -9522,14 +11573,7 @@ function switchView(view){
     renderBilling();
   }
   if(view === 'workcenter'){
-    workCenterMode = 'quotes';
-    document.querySelectorAll('#workCenterTypeControl .history-type-btn').forEach(b=>{
-      b.classList.toggle('active', b.dataset.type === 'quotes');
-    });
-    document.getElementById('wcQuotesSection').style.display = 'block';
-    document.getElementById('wcQuotesHistoryCard').style.display = 'block';
-    document.getElementById('wcCallsSection').style.display = 'none';
-    document.getElementById('wcCallsListCard').style.display = 'none';
+    applyWorkCenterMode('quotes');
     resetWorkOrderForm();
     document.getElementById('wcCustomer').value = '';
     document.getElementById('scCustomer').value = '';
@@ -10942,6 +12986,10 @@ document.getElementById('settingBeforePhotos').checked = appSettings.showBeforeP
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
 document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
 document.getElementById('settingRequireSkipPhoto').checked = appSettings.requireSkipPhoto === true;
+document.getElementById('settingAutoNotifyAll').checked = appSettings.autoNotifyAll === true;
+document.getElementById('settingAutoNotifyLead').value = String(appSettings.autoNotifyAllLead || 2);
+document.getElementById('settingAutoNotifyLeadField').style.display =
+  appSettings.autoNotifyAll === true ? 'block' : 'none';
 document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
