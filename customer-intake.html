@@ -1833,11 +1833,39 @@ function renderMapLegend(){
 
 function initRouteMap(){
   if(routeMapInstance) return;
-  routeMapInstance = L.map('routeMap').setView([39.5, -98.35], 4);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(routeMapInstance);
+
+  // The map library is loaded from the internet. Without it the map can't be
+  // drawn, but the route list underneath is the useful part — so say what
+  // happened and carry on rather than throwing and showing a blank page.
+  if(typeof L === 'undefined'){
+    const box = document.getElementById('routeMap');
+    if(box && !box.dataset.noMapNoted){
+      box.dataset.noMapNoted = 'true';
+      box.style.display = 'flex';
+      box.style.alignItems = 'center';
+      box.style.justifyContent = 'center';
+      box.style.textAlign = 'center';
+      box.style.padding = '18px';
+      box.style.background = 'var(--surface-alt)';
+      box.style.border = '1px solid var(--line)';
+      box.style.borderRadius = '12px';
+      box.style.fontSize = '12.5px';
+      box.style.color = 'var(--muted)';
+      box.textContent = 'The map needs an internet connection. Your routes are listed below.';
+    }
+    return;
+  }
+
+  try{
+    routeMapInstance = L.map('routeMap').setView([39.5, -98.35], 4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(routeMapInstance);
+  }catch(e){
+    console.warn('Map could not start:', e);
+    routeMapInstance = null;
+  }
 }
 
 function renderRouteMapPins(){
