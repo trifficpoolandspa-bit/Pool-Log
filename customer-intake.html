@@ -880,8 +880,8 @@ input::placeholder{color:#A9BCB9;}
     </div>
 
     <div class="card" id="wcQuotesSection">
-      <h2 id="wcFormHeading">New quote / work order</h2>
-      <div class="btn-row" id="wcTypeToggle" style="gap:8px;margin-bottom:16px;">
+      <h2 id="wcFormHeading" style="display:none;"></h2>
+      <div class="btn-row" id="wcTypeToggle" style="gap:8px;margin-bottom:26px;padding-bottom:20px;border-bottom:1px solid var(--line);">
         <button type="button" class="btn" id="btnTypeQuote" data-wctype="Quote" style="flex:1;">Quote</button>
         <button type="button" class="btn" id="btnTypeWorkOrder" data-wctype="Work Order" style="flex:1;">Work Order</button>
         <button type="button" class="btn" id="btnTypeTask" data-wctype="Task" style="flex:1;">Task</button>
@@ -947,17 +947,15 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-primary" id="btnSendWorkOrder" style="width:auto;">Send to customer</button>
         <button class="btn btn-ghost" id="btnClearWorkOrder">Clear</button>
       </div>
-    </div>
-
-    <div class="card" id="wcTaskSection" style="display:none;">
-      <div class="section-head">
-        <button class="btn btn-primary" id="btnTaskTemplates" style="width:auto;margin-right:auto;">Saved tasks</button>
-        <h2 id="wcTaskHeading" style="display:none;"></h2>
-      </div>
+        <div id="wcTaskSection" style="display:none;">
+      <h2 id="wcTaskHeading" style="display:none;margin-bottom:12px;"></h2>
 
       <div class="field">
         <label>Scheduled date</label>
-        <input type="date" id="taskDate" style="width:auto;min-width:0;padding-right:12px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <input type="date" id="taskDate" style="width:auto;min-width:0;padding-right:12px;">
+          <button class="btn btn-primary" id="btnTaskTemplates" style="width:auto;margin-left:auto;flex:0 0 auto;">Saved tasks</button>
+        </div>
       </div>
 
       <div class="field" style="position:relative;">
@@ -1008,6 +1006,7 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-ghost" id="btnSaveTaskTemplate" style="width:auto;">Save for reuse</button>
         <button class="btn btn-ghost" id="btnClearTask" style="width:auto;">Clear</button>
       </div>
+    </div>
     </div>
 
     <div class="card" id="wcTaskListCard" style="display:none;">
@@ -1114,6 +1113,7 @@ input::placeholder{color:#A9BCB9;}
         <button class="history-type-btn active" data-acct="business">Business</button>
         <button class="history-type-btn" data-acct="contact">Contact</button>
         <button class="history-type-btn" data-acct="plan">Plan</button>
+        <button class="history-type-btn" data-acct="email">Email</button>
         <button class="history-type-btn" data-acct="data">Data</button>
       </div>
     </div>
@@ -1175,6 +1175,50 @@ input::placeholder{color:#A9BCB9;}
         color:var(--muted);line-height:1.55;"></div>
     </div>
 
+    <div class="card acct-panel" id="acctEmailPanel" style="display:none;">
+      <h2>How your reports look</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">The service report your customers receive. Your company name, phone and license come from the other tabs.</p>
+
+      <div class="field">
+        <label>Header colour</label>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <input type="color" id="acctEmailColour" style="width:56px;height:38px;padding:3px;">
+          <span style="font-size:12.5px;color:var(--muted);">The bar across the top of the email</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Opening line</label>
+        <input id="acctEmailGreeting" placeholder="Here's the report from today's visit.">
+      </div>
+
+      <div class="field">
+        <label>Closing line</label>
+        <input id="acctEmailSignoff" placeholder="Thank you for your business.">
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);">
+        <label for="acctEmailContact" style="margin:0;font-weight:600;cursor:pointer;">Show your phone and email in the header</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="acctEmailContact">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line);">
+        <label for="acctEmailReadings" style="margin:0;font-weight:600;cursor:pointer;">Include the chemical readings</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="acctEmailReadings">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div class="btn-row" style="margin-top:16px;">
+        <button class="btn btn-primary" id="btnEmailPreview" style="width:auto;">See a preview</button>
+        <button class="btn btn-ghost" id="btnEmailReset" style="width:auto;">Reset to default</button>
+      </div>
+    </div>
+
     <div class="card acct-panel" id="acctData" style="display:none;">
       <h2>Your data</h2>
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Everything lives on this device. Back it up regularly.</p>
@@ -1188,6 +1232,27 @@ input::placeholder{color:#A9BCB9;}
   </div>
 
   <div class="view" id="view-settings">
+      <div class="card">
+        <div class="field">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+            <h2 style="margin:0;">Water balance (LSI)</h2>
+            <label class="toggle-switch">
+              <input type="checkbox" id="settingWaterBalance">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">Off by default. When on, each visit shows whether the water is balanced, aggressive or scaling, worked out from the readings. It needs calcium hardness and water temperature as well as pH and alkalinity &mdash; without those it simply says what is missing. Nothing else changes, and no reading is ever made compulsory by turning this on.</p>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <h2>Works without a connection</h2>
+        <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Check this before going somewhere with no signal.</p>
+        <div id="offlineStatus" style="font-size:13px;color:var(--ink);padding:11px 13px;border-radius:10px;background:var(--surface-alt);border:1px solid var(--line);line-height:1.5;">Checking&hellip;</div>
+      </div>
+
+
     <div class="card">
       <h2>Settings</h2>
       <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">How the apps behave. Your company details live under Account, top right.</p>
@@ -1476,7 +1541,162 @@ input::placeholder{color:#A9BCB9;}
 
 <div class="toast" id="toast"></div>
 
+<div id="offlineBadge" style="position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:400;padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;box-shadow:0 3px 12px rgba(0,0,0,0.18);display:none;pointer-events:none;"></div>
+
 <script>
+
+// ---------- Error reporting ----------
+// A tester who says "it froze" gives you nothing to work with. This catches
+// anything that would otherwise fail silently and shows exactly what broke,
+// with a button to copy the details. Kept deliberately dependency-free and
+// early in the file, so it works even if the rest of the script dies.
+const APP_VERSION = 'website-2026-09-11';
+const ERROR_LOG_KEY = 'poollog:errorLog';
+const ERROR_LOG_MAX = 20;
+
+function recordError(kind, message, source, line, col, stack){
+  const entry = {
+    when: new Date().toISOString(),
+    version: APP_VERSION,
+    kind: kind,
+    message: String(message || 'Unknown error'),
+    where: (source ? String(source).split('/').pop() : '') + (line ? ':' + line : '')
+      + (col ? ':' + col : ''),
+    stack: stack ? String(stack).split('\n').slice(0, 5).join('\n') : '',
+    page: location.pathname.split('/').pop(),
+    screen: (window.innerWidth || 0) + 'x' + (window.innerHeight || 0),
+    agent: navigator.userAgent
+  };
+
+  try{
+    const log = JSON.parse(localStorage.getItem(ERROR_LOG_KEY) || '[]');
+    log.push(entry);
+    while(log.length > ERROR_LOG_MAX) log.shift();
+    localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log));
+  }catch(e){
+    // Storage may be full or blocked — showing the error still matters more
+  }
+
+  return entry;
+}
+
+function errorText(entry){
+  return 'PoolLog problem report\n'
+    + '----------------------\n'
+    + 'When:    ' + entry.when + '\n'
+    + 'Version: ' + entry.version + '\n'
+    + 'Page:    ' + entry.page + '\n'
+    + 'Type:    ' + entry.kind + '\n'
+    + 'Message: ' + entry.message + '\n'
+    + 'Where:   ' + (entry.where || 'unknown') + '\n'
+    + 'Screen:  ' + entry.screen + '\n'
+    + 'Device:  ' + entry.agent + '\n'
+    + (entry.stack ? '\nDetail:\n' + entry.stack + '\n' : '');
+}
+
+let errorBannerUp = false;
+
+function showErrorBanner(entry){
+  // One at a time — a loop of failures must not bury the screen in banners
+  if(errorBannerUp) return;
+  errorBannerUp = true;
+
+  const bar = document.createElement('div');
+  bar.setAttribute('data-error-banner', '1');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;'
+    + 'background:#8C3B2A;color:#fff;padding:14px 16px;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,"Inter",sans-serif;font-size:13px;'
+    + 'box-shadow:0 -4px 18px rgba(0,0,0,0.25);line-height:1.45;';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'font-weight:700;margin-bottom:4px;';
+  head.textContent = 'Something went wrong';
+  bar.appendChild(head);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'opacity:0.92;margin-bottom:10px;word-break:break-word;';
+  body.textContent = entry.message;
+  bar.appendChild(body);
+
+  const note = document.createElement('div');
+  note.style.cssText = 'opacity:0.8;font-size:11.5px;margin-bottom:10px;';
+  note.textContent = 'Your saved work is not affected. Copy the details and send them over, '
+    + 'then carry on \u2014 or reload if the app stops responding.';
+  bar.appendChild(note);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+
+  const mkBtn = (label, onClick, solid)=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText = 'padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;'
+      + 'cursor:pointer;font-family:inherit;'
+      + (solid ? 'background:#fff;color:#8C3B2A;border:none;'
+               : 'background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.5);');
+    b.addEventListener('click', onClick);
+    return b;
+  };
+
+  const copy = mkBtn('Copy details', ()=>{
+    const text = errorText(entry);
+    const done = ()=>{ copy.textContent = 'Copied'; };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(()=> fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }, true);
+
+  function fallbackCopy(text, done){
+    // Older iOS Safari refuses the clipboard API outside a few contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ copy.textContent = 'Could not copy'; }
+    document.body.removeChild(ta);
+  }
+
+  row.appendChild(copy);
+  row.appendChild(mkBtn('Reload', ()=> location.reload()));
+  row.appendChild(mkBtn('Dismiss', ()=>{
+    if(bar.parentNode) bar.parentNode.removeChild(bar);
+    errorBannerUp = false;
+  }));
+
+  bar.appendChild(row);
+
+  if(document.body) document.body.appendChild(bar);
+  else document.addEventListener('DOMContentLoaded', ()=> document.body.appendChild(bar));
+}
+
+window.addEventListener('error', (e)=>{
+  // Failed images and scripts fire here too, and are not worth a banner
+  if(e && e.target && e.target !== window && e.target.tagName) return;
+  const entry = recordError('Error', e.message, e.filename, e.lineno, e.colno,
+    e.error && e.error.stack);
+  showErrorBanner(entry);
+});
+
+window.addEventListener('unhandledrejection', (e)=>{
+  const reason = e && e.reason;
+  const entry = recordError('Unhandled promise',
+    (reason && reason.message) || reason || 'A background task failed',
+    '', '', '', reason && reason.stack);
+  showErrorBanner(entry);
+});
+
+// Storage filling up is silent otherwise: the write fails and the visit is lost
+function reportStorageFailure(where, err){
+  const entry = recordError('Could not save',
+    'Saving failed' + (where ? ' while writing ' + where : '')
+    + '. Your device storage may be full.', '', '', '', err && err.stack);
+  showErrorBanner(entry);
+}
+
 const STORAGE_PREFIX = 'poollog:';
 let keepProfileTab = false;   // true while stepping between customers
 
@@ -1618,8 +1838,11 @@ function lsSet(key, value){
         alert('Storage is full — changes are not being saved. Download a backup and clear old photos.');
       }
       setTimeout(()=>{ storageWarningShown = false; }, 30000);
-    } else if(!full && typeof showToast === 'function'){
-      showToast("Couldn't save — see the browser console for details");
+    } else if(!full){
+      // Not a quota problem, so something unexpected broke. A console message
+      // helps nobody in the field — report it properly.
+      if(typeof reportStorageFailure === 'function') reportStorageFailure(key, e);
+      else if(typeof showToast === 'function') showToast("Couldn't save that");
     }
     return false;
   }
@@ -2697,7 +2920,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -4026,7 +4249,7 @@ const DEFAULT_BROADCAST_TEMPLATES = [
       + 'at all, and anything that sinks has to be vacuumed or skimmed out by hand.\n\n'
       + 'Doing this makes a real difference to how clear your water stays and keeps the '
       + 'chemistry where it should be.\n\n'
-      + 'Thank you,\n' + companyName()
+      + 'Thank you,\n' + '{company}'
   },
   {
     id: 'bt_freeze', category: 'Weather', name: 'Freeze warning',
@@ -4036,7 +4259,37 @@ const DEFAULT_BROADCAST_TEMPLATES = [
       + 'continuously until the cold passes \u2014 moving water is far less likely to freeze, '
       + 'and a frozen line or pump can be an expensive repair.\n\n'
       + 'If you have a heater, setting it low will also help protect the equipment.\n\n'
-      + 'Thank you,\n' + companyName()
+      + 'Thank you,\n' + '{company}'
+  },
+  {
+    id: 'bt_winterize', category: 'Seasonal', name: 'Winterizing',
+    subject: 'Getting your pool ready for winter',
+    body: 'Hi there,\n\n'
+      + 'The season is turning, so this is a good moment to talk about winterizing.\n\n'
+      + 'A pool that is properly closed down costs less to run and comes back far more '
+      + 'easily in the spring. Left as it is through the cold months, water sitting in '
+      + 'the lines and equipment can freeze and crack them, and that is the kind of '
+      + 'repair nobody wants to be told about in March.\n\n'
+      + 'Winterizing covers the things that protect the equipment and keep the water '
+      + 'from turning over the winter \u2014 balancing the chemistry so it holds, clearing '
+      + 'the lines and equipment of water, and getting the pool covered.\n\n'
+      + 'If you would like this booked in, reply to this email and we will find a time '
+      + 'that suits. If you would rather keep the pool running through winter, that is '
+      + 'completely fine \u2014 just let us know and we will carry on as normal.\n\n'
+      + 'Either way, it is worth deciding before the first hard freeze rather than after.\n\n'
+      + 'Thank you,\n' + '{company}'
+  },
+  {
+    id: 'bt_openpool', category: 'Seasonal', name: 'Opening for the season',
+    subject: 'Ready to open your pool for the season?',
+    body: 'Hi there,\n\n'
+      + 'The weather is turning, which means it is about time to open the pool back up.\n\n'
+      + 'Opening usually goes more smoothly when it is done a little earlier than feels '
+      + 'necessary. Water that has sat covered all winter takes time to clear, and '
+      + 'starting a couple of weeks before you actually want to swim means it is ready '
+      + 'when you are rather than green when you are.\n\n'
+      + 'Reply to this email and we will get you booked in.\n\n'
+      + 'Thank you,\n' + '{company}'
   },
   {
     id: 'bt_holiday', category: 'Scheduling', name: 'Holiday schedule',
@@ -4045,7 +4298,7 @@ const DEFAULT_BROADCAST_TEMPLATES = [
       + 'A quick note about service over the coming holiday. Your regular day may shift '
       + 'slightly that week \u2014 we will still service your pool, just possibly a day either '
       + 'side of the usual.\n\n'
-      + 'Thank you for your patience,\n' + companyName()
+      + 'Thank you for your patience,\n' + '{company}'
   },
   {
     id: 'bt_priceincrease', category: 'Announcements', name: 'Rate change',
@@ -4055,7 +4308,7 @@ const DEFAULT_BROADCAST_TEMPLATES = [
       + '[date]. Your new rate will be [amount] per month.\n\n'
       + '[Reason for the change.]\n\n'
       + 'Thank you for your business \u2014 please get in touch with any questions.\n\n'
-      + companyName()
+      + '{company}'
   }
 ];
 
@@ -4063,9 +4316,16 @@ let broadcastCategory = 'All';
 let broadcastSelectedId = null;
 
 function loadBroadcastTemplates(){
+  // {company} is filled in here rather than baked into the templates, so a
+  // company name entered later still reaches messages written before it.
+  const fill = (t)=> Object.assign({}, t, {
+    subject: String(t.subject || '').split('{company}').join(companyName()),
+    body: String(t.body || '').split('{company}').join(companyName())
+  });
+
   const saved = lsGet('broadcastTemplates');
-  if(Array.isArray(saved) && saved.length) return saved;
-  return DEFAULT_BROADCAST_TEMPLATES.map(t => Object.assign({}, t));
+  if(Array.isArray(saved) && saved.length) return saved.map(fill);
+  return DEFAULT_BROADCAST_TEMPLATES.map(fill);
 }
 
 function saveBroadcastTemplates(list){
@@ -4983,6 +5243,202 @@ function taskTodayStr(){
 }
 
 
+
+
+// A sample report, so the look can be checked without sending anything.
+// Mirrors what the field apps build — same markup, invented readings.
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function previewReportEmail(){
+  const b = loadEmailStyle();
+  const company = companyName();
+
+  const contactBits = [];
+  if(b.showContact !== false){
+    ['accountPhone','accountEmail','businessWebsite'].forEach(k=>{
+      const v = lsGet(k);
+      if(v) contactBits.push(esc(v));
+    });
+  }
+  const contact = contactBits.join(' &nbsp;&middot;&nbsp; ');
+
+  const rows = (pairs)=> pairs.map((p, i)=>
+    '<tr><td style="padding:7px 10px;border-bottom:1px solid #E6E9E8;color:#4A5A58;'
+    + 'font-size:14px;' + (i === 0 ? 'border-top:1px solid #E6E9E8;' : '') + '">'
+    + esc(p[0]) + '</td>'
+    + '<td style="padding:7px 10px;border-bottom:1px solid #E6E9E8;color:#16302E;'
+    + 'font-size:14px;font-weight:600;text-align:right;white-space:nowrap;'
+    + (i === 0 ? 'border-top:1px solid #E6E9E8;' : '') + '">' + esc(p[1]) + '</td></tr>').join('');
+
+  const block = (title, pairs)=> !pairs.length ? '' :
+    '<tr><td style="padding:18px 0 6px;"><div style="font-size:12px;font-weight:700;'
+    + 'color:#0F766E;text-transform:uppercase;letter-spacing:0.06em;">' + esc(title)
+    + '</div></td></tr><tr><td><table role="presentation" width="100%" cellpadding="0" '
+    + 'cellspacing="0" border="0" style="border-collapse:collapse;">' + rows(pairs)
+    + '</table></td></tr>';
+
+  let body = '<tr><td style="padding:22px 0 0;"><div style="font-size:16px;font-weight:700;'
+    + 'color:#16302E;">Pool</div></td></tr>';
+  if(b.showReadings !== false){
+    body += block('Readings', [['Free chlorine','3.0 ppm'], ['pH level','7.4'],
+                               ['Alkalinity','90 ppm']]);
+  }
+  body += block('Chemicals added', [['Chlorine tabs','2 tabs']]);
+  body += block('Service performed', [['Filter backwashed','Yes']]);
+
+  return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F4F6F5;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+    + 'style="background:#F4F6F5;padding:24px 12px;"><tr><td align="center">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+    + 'style="max-width:580px;background:#FFFFFF;border-radius:12px;overflow:hidden;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;">'
+    + '<tr><td style="background:' + esc(b.colour) + ';padding:22px 26px;">'
+    + '<div style="font-size:19px;font-weight:700;color:#FFFFFF;">' + esc(company) + '</div>'
+    + (contact ? '<div style="font-size:12.5px;color:rgba(255,255,255,0.85);margin-top:5px;">'
+        + contact + '</div>' : '')
+    + '</td></tr>'
+    + '<tr><td style="padding:24px 26px 0;">'
+    + (b.greeting ? '<div style="font-size:14.5px;color:#4A5A58;margin-bottom:16px;">'
+        + esc(b.greeting) + '</div>' : '')
+    + '<div style="font-size:17px;font-weight:700;color:#16302E;">Alpha One</div>'
+    + '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">123 Palm Way</div>'
+    + '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">'
+    + esc(new Date().toLocaleDateString(undefined,
+        {weekday:'long', month:'long', day:'numeric', year:'numeric'})) + ' at 10:14 AM</div>'
+    + '</td></tr>'
+    + '<tr><td style="padding:0 26px;"><table role="presentation" width="100%" cellpadding="0" '
+    + 'cellspacing="0" border="0">' + body + '</table></td></tr>'
+    + '<tr><td style="padding:26px;">'
+    + (b.signoff ? '<div style="font-size:14px;color:#4A5A58;padding-top:18px;'
+        + 'border-top:1px solid #E6E9E8;">' + esc(b.signoff) + '</div>' : '')
+    + '<div style="font-size:13.5px;font-weight:600;color:#16302E;margin-top:10px;">'
+    + esc(company) + '</div>'
+    + (lsGet('licenseNumber') ? '<div style="font-size:11.5px;color:#8A9997;margin-top:3px;">'
+        + 'License ' + esc(lsGet('licenseNumber')) + '</div>' : '')
+    + '</td></tr></table></td></tr></table></body></html>';
+}
+
+// ---------- How the emailed report looks ----------
+// Stored as one object so the field apps can read it with a single lookup.
+const EMAIL_STYLE_DEFAULTS = {
+  colour: '#134E4A',
+  greeting: 'Here is the report from today\u2019s visit.',
+  signoff: 'Thank you for your business.',
+  showContact: true,
+  showReadings: true
+};
+
+function loadEmailStyle(){
+  return Object.assign({}, EMAIL_STYLE_DEFAULTS, lsGet('reportEmailStyle') || {});
+}
+
+function saveEmailStyle(s){ lsSet('reportEmailStyle', s); }
+
+function renderAccountEmail(){
+  const s = loadEmailStyle();
+  const set = (id, val)=>{ const el = document.getElementById(id); if(el) el.value = val; };
+  set('acctEmailColour', s.colour);
+  set('acctEmailGreeting', s.greeting);
+  set('acctEmailSignoff', s.signoff);
+  const c1 = document.getElementById('acctEmailContact');
+  const c2 = document.getElementById('acctEmailReadings');
+  if(c1) c1.checked = s.showContact !== false;
+  if(c2) c2.checked = s.showReadings !== false;
+}
+
+[['acctEmailColour','colour'], ['acctEmailGreeting','greeting'], ['acctEmailSignoff','signoff']]
+  .forEach(([id, key])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('change', ()=>{
+      const s = loadEmailStyle();
+      s[key] = el.value;
+      saveEmailStyle(s);
+      showToast('Saved');
+    });
+  });
+
+[['acctEmailContact','showContact'], ['acctEmailReadings','showReadings']]
+  .forEach(([id, key])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('change', ()=>{
+      const s = loadEmailStyle();
+      s[key] = el.checked;
+      saveEmailStyle(s);
+      showToast('Saved');
+    });
+  });
+
+document.getElementById('btnEmailReset').addEventListener('click', async ()=>{
+  const ok = await confirmDialog('Put the report email back to its default look?', 'Reset');
+  if(!ok) return;
+  saveEmailStyle(Object.assign({}, EMAIL_STYLE_DEFAULTS));
+  renderAccountEmail();
+  showToast('Reset to default');
+});
+
+document.getElementById('btnEmailPreview').addEventListener('click', ()=>{
+  const html = previewReportEmail();
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,46,46,0.55);'
+    + 'display:flex;align-items:center;justify-content:center;z-index:200;padding:18px;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:14px;padding:16px;max-width:640px;'
+    + 'width:100%;max-height:86vh;display:flex;flex-direction:column;';
+  card.innerHTML = '<h2 style="margin:0 0 10px;">What your customer sees</h2>';
+
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'flex:1;min-height:420px;width:100%;border:1px solid var(--line);'
+    + 'border-radius:10px;background:#F4F6F5;';
+  card.appendChild(frame);
+
+  const row = document.createElement('div');
+  row.className = 'btn-row';
+  row.style.marginTop = '14px';
+  const close = document.createElement('button');
+  close.className = 'btn btn-primary';
+  close.style.width = 'auto';
+  close.textContent = 'Close';
+  row.appendChild(close);
+  card.appendChild(row);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  // Written after the frame is attached, or the document is not there yet
+  const doc = frame.contentDocument || frame.contentWindow.document;
+  doc.open(); doc.write(html); doc.close();
+
+  const shut = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  close.addEventListener('click', shut);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) shut(); });
+});
+
+
+// A message already sitting in the Email tab was built with the old company
+// name. Rewrite just the name, and only where the old one actually appears, so
+// anything genuinely written by hand is left alone.
+function refreshBroadcastSignoff(oldName){
+  const body = document.getElementById('wcBroadcastBody');
+  const subject = document.getElementById('wcBroadcastSubject');
+  const now = companyName();
+  const was = (oldName || '').trim() || 'Your pool service';
+  if(!was || was === now) return;
+
+  [body, subject].forEach(el=>{
+    if(!el || !el.value) return;
+    if(el.value.indexOf(was) === -1) return;
+    el.value = el.value.split(was).join(now);
+  });
+}
+
 // ---------- Account ----------
 // One place for who the business is, rather than business details scattered
 // through Settings alongside app behaviour.
@@ -5086,13 +5542,15 @@ function applyAccountTab(tab){
   document.querySelectorAll('#accountTabControl .history-type-btn').forEach(b=>{
     b.classList.toggle('active', b.dataset.acct === tab);
   });
-  const panels = {business:'acctBusiness', contact:'acctContact', plan:'acctPlan', data:'acctData'};
+  const panels = {business:'acctBusiness', contact:'acctContact', plan:'acctPlan',
+                 email:'acctEmailPanel', data:'acctData'};
   Object.keys(panels).forEach(k=>{
     const el = document.getElementById(panels[k]);
     if(el) el.style.display = (k === tab) ? 'block' : 'none';
   });
   if(tab === 'plan') renderAccountPlan();
   if(tab === 'data') renderAccountData();
+  if(tab === 'email') renderAccountEmail();
 }
 
 function renderAccount(){
@@ -5108,8 +5566,12 @@ ACCOUNT_FIELDS.forEach(([elId, key])=>{
   const el = document.getElementById(elId);
   if(!el) return;
   el.addEventListener('change', ()=>{
+    const wasCompany = key === 'companyName' ? (lsGet('companyName') || '') : null;
     lsSet(key, el.value.trim());
-    if(key === 'companyName') renderAccountButton();
+    if(key === 'companyName'){
+      renderAccountButton();
+      refreshBroadcastSignoff(wasCompany);
+    }
     showToast('Saved');
   });
 });
@@ -5133,6 +5595,142 @@ document.getElementById('btnAcctRestore').addEventListener('click', ()=>{
   if(btn) btn.click();
   else showToast('Restore is on the Settings page');
 });
+
+// ---------- Water balance ----------
+
+// Water balance is opt-in. Plenty of technicians never use LSI, so nothing
+// about it appears — and no extra reading is asked for — unless it is on.
+function waterBalanceOn(){
+  return appSettings.showWaterBalance === true;
+}
+
+
+// Langelier Saturation Index — published water chemistry, implemented from
+// the standard tables rather than anyone's branded version.
+//
+//   LSI = pH + temperature factor + calcium factor + alkalinity factor − TDS factor
+//
+// Around 0 is balanced. Below about -0.3 the water is aggressive and starts
+// dissolving plaster and metal. Above about +0.3 it deposits scale.
+
+// The accepted temperature table, in Fahrenheit. Interpolated between points
+// rather than fitted to a curve, so it matches what the industry expects.
+const TEMP_FACTORS = [
+  [32, 0.0], [37, 0.1], [46, 0.2], [53, 0.3], [60, 0.4],
+  [66, 0.5], [76, 0.6], [84, 0.7], [94, 0.8], [105, 0.9]
+];
+
+function tempFactor(f){
+  if(f <= 32) return 0.0;
+  if(f >= 105) return 0.9;
+  for(let i = 0; i < TEMP_FACTORS.length - 1; i++){
+    const [t1, v1] = TEMP_FACTORS[i];
+    const [t2, v2] = TEMP_FACTORS[i + 1];
+    if(f >= t1 && f <= t2){
+      return v1 + (f - t1) * (v2 - v1) / (t2 - t1);
+    }
+  }
+  return 0.9;
+}
+
+// Cyanuric acid contributes alkalinity that does nothing for water balance,
+// so it has to come out before the alkalinity factor is worked out. A third
+// of the CYA reading is the accepted approximation near normal pool pH.
+function carbonateAlkalinity(totalAlk, cya){
+  const corrected = totalAlk - ((cya || 0) / 3);
+  return corrected > 0 ? corrected : 0;
+}
+
+function tdsFactor(tds){
+  if(!tds || tds <= 1000) return 12.1;
+  if(tds <= 4000) return 12.2;
+  return 12.29;                      // salt pools sit up here
+}
+
+// Returns {value, balance, missing} — missing lists what could not be read,
+// because a partial LSI is worse than none at all.
+function calcLSI(r){
+  const need = [
+    ['pH', r.ph],
+    ['water temperature', r.tempF],
+    ['calcium hardness', r.calcium],
+    ['total alkalinity', r.alkalinity]
+  ];
+  const missing = need.filter(([, v]) => v === null || v === undefined || v === ''
+                                      || isNaN(parseFloat(v))).map(([n]) => n);
+  if(missing.length) return {value: null, balance: null, missing};
+
+  const ph = parseFloat(r.ph);
+  const ch = parseFloat(r.calcium);
+  const ta = parseFloat(r.alkalinity);
+  const cya = parseFloat(r.cya || 0) || 0;
+  const tds = parseFloat(r.tds || 0) || 0;
+
+  if(ch <= 0 || ta <= 0) return {value: null, balance: null, missing: ['a usable reading']};
+
+  const ca = carbonateAlkalinity(ta, cya);
+  if(ca <= 0){
+    return {value: null, balance: null,
+            missing: ['usable alkalinity (cyanuric acid is too high for the alkalinity reading)']};
+  }
+
+  const value = ph
+    + tempFactor(parseFloat(r.tempF))
+    + (Math.log10(ch) - 0.4)
+    + Math.log10(ca)
+    - tdsFactor(tds);
+
+  const rounded = Math.round(value * 100) / 100;
+  let balance;
+  if(rounded < -0.3) balance = 'corrosive';
+  else if(rounded > 0.3) balance = 'scaling';
+  else balance = 'balanced';
+
+  return {value: rounded, balance, missing: []};
+}
+
+
+// Which reading key holds each LSI input. Readings are user-configurable, so
+// these are matched by key first and label second, and anything missing is
+// reported rather than assumed.
+function lsiReadingsFrom(reading, chemList){
+  const find = (keys, labelWords)=>{
+    for(const k of keys){
+      if(reading[k] !== undefined && reading[k] !== '') return reading[k];
+    }
+    const hit = (chemList || []).find(c=>{
+      const l = ((c.label || '') + ' ' + (c.full || '')).toLowerCase();
+      return labelWords.some(wd => l.indexOf(wd) !== -1);
+    });
+    return hit ? reading[hit.key] : undefined;
+  };
+
+  return {
+    ph:         find(['ph'], ['ph']),
+    tempF:      find(['temp','temperature','watertemp'], ['temperature', 'temp']),
+    calcium:    find(['calcium','ch','hardness'], ['calcium', 'hardness']),
+    alkalinity: find(['alkalinity','alk','ta'], ['alkalinity']),
+    cya:        find(['cya','stabiliser','stabilizer'], ['cyanuric', 'stabil']),
+    tds:        find(['tds','salt'], ['tds', 'salt'])
+  };
+}
+
+// Everything needed to draw the readout for one body of water
+function lsiFor(reading, chemList){
+  return calcLSI(lsiReadingsFrom(reading, chemList));
+}
+
+function lsiColour(balance){
+  if(balance === 'corrosive') return '#8C3B2A';
+  if(balance === 'scaling') return '#8A5A22';
+  return '#0F766E';
+}
+
+function lsiWording(balance){
+  if(balance === 'corrosive') return 'Aggressive \u2014 this water will attack plaster and metal';
+  if(balance === 'scaling') return 'Scaling \u2014 this water will leave deposits';
+  return 'Balanced';
+}
 
 // ---------- Tasks ----------
 // Anything a technician needs to do that is not a normal service. Lands on
@@ -5524,6 +6122,12 @@ document.getElementById('btnTaskTemplates').addEventListener('click', ()=>{
     pick.addEventListener('click', ()=>{
       document.getElementById('taskTitle').value = t.title;
       document.getElementById('taskDetails').value = t.details || '';
+      // A saved task is a template, not a customer's job — clear whoever was
+      // picked so it never goes out against the wrong person by accident
+      taskPicked.clear();
+      document.getElementById('taskCustomerSearch').value = '';
+      renderTaskChips();
+      renderTaskSuggest('');
       close();
       showToast('Filled from "' + t.name + '"');
     });
@@ -5965,7 +6569,10 @@ document.getElementById('btnAddLineItem').addEventListener('click', ()=>{
 
 function resetWorkOrderForm(){
   const heading = document.getElementById('wcFormHeading');
-  if(heading) heading.textContent = 'New quote / work order';
+  if(heading){
+    heading.textContent = '';
+    heading.style.display = 'none';
+  }
   wcSelectedCustomerIds = [];
   renderWcCustomerChips();
   const cs = document.getElementById('wcCustomerSearch');
@@ -6101,7 +6708,8 @@ function applyWorkOrderType(){
     if(el.id === 'wcFormHeading' || el.id === 'wcTypeToggle' || el.id === 'wcType') return;
     el.style.display = isTask ? 'none' : '';
   });
-  document.getElementById('wcFormHeading').style.display = isTask ? 'none' : '';
+  // The heading only appears while editing something, so leave it as it is
+  if(isTask) document.getElementById('wcFormHeading').style.display = 'none';
   document.getElementById('wcQuotesHistoryCard').style.display = isTask ? 'none' : 'block';
   document.getElementById('wcTaskSection').style.display = isTask ? 'block' : 'none';
   document.getElementById('wcTaskListCard').style.display = isTask ? 'block' : 'none';
@@ -6432,7 +7040,10 @@ function loadWorkOrderIntoForm(w){
     }
 
     const heading = document.getElementById('wcFormHeading');
-    if(heading) heading.textContent = 'Editing a saved ' + (w.type || 'record').toLowerCase();
+    if(heading){
+      heading.textContent = 'Editing a saved ' + (w.type || 'record').toLowerCase();
+      heading.style.display = '';
+    }
 
     window.scrollTo({top: 0, behavior: 'smooth'});
     showToast('Loaded — make your changes, then send or finalize');
@@ -6738,7 +7349,7 @@ function openDoseRulesModal(item){
   const overlay = document.createElement('div');
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = `
-    <div class="confirm-box" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
+    <div class="confirm-box" style="max-width:720px;width:100%;max-height:86vh;display:flex;flex-direction:column;">
       <h3 style="font-size:15px;margin:0 0 4px;">Dosage rules for ${item.label || 'this reading'}</h3>
       <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">When a technician enters this reading, the dosage below fills in automatically. They can still change it.</p>
 
@@ -6965,7 +7576,7 @@ function openDoseRulesModal(item){
 
       const amt = document.createElement('input');
       amt.type = 'number'; amt.step = 'any'; amt.value = rule.amount ?? '';
-      amt.style.cssText = 'width:66px;flex:0 0 66px;font-size:12.5px;padding:5px 6px;text-align:center;';
+      amt.style.cssText = 'width:72px;flex:0 0 72px;font-size:12.5px;padding:5px 6px;text-align:center;';
       amt.addEventListener('change', ()=>{
         amt.value = padLeadingZero(amt.value);
         rule.amount = amt.value;
@@ -6974,7 +7585,7 @@ function openDoseRulesModal(item){
       row.appendChild(amt);
 
       const doseSel = document.createElement('select');
-      doseSel.style.cssText = 'flex:1 1 120px;min-width:0;font-size:12.5px;padding:5px 8px;';
+      doseSel.style.cssText = 'flex:0 1 150px;min-width:0;font-size:12.5px;padding:5px 8px;';
       doses.forEach(d=>{
         const opt = document.createElement('option');
         opt.value = d.key; opt.textContent = d.label || d.key;
@@ -6984,6 +7595,34 @@ function openDoseRulesModal(item){
       rule.doseKey = doseSel.value;
       doseSel.addEventListener('change', ()=>{ rule.doseKey = doseSel.value; saveActiveConfig(); });
       row.appendChild(doseSel);
+
+      // Scale this rule's amount by the pool's own volume. Off by default, so
+      // rules already written keep meaning exactly what they say.
+      const scaleWrap = document.createElement('label');
+      scaleWrap.title = 'Treat the amount as "per 10,000 gallons" and scale it '
+        + 'to each pool\u2019s own size. Pools with no volume on file keep the '
+        + 'amount as written.';
+      // Pushed to the far right of the rule line, away from the dosage picker —
+      // sitting directly beside it made the row read as one crowded lump.
+      scaleWrap.style.cssText = 'display:inline-flex;align-items:center;gap:5px;'
+        + 'flex:0 0 auto;margin-left:auto;padding-left:12px;'
+        + 'font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;';
+
+      const scale = document.createElement('input');
+      scale.type = 'checkbox';
+      scale.checked = rule.scaleByVolume === true;
+      scale.style.margin = '0';
+      scale.addEventListener('change', ()=>{
+        rule.scaleByVolume = scale.checked;
+        saveActiveConfig();
+        render();
+      });
+      scaleWrap.appendChild(scale);
+
+      const scaleTxt = document.createElement('span');
+      scaleTxt.textContent = rule.scaleByVolume ? 'per 10k gal' : 'by pool size';
+      scaleWrap.appendChild(scaleTxt);
+      row.appendChild(scaleWrap);
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -7350,22 +7989,26 @@ function makeConfigRow(item, listKey){
   row.appendChild(nameInput);
   row.appendChild(unitInput);
 
-  // Required — technicians can't move past this step until it's filled in
-  const reqWrap = document.createElement('label');
-  reqWrap.title = 'Technicians must fill this in before moving on';
-  reqWrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;'
-    + 'font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;';
-  const reqCb = document.createElement('input');
-  reqCb.type = 'checkbox';
-  reqCb.checked = !!item.required;
-  reqCb.style.margin = '0';
-  reqCb.addEventListener('change', ()=>{
-    item.required = reqCb.checked;
-    saveActiveConfig();
-  });
-  reqWrap.appendChild(reqCb);
-  reqWrap.appendChild(document.createTextNode('Required'));
-  row.appendChild(reqWrap);
+  // Required — technicians can't move past this step until it's filled in.
+  // Readings only: a dosage is what the water needed, so there is no sense in
+  // forcing an amount when the right answer is often "nothing".
+  if(listKey === 'chemicals'){
+    const reqWrap = document.createElement('label');
+    reqWrap.title = 'Technicians must fill this in before moving on';
+    reqWrap.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;'
+      + 'font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap;';
+    const reqCb = document.createElement('input');
+    reqCb.type = 'checkbox';
+    reqCb.checked = !!item.required;
+    reqCb.style.margin = '0';
+    reqCb.addEventListener('change', ()=>{
+      item.required = reqCb.checked;
+      saveActiveConfig();
+    });
+    reqWrap.appendChild(reqCb);
+    reqWrap.appendChild(document.createTextNode('Required'));
+    row.appendChild(reqWrap);
+  }
 
   // Chemicals can automatically fill a dosage based on the reading entered
   if(listKey === 'chemicals'){
@@ -10289,6 +10932,40 @@ document.querySelectorAll('#profileTabControl .history-type-btn').forEach(btn=>{
 });
 
 
+
+// Left and right arrows step between customers, so a whole list can be worked
+// through without reaching for the mouse. Deliberately narrow: it only applies
+// while a customer profile is open, and never while something is being typed
+// in or a dialog is up, where the arrows mean move the cursor.
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+  // A modifier means the person wants the browser's own behaviour
+  if(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+
+  // Only on an open customer profile
+  const view = document.getElementById('view-customers');
+  if(!view || !view.classList.contains('active')) return;
+  if(!profileCustomerId) return;
+
+  // Not while a dialog or picker is up
+  if(document.querySelector('.confirm-overlay')) return;
+
+  // Not while typing. Arrows belong to the field in that case.
+  const el = document.activeElement;
+  if(el){
+    const tag = (el.tagName || '').toLowerCase();
+    if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if(el.isContentEditable) return;
+  }
+
+  const btn = document.getElementById(e.key === 'ArrowRight' ? 'btnNextCustomer' : 'btnPrevCustomer');
+  if(!btn || btn.disabled) return;
+
+  e.preventDefault();
+  btn.click();
+});
+
 document.getElementById('btnPrevCustomer').addEventListener('click', ()=> stepToCustomer(-1));
 document.getElementById('btnNextCustomer').addEventListener('click', ()=> stepToCustomer(1));
 
@@ -11524,6 +12201,7 @@ function switchView(view){
     t.classList.toggle('active', t.dataset.view === view);
   });
   if(view === 'settings') renderStorageMeter();
+  if(view === 'settings') renderOfflineStatus();
   if(view === 'account') renderAccount();
   if(view === 'chemconfig'){
     selectedChemConfigType = 'pool';
@@ -12986,6 +13664,7 @@ document.getElementById('settingBeforePhotos').checked = appSettings.showBeforeP
 document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
 document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
 document.getElementById('settingRequireSkipPhoto').checked = appSettings.requireSkipPhoto === true;
+document.getElementById('settingWaterBalance').checked = appSettings.showWaterBalance === true;
 document.getElementById('settingAutoNotifyAll').checked = appSettings.autoNotifyAll === true;
 document.getElementById('settingAutoNotifyLead').value = String(appSettings.autoNotifyAllLead || 2);
 document.getElementById('settingAutoNotifyLeadField').style.display =
@@ -12993,6 +13672,82 @@ document.getElementById('settingAutoNotifyLeadField').style.display =
 document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
+
+
+
+// Refresh the offline readout whenever the settings page is opened
+async function renderOfflineStatus(){
+  const el = document.getElementById('offlineStatus');
+  if(!el) return;
+  el.textContent = await offlineStatusText();
+}
+
+
+document.getElementById('settingWaterBalance').addEventListener('change', (e)=>{
+  appSettings.showWaterBalance = e.target.checked;
+  saveSettings();
+  if(typeof renderWaterBalance === 'function') renderWaterBalance();
+  showToast(appSettings.showWaterBalance
+    ? 'Water balance shown on visits'
+    : 'Water balance hidden');
+});
+
+// ---------- Offline readiness ----------
+// The point of this is that you can SEE the app is safe to use without signal,
+// rather than finding out in front of a customer that it isn't.
+let offlineReady = false;
+
+function offlineBadge(){
+  return document.getElementById('offlineBadge');
+}
+
+function showOfflineState(){
+  const el = offlineBadge();
+  if(!el) return;
+  if(!navigator.onLine){
+    el.textContent = offlineReady
+      ? 'Offline \u2014 working from this device'
+      : 'Offline \u2014 some things may not load';
+    el.style.background = offlineReady ? '#0F766E' : '#8C3B2A';
+    el.style.color = '#fff';
+    el.style.display = 'block';
+    return;
+  }
+  el.style.display = 'none';
+}
+
+window.addEventListener('online', showOfflineState);
+window.addEventListener('offline', showOfflineState);
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.ready.then(()=>{
+    offlineReady = true;
+    showOfflineState();
+  }).catch(()=>{});
+}
+
+// Says plainly whether this device can open the app without a connection
+async function offlineStatusText(){
+  if(!('serviceWorker' in navigator)){
+    return 'This browser cannot store the app for offline use.';
+  }
+  try{
+    const reg = await navigator.serviceWorker.getRegistration();
+    if(!reg || !reg.active){
+      return 'Not stored yet. Stay on this page for a moment with a connection, '
+           + 'then it will open without one.';
+    }
+    const names = await caches.keys();
+    const mine = names.filter(n => n.indexOf('poollog') === 0);
+    if(!mine.length) return 'Registered, but nothing is stored yet. Reload once with a connection.';
+    const cache = await caches.open(mine[0]);
+    const kept = await cache.keys();
+    return 'Ready \u2014 ' + kept.length + ' file' + (kept.length === 1 ? '' : 's')
+         + ' stored on this device. The app will open without a connection.';
+  }catch(e){
+    return 'Could not check offline storage on this device.';
+  }
+}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{

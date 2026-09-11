@@ -521,6 +521,14 @@ select#customerSelect{font-weight:600;}
       <input type="file" accept="image/*" capture="environment" id="icEquipmentPhotoInput" style="display:none;">
     </div>
 
+    <div class="card" id="visitClipSection" style="display:none;">
+      <h2>Send a clip</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Up to 15 seconds, with sound, for something a photo cannot explain &mdash; a pump making a noise, water tracking to a leak. It goes straight to your phone&rsquo;s share sheet, so you can text or email it to the office. Nothing is saved in PoolLog.</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btnRecordClip" type="button" style="width:auto;">Record a clip</button>
+      </div>
+    </div>
+
     <div class="card" id="visitPoolBeforePhotoSection" style="display:none;">
       <div id="customPhotos_pool_before" style="display:none;"></div>
       <h2>Before photos</h2>
@@ -542,6 +550,7 @@ select#customerSelect{font-weight:600;}
            past, but the readings are typed one by one. -->
       <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
       <div id="poolChemFields"></div>
+      <div id="pool_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
 
     <div class="card" id="visitPoolProductsSection" style="display:none;">
@@ -600,6 +609,7 @@ select#customerSelect{font-weight:600;}
     <div class="card" id="visitSpaSection" style="display:none;">
       <h2>Today's spa strip</h2>
       <div id="spaChemFields"></div>
+      <div id="spa_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
 
     <div class="card" id="visitSpaProductsSection" style="display:none;">
@@ -647,6 +657,7 @@ select#customerSelect{font-weight:600;}
     <div class="card" id="visitFountainSection" style="display:none;">
       <h2 id="visitFountainTitle">Fountain readings</h2>
       <div id="fountainChemFields"></div>
+      <div id="fountain_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
 
     <div class="card" id="visitFountainProductsSection" style="display:none;">
@@ -713,6 +724,27 @@ select#customerSelect{font-weight:600;}
 
   <!-- OPTIONS VIEW -->
   <div class="view" id="view-options">
+      <div class="card">
+        <div class="field">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+            <h2 style="margin:0;">Water balance (LSI)</h2>
+            <label class="toggle-switch">
+              <input type="checkbox" id="settingWaterBalance">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">Off by default. When on, each visit shows whether the water is balanced, aggressive or scaling, worked out from the readings. It needs calcium hardness and water temperature as well as pH and alkalinity &mdash; without those it simply says what is missing. Nothing else changes, and no reading is ever made compulsory by turning this on.</p>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <h2>Works without a connection</h2>
+        <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Check this before going somewhere with no signal.</p>
+        <div id="offlineStatus" style="font-size:13px;color:var(--ink);padding:11px 13px;border-radius:10px;background:var(--surface-alt);border:1px solid var(--line);line-height:1.5;">Checking&hellip;</div>
+      </div>
+
+
 
     <div class="card">
       <div class="section-head">
@@ -769,7 +801,162 @@ select#customerSelect{font-weight:600;}
 
 <div class="toast" id="toast"></div>
 
+<div id="offlineBadge" style="position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:400;padding:7px 14px;border-radius:999px;font-size:12px;font-weight:600;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;box-shadow:0 3px 12px rgba(0,0,0,0.18);display:none;pointer-events:none;"></div>
+
 <script>
+
+// ---------- Error reporting ----------
+// A tester who says "it froze" gives you nothing to work with. This catches
+// anything that would otherwise fail silently and shows exactly what broke,
+// with a button to copy the details. Kept deliberately dependency-free and
+// early in the file, so it works even if the rest of the script dies.
+const APP_VERSION = 'technician-2026-09-11';
+const ERROR_LOG_KEY = 'poollog:errorLog';
+const ERROR_LOG_MAX = 20;
+
+function recordError(kind, message, source, line, col, stack){
+  const entry = {
+    when: new Date().toISOString(),
+    version: APP_VERSION,
+    kind: kind,
+    message: String(message || 'Unknown error'),
+    where: (source ? String(source).split('/').pop() : '') + (line ? ':' + line : '')
+      + (col ? ':' + col : ''),
+    stack: stack ? String(stack).split('\n').slice(0, 5).join('\n') : '',
+    page: location.pathname.split('/').pop(),
+    screen: (window.innerWidth || 0) + 'x' + (window.innerHeight || 0),
+    agent: navigator.userAgent
+  };
+
+  try{
+    const log = JSON.parse(localStorage.getItem(ERROR_LOG_KEY) || '[]');
+    log.push(entry);
+    while(log.length > ERROR_LOG_MAX) log.shift();
+    localStorage.setItem(ERROR_LOG_KEY, JSON.stringify(log));
+  }catch(e){
+    // Storage may be full or blocked — showing the error still matters more
+  }
+
+  return entry;
+}
+
+function errorText(entry){
+  return 'PoolLog problem report\n'
+    + '----------------------\n'
+    + 'When:    ' + entry.when + '\n'
+    + 'Version: ' + entry.version + '\n'
+    + 'Page:    ' + entry.page + '\n'
+    + 'Type:    ' + entry.kind + '\n'
+    + 'Message: ' + entry.message + '\n'
+    + 'Where:   ' + (entry.where || 'unknown') + '\n'
+    + 'Screen:  ' + entry.screen + '\n'
+    + 'Device:  ' + entry.agent + '\n'
+    + (entry.stack ? '\nDetail:\n' + entry.stack + '\n' : '');
+}
+
+let errorBannerUp = false;
+
+function showErrorBanner(entry){
+  // One at a time — a loop of failures must not bury the screen in banners
+  if(errorBannerUp) return;
+  errorBannerUp = true;
+
+  const bar = document.createElement('div');
+  bar.setAttribute('data-error-banner', '1');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;'
+    + 'background:#8C3B2A;color:#fff;padding:14px 16px;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,"Inter",sans-serif;font-size:13px;'
+    + 'box-shadow:0 -4px 18px rgba(0,0,0,0.25);line-height:1.45;';
+
+  const head = document.createElement('div');
+  head.style.cssText = 'font-weight:700;margin-bottom:4px;';
+  head.textContent = 'Something went wrong';
+  bar.appendChild(head);
+
+  const body = document.createElement('div');
+  body.style.cssText = 'opacity:0.92;margin-bottom:10px;word-break:break-word;';
+  body.textContent = entry.message;
+  bar.appendChild(body);
+
+  const note = document.createElement('div');
+  note.style.cssText = 'opacity:0.8;font-size:11.5px;margin-bottom:10px;';
+  note.textContent = 'Your saved work is not affected. Copy the details and send them over, '
+    + 'then carry on \u2014 or reload if the app stops responding.';
+  bar.appendChild(note);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;';
+
+  const mkBtn = (label, onClick, solid)=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText = 'padding:7px 13px;border-radius:8px;font-size:12.5px;font-weight:600;'
+      + 'cursor:pointer;font-family:inherit;'
+      + (solid ? 'background:#fff;color:#8C3B2A;border:none;'
+               : 'background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.5);');
+    b.addEventListener('click', onClick);
+    return b;
+  };
+
+  const copy = mkBtn('Copy details', ()=>{
+    const text = errorText(entry);
+    const done = ()=>{ copy.textContent = 'Copied'; };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(()=> fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }, true);
+
+  function fallbackCopy(text, done){
+    // Older iOS Safari refuses the clipboard API outside a few contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ copy.textContent = 'Could not copy'; }
+    document.body.removeChild(ta);
+  }
+
+  row.appendChild(copy);
+  row.appendChild(mkBtn('Reload', ()=> location.reload()));
+  row.appendChild(mkBtn('Dismiss', ()=>{
+    if(bar.parentNode) bar.parentNode.removeChild(bar);
+    errorBannerUp = false;
+  }));
+
+  bar.appendChild(row);
+
+  if(document.body) document.body.appendChild(bar);
+  else document.addEventListener('DOMContentLoaded', ()=> document.body.appendChild(bar));
+}
+
+window.addEventListener('error', (e)=>{
+  // Failed images and scripts fire here too, and are not worth a banner
+  if(e && e.target && e.target !== window && e.target.tagName) return;
+  const entry = recordError('Error', e.message, e.filename, e.lineno, e.colno,
+    e.error && e.error.stack);
+  showErrorBanner(entry);
+});
+
+window.addEventListener('unhandledrejection', (e)=>{
+  const reason = e && e.reason;
+  const entry = recordError('Unhandled promise',
+    (reason && reason.message) || reason || 'A background task failed',
+    '', '', '', reason && reason.stack);
+  showErrorBanner(entry);
+});
+
+// Storage filling up is silent otherwise: the write fails and the visit is lost
+function reportStorageFailure(where, err){
+  const entry = recordError('Could not save',
+    'Saving failed' + (where ? ' while writing ' + where : '')
+    + '. Your device storage may be full.', '', '', '', err && err.stack);
+  showErrorBanner(entry);
+}
+
 const STORAGE_PREFIX = 'poollog:';
 
 // ---------- Leading zero on decimals ----------
@@ -897,6 +1084,63 @@ const DEFAULT_BUTTON_SETS = {
   shock: [0.5, 1, 2, 3, 4],
   soda: [0.5, 1, 2, 3, 4]
 };
+
+
+// ---------- Dosage scaling by pool size ----------
+// A rule can say "2 tabs per 10,000 gallons" instead of a flat "2 tabs", so the
+// same rule serves an 8,000 and a 30,000 gallon pool. Applies to any dosage —
+// acid, soda ash, alkalinity increaser — not just chlorine.
+const DOSE_REFERENCE_GALLONS = 10000;
+
+// The volume for the body of water being serviced, or null when it is unknown.
+// Unknown must never be treated as zero, which would silently wipe every dose.
+function bodyVolumeGallons(customer, type, fountainId){
+  if(!customer) return null;
+
+  let raw = null;
+  if(type === 'spa') raw = customer.spaGallons;
+  else if(type === 'fountain'){
+    const f = (customer.fountains || []).find(x => x.id === fountainId);
+    raw = f ? f.gallons : null;
+  } else raw = customer.poolGallons;
+
+  const n = parseFloat(raw);
+  return (isFinite(n) && n > 0) ? n : null;
+}
+
+// Sensible precision for the product being measured. Tabs are objects you drop
+// in, so halves at best; liquids can be finer.
+function roundDose(amount, doseKey, lists){
+  const def = ((lists && lists.dosages) || []).find(d => d.key === doseKey) || {};
+  const unit = (def.unit || '').toLowerCase();
+
+  // Anything counted out by hand — tabs, sticks, pucks — has to be a whole
+  // number. Nobody is breaking a tab in half at the side of a pool, and
+  // rounding the pool size instead does not help: 3 tabs per 10,000 gallons
+  // on a 15,000 gallon pool is still 4.5.
+  if(unit === 'count' || /tab|stick|puck/i.test(def.label || '')){
+    const whole = Math.round(amount);
+    // A matching rule that works out under half a tab should still put one in,
+    // rather than silently telling the technician to add nothing
+    return String(amount > 0 ? Math.max(1, whole) : 0);
+  }
+  if(amount >= 10) return String(Math.round(amount));
+  if(amount >= 1)  return String(Math.round(amount * 10) / 10);
+  return String(Math.round(amount * 100) / 100);
+}
+
+// What a rule's amount becomes for this body of water
+function scaledDoseAmount(rule, lists, customer, type, fountainId){
+  const base = parseFloat(rule.amount);
+  if(!isFinite(base)) return String(rule.amount);
+  if(!rule.scaleByVolume) return String(rule.amount);
+
+  const gallons = bodyVolumeGallons(customer, type, fountainId);
+  // No volume on file — use the amount as written rather than guessing
+  if(gallons === null) return String(rule.amount);
+
+  return roundDose(base * (gallons / DOSE_REFERENCE_GALLONS), rule.doseKey, lists);
+}
 
 function loadChemConfig(){
   const stored = lsGet('chemConfig');
@@ -1088,7 +1332,12 @@ function applyDoseRules(type){
       touched[doseId] = true;
       // A later matching rule wins, so a more specific rule can sit below a
       // general one and override it
-      if(matchesDoseRule(reading, rule)) intended[doseId] = String(rule.amount);
+      if(matchesDoseRule(reading, rule)){
+        intended[doseId] = scaledDoseAmount(
+          rule, lists,
+          customers.find(c => c.id === currentVisitCustomerId),
+          type, currentVisitFountainId);
+      }
     });
   });
 
@@ -1295,7 +1544,10 @@ function renderConfigFields(containerId, list, type, kind, onInput){
     if(onInput) input.addEventListener('input', onInput);
 
     if(kind === 'chem'){
-      input.addEventListener('input', ()=> applyDoseRules(type));
+      input.addEventListener('input', ()=>{
+        applyDoseRules(type);
+        renderWaterBalance();
+      });
     } else {
       // Anything the tech enters themselves takes precedence over a rule
       input.addEventListener('input', ()=>{
@@ -1579,7 +1831,21 @@ function switchView(view, opts){
   });
   armBackButton();
 
-// Move any visit photos still held in localStorage across to the database
+  if(view !== 'visit'){
+    captureVisitDraft();
+    hideStepBar();
+    visitVoiceController.stopListening();
+    releaseVisitWakeLock();
+  }
+  if(view === 'report' && !opts.skipRefresh) refreshReportSelectors();
+  if(view === 'options') renderOfflineStatus();
+  if(view === 'home') renderHomeList();
+  if(view === 'serviced') renderServicedList();
+}
+
+// Move any visit photos still held in localStorage across to the database.
+// Runs once at startup — it was landing inside switchView, which meant every
+// tab tap scheduled another migration and another cleanup sweep.
 setTimeout(()=>{ migrateVisitPhotos(); }, 1200);
 
 // Clear out photos past the keep window, at most once a day so it never
@@ -1590,16 +1856,6 @@ setTimeout(async ()=>{
   const n = await removeExpiredPhotos();
   if(n) showToast(n + ' photo' + (n === 1 ? '' : 's') + ' over 3 years old removed \u2014 the reports themselves are kept');
 }, 4000);
-  if(view !== 'visit'){
-    captureVisitDraft();
-    hideStepBar();
-    visitVoiceController.stopListening();
-    releaseVisitWakeLock();
-  }
-  if(view === 'report' && !opts.skipRefresh) refreshReportSelectors();
-  if(view === 'home') renderHomeList();
-  if(view === 'serviced') renderServicedList();
-}
 
 document.querySelectorAll('.tab').forEach(t=>{
   t.addEventListener('click', ()=>{
@@ -1611,16 +1867,10 @@ document.querySelectorAll('.tab').forEach(t=>{
     // straight into a customer's report.
     if(t.dataset.view === currentViewName) return;
 
-    // A visit with work in it resumes rather than dumping you on the list.
-    // A draft is saved the moment a visit is opened, even with nothing typed,
-    // so merely having a customerId is not enough — that reopened a report
-    // the tech had never actually started.
-    if(t.dataset.view === 'home' && visitHasWorkInProgress()){
-      const back = visitLeftOpenFor;
-      visitLeftOpenFor = null;
-      openVisit(back);
-      return;
-    }
+    // Today always means the route. It used to reopen a visit that had work in
+    // it, which meant tapping Today from another tab dropped you straight back
+    // inside a report you were trying to leave. The draft is still kept, so
+    // tapping that customer picks up exactly where they left off.
     switchView(t.dataset.view);
   });
 });
@@ -1726,8 +1976,11 @@ function lsSet(key, value){
         alert('Storage is full — changes are not being saved. Download a backup and clear old photos.');
       }
       setTimeout(()=>{ storageWarningShown = false; }, 30000);
-    } else if(!full && typeof showToast === 'function'){
-      showToast("Couldn't save — see the browser console for details");
+    } else if(!full){
+      // Not a quota problem, so something unexpected broke. A console message
+      // helps nobody in the field — report it properly.
+      if(typeof reportStorageFailure === 'function') reportStorageFailure(key, e);
+      else if(typeof showToast === 'function') showToast("Couldn't save that");
     }
     return false;
   }
@@ -2110,6 +2363,54 @@ function populateCustomerSelect(selectEl, placeholder, filterFn){
 }
 
 
+
+// The readout itself. Drawn only when the setting is on, and it never asks for
+// a reading — if something is missing it says so and stays out of the way.
+function renderWaterBalance(){
+  ['pool','spa','fountain'].forEach(type=>{
+    const host = document.getElementById(type + '_waterBalance');
+    if(!host) return;
+
+    if(!waterBalanceOn()){ host.style.display = 'none'; return; }
+
+    const lists = (typeof activeListsFor === 'function')
+      ? activeListsFor(type)
+      : (chemConfig ? chemConfig[type] : null);
+    const chemList = (lists && lists.chemicals) || [];
+    if(!chemList.length){ host.style.display = 'none'; return; }
+
+    // Read straight off the fields, so it updates as the tech types
+    const reading = {};
+    chemList.forEach(chem=>{
+      const el = document.getElementById(fieldId(type, 'chem', chem.key));
+      if(el) reading[chem.key] = el.value;
+    });
+
+    const r = lsiFor(reading, chemList);
+    host.style.display = 'block';
+
+    if(r.value === null){
+      host.style.background = 'var(--surface-alt)';
+      host.style.borderColor = 'var(--line)';
+      host.innerHTML = '<div style="font-size:11.5px;color:var(--muted);">Water balance '
+        + 'needs ' + r.missing.join(' and ') + '</div>';
+      return;
+    }
+
+    const colour = lsiColour(r.balance);
+    host.style.background = '#fff';
+    host.style.borderColor = colour;
+    host.innerHTML =
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;">'
+      + '<span style="font-size:11.5px;font-weight:700;color:' + colour
+      + ';text-transform:uppercase;letter-spacing:0.06em;">Water balance</span>'
+      + '<span style="font-size:18px;font-weight:700;color:' + colour + ';">'
+      + (r.value > 0 ? '+' : '') + r.value.toFixed(2) + '</span></div>'
+      + '<div style="font-size:12px;color:var(--muted);margin-top:3px;">'
+      + lsiWording(r.balance) + '</div>';
+  });
+}
+
 function renderStripGeneric(chemList, type, containerId){
   const strip = document.getElementById(containerId);
   if(!strip) return;
@@ -2482,6 +2783,192 @@ function makeVisitVoiceController(){
 
 const visitVoiceController = makeVisitVoiceController();
 
+
+
+
+// The clip button only makes sense where the browser can actually record
+document.getElementById('btnRecordClip').addEventListener('click', recordAndShareClip);
+
+function renderClipSection(){
+  const el = document.getElementById('visitClipSection');
+  if(!el) return;
+  el.style.display = canRecordClips() ? 'block' : 'none';
+}
+
+// ---------- Short video clips ----------
+// For a technician showing the office something a photo cannot explain — a pump
+// making a noise, water tracking to a leak. Recorded in the app, then handed to
+// the phone's own share sheet, so it goes wherever they normally send things.
+// Nothing is stored in PoolLog: passing a clip from a phone to the office needs
+// a server, and that is backend work.
+const CLIP_MAX_SECONDS = 15;
+
+function clipMimeType(){
+  // Safari wants mp4, Chrome wants webm. Ask for what each supports rather
+  // than assuming, or MediaRecorder throws on construction.
+  const wanted = ['video/mp4;codecs=avc1', 'video/mp4',
+                  'video/webm;codecs=vp8', 'video/webm'];
+  if(typeof MediaRecorder === 'undefined') return null;
+  for(const t of wanted){
+    try{ if(MediaRecorder.isTypeSupported(t)) return t; }catch(e){}
+  }
+  return '';
+}
+
+function canRecordClips(){
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+            && typeof MediaRecorder !== 'undefined');
+}
+
+async function recordClip(){
+  if(!canRecordClips()){
+    await alertDialog('This browser cannot record video. You can still record on your '
+      + 'phone and send it the usual way.', 'Not supported');
+    return null;
+  }
+
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 720}},
+      audio: true            // a noise is often the whole point
+    });
+  }catch(e){
+    await alertDialog('The camera could not be opened. Check PoolLog is allowed to use '
+      + 'the camera and microphone.', 'No camera');
+    return null;
+  }
+
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:500;background:#000;'
+      + 'display:flex;flex-direction:column;';
+    overlay.innerHTML = `
+      <video id="clipPreview" autoplay playsinline muted
+        style="flex:1;width:100%;min-height:0;object-fit:contain;background:#000;"></video>
+      <div style="flex:0 0 auto;padding:18px 20px calc(18px + env(safe-area-inset-bottom));
+                  display:flex;align-items:center;justify-content:space-between;gap:16px;background:#000;">
+        <button type="button" id="clipCancel"
+          style="flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;border-radius:10px;
+                 background:#2A2A2A;color:#fff;cursor:pointer;">Cancel</button>
+        <div id="clipTimer" style="flex:1;text-align:center;color:#fff;font-size:15px;
+             font-weight:600;font-variant-numeric:tabular-nums;">Up to ${CLIP_MAX_SECONDS}s</div>
+        <button type="button" id="clipGo"
+          style="flex:0 0 auto;width:64px;height:64px;border-radius:50%;border:4px solid #fff;
+                 background:#C0392B;cursor:pointer;"></button>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const video = overlay.querySelector('#clipPreview');
+    const timer = overlay.querySelector('#clipTimer');
+    const goBtn = overlay.querySelector('#clipGo');
+    video.srcObject = stream;
+
+    let recorder = null, chunks = [], countdown = null, done = false;
+
+    const cleanup = ()=>{
+      if(countdown) clearInterval(countdown);
+      try{ stream.getTracks().forEach(t => t.stop()); }catch(e){}
+      if(overlay.parentNode) document.body.removeChild(overlay);
+    };
+
+    const finish = (file)=>{
+      if(done) return;
+      done = true;
+      cleanup();
+      resolve(file);
+    };
+
+    overlay.querySelector('#clipCancel').addEventListener('click', ()=> finish(null));
+
+    goBtn.addEventListener('click', ()=>{
+      if(recorder && recorder.state === 'recording'){
+        recorder.stop();
+        return;
+      }
+
+      const type = clipMimeType();
+      try{
+        recorder = type ? new MediaRecorder(stream, {mimeType: type})
+                        : new MediaRecorder(stream);
+      }catch(e){
+        finish(null);
+        return;
+      }
+
+      chunks = [];
+      recorder.ondataavailable = (e)=>{ if(e.data && e.data.size) chunks.push(e.data); };
+      recorder.onstop = ()=>{
+        const blobType = (recorder.mimeType || type || 'video/mp4').split(';')[0];
+        const ext = blobType.indexOf('mp4') !== -1 ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, {type: blobType});
+        if(!blob.size){ finish(null); return; }
+        const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+        finish(new File([blob], 'poollog-' + stamp + '.' + ext, {type: blobType}));
+      };
+
+      recorder.start();
+      goBtn.style.borderRadius = '10px';
+      goBtn.style.width = '52px';
+      goBtn.style.height = '52px';
+
+      let left = CLIP_MAX_SECONDS;
+      timer.textContent = left + 's';
+      countdown = setInterval(()=>{
+        left--;
+        timer.textContent = left + 's';
+        // A hard stop, so a clip can never run away and become unsendable
+        if(left <= 0){
+          clearInterval(countdown);
+          if(recorder && recorder.state === 'recording') recorder.stop();
+        }
+      }, 1000);
+    });
+  });
+}
+
+// Hands the clip to the phone's own share sheet — messages, email, anywhere.
+// Falls back to a download where sharing files is not supported.
+async function shareClip(file, customer){
+  if(!file) return;
+
+  const who = customer ? (customer.name || '') : '';
+  const title = who ? 'PoolLog \u2014 ' + who : 'PoolLog clip';
+  const text = who
+    ? who + (customer && customer.address ? ' \u2014 ' + customer.address : '')
+    : 'Clip from PoolLog';
+
+  try{
+    if(navigator.canShare && navigator.canShare({files: [file]})){
+      await navigator.share({files: [file], title, text});
+      return;
+    }
+  }catch(e){
+    // Cancelled, or sharing refused — fall through to saving it
+    if(e && e.name === 'AbortError') return;
+  }
+
+  try{
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 10000);
+    showToast('Saved to your downloads \u2014 send it from there');
+  }catch(e){
+    showToast('Could not share that clip');
+  }
+}
+
+async function recordAndShareClip(){
+  const customer = customers.find(c => c.id === currentVisitCustomerId);
+  const file = await recordClip();
+  if(!file) return;
+  await shareClip(file, customer);
+}
 
 // ---------- In-app camera ----------
 // A file input hands off to the phone's camera app, which always makes you
@@ -3310,6 +3797,142 @@ function moveRouteCustomer(day, draggedId, targetId, visibleList){
 }
 
 
+// ---------- Water balance ----------
+
+// Water balance is opt-in. Plenty of technicians never use LSI, so nothing
+// about it appears — and no extra reading is asked for — unless it is on.
+function waterBalanceOn(){
+  return appSettings.showWaterBalance === true;
+}
+
+
+// Langelier Saturation Index — published water chemistry, implemented from
+// the standard tables rather than anyone's branded version.
+//
+//   LSI = pH + temperature factor + calcium factor + alkalinity factor − TDS factor
+//
+// Around 0 is balanced. Below about -0.3 the water is aggressive and starts
+// dissolving plaster and metal. Above about +0.3 it deposits scale.
+
+// The accepted temperature table, in Fahrenheit. Interpolated between points
+// rather than fitted to a curve, so it matches what the industry expects.
+const TEMP_FACTORS = [
+  [32, 0.0], [37, 0.1], [46, 0.2], [53, 0.3], [60, 0.4],
+  [66, 0.5], [76, 0.6], [84, 0.7], [94, 0.8], [105, 0.9]
+];
+
+function tempFactor(f){
+  if(f <= 32) return 0.0;
+  if(f >= 105) return 0.9;
+  for(let i = 0; i < TEMP_FACTORS.length - 1; i++){
+    const [t1, v1] = TEMP_FACTORS[i];
+    const [t2, v2] = TEMP_FACTORS[i + 1];
+    if(f >= t1 && f <= t2){
+      return v1 + (f - t1) * (v2 - v1) / (t2 - t1);
+    }
+  }
+  return 0.9;
+}
+
+// Cyanuric acid contributes alkalinity that does nothing for water balance,
+// so it has to come out before the alkalinity factor is worked out. A third
+// of the CYA reading is the accepted approximation near normal pool pH.
+function carbonateAlkalinity(totalAlk, cya){
+  const corrected = totalAlk - ((cya || 0) / 3);
+  return corrected > 0 ? corrected : 0;
+}
+
+function tdsFactor(tds){
+  if(!tds || tds <= 1000) return 12.1;
+  if(tds <= 4000) return 12.2;
+  return 12.29;                      // salt pools sit up here
+}
+
+// Returns {value, balance, missing} — missing lists what could not be read,
+// because a partial LSI is worse than none at all.
+function calcLSI(r){
+  const need = [
+    ['pH', r.ph],
+    ['water temperature', r.tempF],
+    ['calcium hardness', r.calcium],
+    ['total alkalinity', r.alkalinity]
+  ];
+  const missing = need.filter(([, v]) => v === null || v === undefined || v === ''
+                                      || isNaN(parseFloat(v))).map(([n]) => n);
+  if(missing.length) return {value: null, balance: null, missing};
+
+  const ph = parseFloat(r.ph);
+  const ch = parseFloat(r.calcium);
+  const ta = parseFloat(r.alkalinity);
+  const cya = parseFloat(r.cya || 0) || 0;
+  const tds = parseFloat(r.tds || 0) || 0;
+
+  if(ch <= 0 || ta <= 0) return {value: null, balance: null, missing: ['a usable reading']};
+
+  const ca = carbonateAlkalinity(ta, cya);
+  if(ca <= 0){
+    return {value: null, balance: null,
+            missing: ['usable alkalinity (cyanuric acid is too high for the alkalinity reading)']};
+  }
+
+  const value = ph
+    + tempFactor(parseFloat(r.tempF))
+    + (Math.log10(ch) - 0.4)
+    + Math.log10(ca)
+    - tdsFactor(tds);
+
+  const rounded = Math.round(value * 100) / 100;
+  let balance;
+  if(rounded < -0.3) balance = 'corrosive';
+  else if(rounded > 0.3) balance = 'scaling';
+  else balance = 'balanced';
+
+  return {value: rounded, balance, missing: []};
+}
+
+
+// Which reading key holds each LSI input. Readings are user-configurable, so
+// these are matched by key first and label second, and anything missing is
+// reported rather than assumed.
+function lsiReadingsFrom(reading, chemList){
+  const find = (keys, labelWords)=>{
+    for(const k of keys){
+      if(reading[k] !== undefined && reading[k] !== '') return reading[k];
+    }
+    const hit = (chemList || []).find(c=>{
+      const l = ((c.label || '') + ' ' + (c.full || '')).toLowerCase();
+      return labelWords.some(wd => l.indexOf(wd) !== -1);
+    });
+    return hit ? reading[hit.key] : undefined;
+  };
+
+  return {
+    ph:         find(['ph'], ['ph']),
+    tempF:      find(['temp','temperature','watertemp'], ['temperature', 'temp']),
+    calcium:    find(['calcium','ch','hardness'], ['calcium', 'hardness']),
+    alkalinity: find(['alkalinity','alk','ta'], ['alkalinity']),
+    cya:        find(['cya','stabiliser','stabilizer'], ['cyanuric', 'stabil']),
+    tds:        find(['tds','salt'], ['tds', 'salt'])
+  };
+}
+
+// Everything needed to draw the readout for one body of water
+function lsiFor(reading, chemList){
+  return calcLSI(lsiReadingsFrom(reading, chemList));
+}
+
+function lsiColour(balance){
+  if(balance === 'corrosive') return '#8C3B2A';
+  if(balance === 'scaling') return '#8A5A22';
+  return '#0F766E';
+}
+
+function lsiWording(balance){
+  if(balance === 'corrosive') return 'Aggressive \u2014 this water will attack plaster and metal';
+  if(balance === 'scaling') return 'Scaling \u2014 this water will leave deposits';
+  return 'Balanced';
+}
+
 // ---------- Tasks on the route ----------
 // Things the office needs doing that aren't a normal service. Shown at the top
 // of the day, or against the stop they belong to.
@@ -4116,6 +4739,7 @@ document.getElementById('reportReadingSelect').addEventListener('change', (e)=>{
 });
 
 let currentReportText = '';
+let currentReportHtml = '';
 let currentVisitCustomerId = null;
 
 let visitTimerStart = null;
@@ -4193,6 +4817,16 @@ function applyVoiceModeSetting(){
     releaseVisitWakeLock();
   }
 }
+
+
+document.getElementById('settingWaterBalance').addEventListener('change', (e)=>{
+  appSettings.showWaterBalance = e.target.checked;
+  saveSettings();
+  if(typeof renderWaterBalance === 'function') renderWaterBalance();
+  showToast(appSettings.showWaterBalance
+    ? 'Water balance shown on visits'
+    : 'Water balance hidden');
+});
 
 document.getElementById('settingVoiceMode').addEventListener('change', (e)=>{
   appSettings.voiceModeEnabled = e.target.checked;
@@ -4413,6 +5047,7 @@ function renderVisitSectionButtons(){
         lsSet('customBodyOrder', store);
         pendingVisit.neededSections = computeNeededSections(customer);
         renderVisitSectionButtons();
+  renderClipSection();
         showToast('Order saved for ' + customer.name);
       });
 
@@ -6125,7 +6760,10 @@ function goBackOnePlace(){
   // so the top of it IS the previous place. Popping first would skip one.
   while(navStack.length){
     const p = navStack.pop();
-    if(p.view === 'visit' && p.customerId !== currentVisitCustomerId) continue;
+    // Never retrace into a service report. Backing out of a tab means the
+    // technician wants the route, not to be dropped inside a half-finished
+    // visit they have to escape from again.
+    if(p.view === 'visit') continue;
     if(p.view === currentViewName) continue;   // already there
     return p;
   }
@@ -6452,6 +7090,11 @@ async function renderReport(customerId, readingId){
 function buildReadingSection(reading, chemList, prodList){
   let rowsHtml = '';
   let rowsText = '';
+  // Plain label/value pairs, so the emailed version can be rebuilt without
+  // parsing the on-screen markup back apart
+  const readingPairs = [];
+  const productPairs = [];
+  const servicePairs = [];
   // Anything left blank is simply left out — no "not tested" filler
   chemList.forEach(chem=>{
     const val = reading[chem.key];
@@ -6459,6 +7102,7 @@ function buildReadingSection(reading, chemList, prodList){
     const display = val + (chem.unit ? ' '+chem.unit : '');
     rowsHtml += `<tr><td>${chem.label}</td><td>${display}</td></tr>`;
     rowsText += `${chem.label}: ${display}\n`;
+    readingPairs.push([chem.label, display]);
   });
 
   let productsHtml = '';
@@ -6473,6 +7117,7 @@ function buildReadingSection(reading, chemList, prodList){
       const display = reading[p.key] + (p.unit ? ' '+p.unit : '');
       prows += `<tr><td>${p.label}</td><td>${display}</td></tr>`;
       productsText += `${p.label}: ${display}\n`;
+      productPairs.push([p.label, display]);
     });
     productsHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Chemicals Added</h3><table class="report-table">${prows}</table>`;
   }
@@ -6499,6 +7144,7 @@ function buildReadingSection(reading, chemList, prodList){
     const srows = doneItems.map(d => `<tr><td>${d}</td><td>Yes</td></tr>`).join('');
     servicedHtml = `<h3 style="font-size:13px;color:var(--teal-deep);margin:16px 0 6px;">Service performed</h3><table class="report-table">${srows}</table>`;
     servicedText = doneItems.join('\n') + '\n';
+    doneItems.forEach(dI => servicePairs.push([dI, 'Yes']));
   }
 
   let namedHtml = '';
@@ -6511,6 +7157,7 @@ function buildReadingSection(reading, chemList, prodList){
   }
 
   return {rowsHtml, rowsText, productsHtml, productsText, servicedHtml, servicedText,
+          readingPairs, productPairs, servicePairs,
           namedHtml, namedText};
 }
 
@@ -6606,6 +7253,23 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   const wasRedone = sections.some(s => s.reading && s.reading.isRedo);
   currentReportText = `${reportLabel.toUpperCase()} SERVICE REPORT${wasRedone ? ' (REDONE)' : ''}\n${customer.name}${customer.address ? ' — '+customer.address : ''}\nServiced: ${fmtDateTime(sections[0].reading.date)}\n${sectionsText}`;
 
+  // The version the customer actually receives
+  try{
+    currentReportHtml = buildReportEmailHtml(
+      customer,
+      fmtDateTime(sections[0].reading.date),
+      sections.map(s => ({
+        label: s.label,
+        readingPairs: s.readingPairs || [],
+        productPairs: s.productPairs || [],
+        servicePairs: s.servicePairs || []
+      })),
+      {});
+  }catch(e){
+    // Never let a formatting problem stop a report going out
+    currentReportHtml = '';
+  }
+
   // Only one photo can attach automatically (a single email can only carry one dynamic
   // attachment via EmailJS) — prefer earliest section with a photo (pool, then spa, then fountains in order).
   const sectionWithPhoto = sections.find(s => s.reading.photo);
@@ -6672,6 +7336,139 @@ function reportTypeLabel(type){
   return 'Pool';
 }
 
+
+
+// Customer names and addresses go straight into emailed HTML, so anything that
+// would break the markup (an ampersand in "Smith & Sons", a stray angle bracket)
+// has to be neutralised first.
+function esc(s){
+  return String(s === null || s === undefined ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ---------- The emailed report ----------
+// Email clients strip <style> blocks and ignore CSS variables, so the emailed
+// version is built separately from the one on screen: tables, inline styles,
+// nothing clever. Looks the same in Gmail, Outlook and Apple Mail.
+function emailBrand(){
+  const saved = lsGet('reportEmailStyle') || {};
+  return {
+    colour:   saved.colour || '#134E4A',
+    greeting: saved.greeting !== undefined ? saved.greeting
+                : 'Here is the report from today\u2019s visit.',
+    signoff:  saved.signoff !== undefined ? saved.signoff
+                : 'Thank you for your business.',
+    showContact: saved.showContact !== false,
+    showReadings: saved.showReadings !== false
+  };
+}
+
+function emailContactLine(){
+  const bits = [];
+  const phone = lsGet('accountPhone');
+  const mail  = lsGet('accountEmail');
+  const site  = lsGet('businessWebsite');
+  if(phone) bits.push(esc(phone));
+  if(mail)  bits.push(esc(mail));
+  if(site)  bits.push(esc(site));
+  return bits.join(' &nbsp;&middot;&nbsp; ');
+}
+
+// Readings and products as a plain two-column table
+function emailRows(pairs){
+  if(!pairs.length) return '';
+  return pairs.map((p, i)=>
+    '<tr>'
+    + '<td style="padding:7px 10px;border-bottom:1px solid #E6E9E8;color:#4A5A58;'
+    + 'font-size:14px;' + (i === 0 ? 'border-top:1px solid #E6E9E8;' : '') + '">'
+    + esc(p[0]) + '</td>'
+    + '<td style="padding:7px 10px;border-bottom:1px solid #E6E9E8;color:#16302E;'
+    + 'font-size:14px;font-weight:600;text-align:right;white-space:nowrap;'
+    + (i === 0 ? 'border-top:1px solid #E6E9E8;' : '') + '">'
+    + esc(p[1]) + '</td>'
+    + '</tr>').join('');
+}
+
+function emailSectionBlock(title, pairs){
+  if(!pairs.length) return '';
+  return '<tr><td style="padding:18px 0 6px;">'
+    + '<div style="font-size:12px;font-weight:700;color:#0F766E;text-transform:uppercase;'
+    + 'letter-spacing:0.06em;">' + esc(title) + '</div></td></tr>'
+    + '<tr><td><table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+    + 'border="0" style="border-collapse:collapse;">' + emailRows(pairs) + '</table></td></tr>';
+}
+
+// sections: [{label, readingPairs, productPairs, servicePairs}]
+function buildReportEmailHtml(customer, whenText, sections, opts){
+  const b = emailBrand();
+  // The field apps have no companyName() helper — read it the same way the
+  // website stores it, and fall back to something that is never blank
+  const company = (lsGet('companyName') || '').trim() || 'Your pool service';
+  const o = opts || {};
+
+  let body = '';
+  sections.forEach(s=>{
+    body += '<tr><td style="padding:22px 0 0;">'
+      + '<div style="font-size:16px;font-weight:700;color:#16302E;">' + esc(s.label) + '</div>'
+      + '</td></tr>';
+    if(b.showReadings) body += emailSectionBlock('Readings', s.readingPairs || []);
+    body += emailSectionBlock('Chemicals added', s.productPairs || []);
+    body += emailSectionBlock('Service performed', s.servicePairs || []);
+  });
+
+  const contact = b.showContact ? emailContactLine() : '';
+
+  return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F4F6F5;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+    + 'style="background:#F4F6F5;padding:24px 12px;">'
+    + '<tr><td align="center">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+    + 'style="max-width:580px;background:#FFFFFF;border-radius:12px;overflow:hidden;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Arial,sans-serif;">'
+
+    // Header
+    + '<tr><td style="background:' + esc(b.colour) + ';padding:22px 26px;">'
+    + '<div style="font-size:19px;font-weight:700;color:#FFFFFF;">' + esc(company) + '</div>'
+    + (contact ? '<div style="font-size:12.5px;color:rgba(255,255,255,0.85);margin-top:5px;">'
+        + contact + '</div>' : '')
+    + '</td></tr>'
+
+    // Who and when
+    + '<tr><td style="padding:24px 26px 0;">'
+    + (b.greeting ? '<div style="font-size:14.5px;color:#4A5A58;margin-bottom:16px;">'
+        + esc(b.greeting) + '</div>' : '')
+    + '<div style="font-size:17px;font-weight:700;color:#16302E;">'
+    + esc(customer.name) + '</div>'
+    + (customer.address ? '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">'
+        + esc(customer.address) + '</div>' : '')
+    + '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">' + esc(whenText) + '</div>'
+    + (o.skipped ? '<div style="margin-top:14px;padding:11px 13px;background:#FDF3E7;'
+        + 'border:1px solid #EDC79B;border-radius:8px;font-size:13.5px;color:#8A5A22;">'
+        + esc(o.skipReason || 'No service was performed on this visit.') + '</div>' : '')
+    + '</td></tr>'
+
+    // The report itself
+    + '<tr><td style="padding:0 26px;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+    + body + '</table></td></tr>'
+
+    // Footer
+    + '<tr><td style="padding:26px;">'
+    + (b.signoff ? '<div style="font-size:14px;color:#4A5A58;padding-top:18px;'
+        + 'border-top:1px solid #E6E9E8;">' + esc(b.signoff) + '</div>' : '')
+    + '<div style="font-size:13.5px;font-weight:600;color:#16302E;margin-top:10px;">'
+    + esc(company) + '</div>'
+    + (lsGet('licenseNumber') ? '<div style="font-size:11.5px;color:#8A9997;margin-top:3px;">'
+        + 'License ' + esc(lsGet('licenseNumber')) + '</div>' : '')
+    + '</td></tr>'
+
+    + '</table></td></tr></table></body></html>';
+}
+
 async function sendViaEmailJS(customerId, type){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
@@ -6681,7 +7478,8 @@ async function sendViaEmailJS(customerId, type){
   const templateParams = {
     to_email: email,
     subject: reportTypeLabel(type) + ' service report — ' + custName,
-    message: currentReportText
+    message: currentReportHtml || currentReportText,
+    message_text: currentReportText
   };
   if(photo){
     // Strip the "data:image/jpeg;base64," prefix — EmailJS wants the raw base64 content
@@ -6938,6 +7736,7 @@ async function init(){
   renderAllConfigFields();
   refreshDynamicFieldLabels();
   document.getElementById('settingVoiceMode').checked = appSettings.voiceModeEnabled;
+  document.getElementById('settingWaterBalance').checked = appSettings.showWaterBalance === true;
   updateVoiceModeIndicator();
 
   // DEV BYPASS — ?dev=1 skips sign-in. Remove before real use.
@@ -6963,6 +7762,72 @@ async function init(){
   }
 }
 init();
+
+
+
+// Refresh the offline readout whenever the settings page is opened
+async function renderOfflineStatus(){
+  const el = document.getElementById('offlineStatus');
+  if(!el) return;
+  el.textContent = await offlineStatusText();
+}
+
+// ---------- Offline readiness ----------
+// The point of this is that you can SEE the app is safe to use without signal,
+// rather than finding out in front of a customer that it isn't.
+let offlineReady = false;
+
+function offlineBadge(){
+  return document.getElementById('offlineBadge');
+}
+
+function showOfflineState(){
+  const el = offlineBadge();
+  if(!el) return;
+  if(!navigator.onLine){
+    el.textContent = offlineReady
+      ? 'Offline \u2014 working from this device'
+      : 'Offline \u2014 some things may not load';
+    el.style.background = offlineReady ? '#0F766E' : '#8C3B2A';
+    el.style.color = '#fff';
+    el.style.display = 'block';
+    return;
+  }
+  el.style.display = 'none';
+}
+
+window.addEventListener('online', showOfflineState);
+window.addEventListener('offline', showOfflineState);
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.ready.then(()=>{
+    offlineReady = true;
+    showOfflineState();
+  }).catch(()=>{});
+}
+
+// Says plainly whether this device can open the app without a connection
+async function offlineStatusText(){
+  if(!('serviceWorker' in navigator)){
+    return 'This browser cannot store the app for offline use.';
+  }
+  try{
+    const reg = await navigator.serviceWorker.getRegistration();
+    if(!reg || !reg.active){
+      return 'Not stored yet. Stay on this page for a moment with a connection, '
+           + 'then it will open without one.';
+    }
+    const names = await caches.keys();
+    const mine = names.filter(n => n.indexOf('poollog') === 0);
+    if(!mine.length) return 'Registered, but nothing is stored yet. Reload once with a connection.';
+    const cache = await caches.open(mine[0]);
+    const kept = await cache.keys();
+    return 'Ready \u2014 ' + kept.length + ' file' + (kept.length === 1 ? '' : 's')
+         + ' stored on this device. The app will open without a connection.';
+  }catch(e){
+    return 'Could not check offline storage on this device.';
+  }
+}
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
