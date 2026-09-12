@@ -5994,7 +5994,9 @@ function applyVisitStep(opts){
   const steps = visitStepCardsFor(currentVisibleSection);
   if(!steps) return;
   document.querySelectorAll('[data-final-step-label]').forEach(btn=>{
-    btn.textContent = appSettings.showAfterPhotos !== false ? 'After photos →' : 'Submit service report →';
+    btn.textContent = appSettings.showAfterPhotos !== false
+      ? 'After photos \u2192'
+      : finishBodyLabel();
   });
   steps.forEach((entry, i)=>{
     const ids = Array.isArray(entry) ? entry : [entry];
@@ -6012,6 +6014,51 @@ function applyVisitStep(opts){
 }
 
 // Labels for the fixed bottom bar, by step
+
+// Is this the last body of water still to do on this visit? The final button
+// should say what it actually does — carrying on to the spa is not submitting
+// a service report, and calling it that made technicians think each body was
+// being sent separately.
+// Which section id the technician is actually on. Fountains are identified by
+// their own id, not the generic 'fountain' — comparing against the generic
+// name left a fountain looking like it still had itself to do.
+function currentSectionId(){
+  if(currentVisibleSection === 'fountain') return currentVisitFountainId;
+  return currentVisibleSection;
+}
+
+function isLastBodyOfWater(){
+  if(!pendingVisit) return true;
+  const here = currentSectionId();
+  const needed = pendingVisit.neededSections || [];
+  const done = pendingVisit.doneSections || {};
+  const outstanding = needed.filter(id => done[id] === undefined && id !== here);
+  return outstanding.length === 0;
+}
+
+// What the name of the next body of water is, so the button can say it
+function nextBodyLabel(){
+  if(!pendingVisit) return 'next';
+  const needed = pendingVisit.neededSections || [];
+  const done = pendingVisit.doneSections || {};
+  const here = currentSectionId();
+  const next = needed.find(id => done[id] === undefined && id !== here);
+  if(!next) return 'next';
+  if(next === 'pool') return 'pool';
+  if(next === 'spa') return 'spa';
+  const customer = customers.find(c => c.id === currentVisitCustomerId);
+  const f = ((customer || {}).fountains || []).find(x =>
+    (typeof x === 'string' ? x : x.id) === next);
+  return (f && f.name) ? f.name : 'next';
+}
+
+// The wording for the button that finishes a body of water
+function finishBodyLabel(){
+  return isLastBodyOfWater()
+    ? 'Submit service report'
+    : 'Continue to ' + nextBodyLabel() + ' \u2192';
+}
+
 function stepNextLabel(){
   if(!currentVisibleSection) return '';
   const steps = visitStepCardsFor(currentVisibleSection);
@@ -6019,9 +6066,7 @@ function stepNextLabel(){
   const nextEntry = steps[currentVisitStep];       // the step after this one
   if(!nextEntry){
     // Final step — the bar becomes the save action
-    if(currentVisibleSection === 'pool') return 'Submit service report';
-    if(currentVisibleSection === 'spa') return 'Submit service report';
-    return 'Submit service report';
+    return finishBodyLabel();
   }
   const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
   if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
@@ -6033,6 +6078,11 @@ function stepNextLabel(){
 
 // Keeps the bottom bar and the in-heading back button in step
 function syncStepChrome(){
+  // Keep the section save buttons saying the same thing as the step bar
+  ['btnSaveReading','btnSaveSpaReading','btnSaveFountainReading'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.textContent = finishBodyLabel();
+  });
   const bar = document.getElementById('stepBar');
   const nextBtn = document.getElementById('stepBarNext');
   if(!bar || !nextBtn) return;
