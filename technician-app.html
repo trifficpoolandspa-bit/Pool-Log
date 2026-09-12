@@ -2527,7 +2527,10 @@ function syncGatePhotoBlock(){
   const block = document.getElementById('gatePhotoBlock');
   if(!block) return;
 
-  const show = gatePhotoApplies() && isLastSectionOfVisit();
+  // The whole step can be switched off in Settings, in which case it never
+  // appears regardless of any requirement set elsewhere.
+  const stepOn = appSettings.showGatePhoto !== false;
+  const show = stepOn && gatePhotoApplies() && isLastSectionOfVisit();
   block.style.display = show ? 'block' : 'none';
   if(!show) return;
 
@@ -3217,6 +3220,36 @@ function resizeImageFile(file, maxDim, quality){
   });
 }
 
+
+// Shows one photo at full size over everything else. Tap anywhere to close.
+function openPhotoFullSize(dataUrl){
+  if(!dataUrl) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(8,20,19,0.92);'
+    + 'display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out;';
+
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Photo';
+  img.style.cssText = 'max-width:100%;max-height:88vh;object-fit:contain;'
+    + 'border-radius:10px;display:block;';
+  overlay.appendChild(img);
+
+  const hint = document.createElement('div');
+  hint.textContent = 'Tap anywhere to close';
+  hint.style.cssText = 'position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));'
+    + "text-align:center;color:rgba(255,255,255,0.75);font-size:12.5px;"
+    + "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;pointer-events:none;";
+  overlay.appendChild(hint);
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  overlay.addEventListener('click', close);
+
+  document.body.appendChild(overlay);
+}
+
 function makePhotoController(ids){
   let currentDataUrl = null;
   const takeBtn = document.getElementById(ids.takeBtn);
@@ -3228,6 +3261,12 @@ function makePhotoController(ids){
   function showPreview(dataUrl){
     currentDataUrl = dataUrl;
     previewImg.src = dataUrl;
+    // A thumbnail, not the full photo — a full-size preview pushed the rest of
+    // the visit off the screen. Tapping it opens the whole thing.
+    previewImg.style.maxWidth = '25%';
+    previewImg.style.minWidth = '96px';
+    previewImg.style.cursor = 'zoom-in';
+    previewImg.title = 'Tap to see it full size';
     previewWrap.style.display = 'block';
     removeBtn.style.display = 'inline-flex';
     if(ids.onChange) ids.onChange();
@@ -3241,6 +3280,12 @@ function makePhotoController(ids){
     fileInput.value = '';
     if(ids.onChange) ids.onChange();
   }
+
+  // Every photo in the app goes through this controller, so one handler covers
+  // visit photos, before photos, gate photos and equipment photos alike.
+  previewImg.addEventListener('click', ()=>{
+    if(currentDataUrl) openPhotoFullSize(currentDataUrl);
+  });
 
   takeBtn.addEventListener('click', async ()=>{
     try{
@@ -3336,22 +3381,27 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
   };
-  chemConfig.pool.chemicals.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('pool','chem',item.key)).value);
+  // The fields on screen come from THIS customer's list, so read that list —
+  // using the global one looked for inputs that were never rendered and threw.
+  const poolLists = listsForBody(customerId, 'pool', 'pool');
+  poolLists.chemicals.forEach(item=>{
+    const el = document.getElementById(fieldId('pool','chem',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
-  chemConfig.pool.dosages.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('pool','dose',item.key)).value);
+  poolLists.dosages.forEach(item=>{
+    const el = document.getElementById(fieldId('pool','dose',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
   const anyValue = isFilterCleanVisit
     ? (reading.photo || reading.beforePhoto || reading.notes)
-    : (chemConfig.pool.chemicals.some(c => reading[c.key] !== '')
-      || chemConfig.pool.dosages.some(p => reading[p.key] !== '') || reading.photo);
+    : (poolLists.chemicals.some(c => reading[c.key] !== '' && reading[c.key] !== undefined)
+      || poolLists.dosages.some(p => reading[p.key] !== '' && reading[p.key] !== undefined) || reading.photo);
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   // Held, not saved — the whole visit is written when the last body is done
   stashSectionReading(customerId, 'pool', reading);
   visitSavedReadings.push({customerId, id: reading.id, type: 'pool'});
-  chemConfig.pool.chemicals.forEach(item=>{ document.getElementById(fieldId('pool','chem',item.key)).value=''; });
-  chemConfig.pool.dosages.forEach(item=>{ document.getElementById(fieldId('pool','dose',item.key)).value=''; });
+  poolLists.chemicals.forEach(item=>{ const e=document.getElementById(fieldId('pool','chem',item.key)); if(e) e.value=''; });
+  poolLists.dosages.forEach(item=>{ const e=document.getElementById(fieldId('pool','dose',item.key)); if(e) e.value=''; });
   document.getElementById('inNotes').value = '';
   poolPhotoController.clear();
   gatePhotoController.clear();
@@ -3383,19 +3433,22 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
     photo: appSettings.storePhotos === false ? null : (spaPhotoController.getData() || null),
     beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('spa').getData() || null)
   };
-  chemConfig.spa.chemicals.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('spa','chem',item.key)).value);
+  const spaLists = listsForBody(customerId, 'spa', 'spa');
+  spaLists.chemicals.forEach(item=>{
+    const el = document.getElementById(fieldId('spa','chem',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
-  chemConfig.spa.dosages.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('spa','dose',item.key)).value);
+  spaLists.dosages.forEach(item=>{
+    const el = document.getElementById(fieldId('spa','dose',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
-  const anyValue = chemConfig.spa.chemicals.some(c => reading[c.key] !== '')
-    || chemConfig.spa.dosages.some(p => reading[p.key] !== '') || reading.photo;
+  const anyValue = spaLists.chemicals.some(c => reading[c.key] !== '' && reading[c.key] !== undefined)
+    || spaLists.dosages.some(p => reading[p.key] !== '' && reading[p.key] !== undefined) || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   stashSectionReading(customerId, 'spa', reading);
   visitSavedReadings.push({customerId, id: reading.id, type: 'spa'});
-  chemConfig.spa.chemicals.forEach(item=>{ document.getElementById(fieldId('spa','chem',item.key)).value=''; });
-  chemConfig.spa.dosages.forEach(item=>{ document.getElementById(fieldId('spa','dose',item.key)).value=''; });
+  spaLists.chemicals.forEach(item=>{ const e=document.getElementById(fieldId('spa','chem',item.key)); if(e) e.value=''; });
+  spaLists.dosages.forEach(item=>{ const e=document.getElementById(fieldId('spa','dose',item.key)); if(e) e.value=''; });
   document.getElementById('inSpaNotes').value = '';
   spaPhotoController.clear();
   beforeControllerFor('spa').clear();
@@ -3419,18 +3472,21 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
     photo: appSettings.storePhotos === false ? null : (fountainPhotoController.getData() || null),
     beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('fountain').getData() || null)
   };
-  chemConfig.fountain.chemicals.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('fountain','chem',item.key)).value);
+  const fountLists = listsForBody(customerId, fountainId, 'fountain');
+  fountLists.chemicals.forEach(item=>{
+    const el = document.getElementById(fieldId('fountain','chem',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
-  chemConfig.fountain.dosages.forEach(item=>{
-    reading[item.key] = padLeadingZero(document.getElementById(fieldId('fountain','dose',item.key)).value);
+  fountLists.dosages.forEach(item=>{
+    const el = document.getElementById(fieldId('fountain','dose',item.key));
+    if(el) reading[item.key] = padLeadingZero(el.value);
   });
-  const anyValue = chemConfig.fountain.chemicals.some(c => reading[c.key] !== '')
-    || chemConfig.fountain.dosages.some(p => reading[p.key] !== '') || reading.photo;
+  const anyValue = fountLists.chemicals.some(c => reading[c.key] !== '' && reading[c.key] !== undefined)
+    || fountLists.dosages.some(p => reading[p.key] !== '' && reading[p.key] !== undefined) || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   stashSectionReading(customerId, fountainId, reading);
-  chemConfig.fountain.chemicals.forEach(item=>{ document.getElementById(fieldId('fountain','chem',item.key)).value=''; });
-  chemConfig.fountain.dosages.forEach(item=>{ document.getElementById(fieldId('fountain','dose',item.key)).value=''; });
+  fountLists.chemicals.forEach(item=>{ const e=document.getElementById(fieldId('fountain','chem',item.key)); if(e) e.value=''; });
+  fountLists.dosages.forEach(item=>{ const e=document.getElementById(fieldId('fountain','dose',item.key)); if(e) e.value=''; });
   document.getElementById('inFountainNotes').value = '';
   fountainPhotoController.clear();
   beforeControllerFor('fountain').clear();
@@ -6804,6 +6860,12 @@ async function discardVisitInProgress(){
   visitStepBySection = {};
   currentVisibleSection = null;
   currentVisitStep = 1;
+
+  // The ticks against each body of water live here. Without clearing it,
+  // reopening the customer reused the old list and showed the pool as done
+  // even though the report had been thrown away.
+  pendingVisit = null;
+  visitSavedReadings = [];
 }
 
 
@@ -7506,12 +7568,17 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   if(poolReadingId){
     const list = await loadReadings(customerId, 'pool');
     const reading = list.find(r=>r.id===poolReadingId);
-    if(reading) sections.push({label: 'Pool', reading, ...buildReadingSection(reading, chemConfig.pool.chemicals, chemConfig.pool.dosages)});
+    // Use THIS customer's own reading list, not the global one. A customer with
+    // a custom setup stores readings under their own keys, so looking them up
+    // against the global list found nothing and left the section blank.
+    const L = listsForBody(customerId, 'pool', 'pool');
+    if(reading) sections.push({label: 'Pool', reading, ...buildReadingSection(reading, L.chemicals, L.dosages)});
   }
   if(spaReadingId){
     const list = await loadReadings(customerId, 'spa');
     const reading = list.find(r=>r.id===spaReadingId);
-    if(reading) sections.push({label: 'Spa', reading, ...buildReadingSection(reading, chemConfig.spa.chemicals, chemConfig.spa.dosages)});
+    const L = listsForBody(customerId, 'spa', 'spa');
+    if(reading) sections.push({label: 'Spa', reading, ...buildReadingSection(reading, L.chemicals, L.dosages)});
   }
   for(const ref of fountainReadingRefs){
     const list = await loadFountainReadings(customerId, ref.fountainId);
@@ -7519,7 +7586,8 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
     if(reading){
       const fountain = getValidFountains(customer).find(f => f.id === ref.fountainId);
       const label = fountain ? fountain.name : 'Fountain';
-      sections.push({label, reading, ...buildReadingSection(reading, chemConfig.fountain.chemicals, chemConfig.fountain.dosages)});
+      const L = listsForBody(customerId, ref.fountainId, 'fountain');
+      sections.push({label, reading, ...buildReadingSection(reading, L.chemicals, L.dosages)});
     }
   }
 
@@ -7599,7 +7667,7 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
         productPairs: s.productPairs || [],
         servicePairs: s.servicePairs || []
       })),
-      {});
+      {technician: (currentUser && currentUser.name) ? currentUser.name : ''});
   }catch(e){
     // Never let a formatting problem stop a report going out
     currentReportHtml = '';
@@ -7694,7 +7762,7 @@ function emailBrand(){
   return {
     colour:   saved.colour || '#134E4A',
     greeting: saved.greeting !== undefined ? saved.greeting
-                : 'Here is the report from today\u2019s visit.',
+                : '',
     signoff:  saved.signoff !== undefined ? saved.signoff
                 : 'Thank you for your business.',
     showContact: saved.showContact !== false,
@@ -7776,6 +7844,10 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
     + '<tr><td style="padding:24px 26px 0;">'
     + (b.greeting ? '<div style="font-size:14.5px;color:#4A5A58;margin-bottom:16px;">'
         + esc(b.greeting) + '</div>' : '')
+    // Who actually did the work, above the customer's name
+    + (o.technician ? '<div style="font-size:12px;font-weight:700;color:#0F766E;'
+        + 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">'
+        + esc(o.technician) + '</div>' : '')
     + '<div style="font-size:17px;font-weight:700;color:#16302E;">'
     + esc(customer.name) + '</div>'
     + (customer.address ? '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">'

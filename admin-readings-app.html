@@ -750,6 +750,7 @@ select#customerSelect{font-weight:600;}
         <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
           <input type="checkbox" id="tcRequireGate" style="margin:0;"> Require gate photo
         </label>
+        <p id="tcPhotoRequireNote" style="display:none;font-size:11.5px;color:var(--rust);margin:8px 0 0;"></p>
       </div>
 
       <div class="btn-row">
@@ -1027,13 +1028,21 @@ select#customerSelect{font-weight:600;}
     <div class="card">
       <div class="field">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <h2 style="margin:0;">Require a closed gate photo</h2>
+          <h2 style="margin:0;">Gate photo</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingGatePhoto">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can photograph the closed or locked gate on the last body of water they service. Proof the property was left secure.</p>
+        <div id="requireGateRow" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">
+          <label for="settingRequireGatePhoto" style="margin:0;font-weight:600;cursor:pointer;">Required</label>
           <label class="toggle-switch">
             <input type="checkbox" id="settingRequireGatePhoto">
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report.</p>
+        <p id="requireGateNote" style="font-size:12.5px;color:var(--muted);margin:10px 0 0;">Technicians must take it before they can submit the service report. A body of water&rsquo;s own tick on Readings and Dosages overrides this.</p>
       </div>
     </div>
 
@@ -2044,8 +2053,14 @@ function chemMeta(key){
   return META[key] || {};
 }
 
-function chemListFor(type){
-  return chemConfig[type].chemicals.map(ch=>{
+// customerId is optional. Where it is given, that customer's own setup wins —
+// a customer with a custom spa stores readings under their own keys, and
+// looking them up against the global list left the section blank in reports.
+function chemListFor(type, customerId, bodyKey){
+  const lists = customerId
+    ? listsForBody(customerId, bodyKey || type, type)
+    : chemConfig[type];
+  return (lists.chemicals || []).map(ch=>{
     const meta = chemMeta(ch.key);
     return {
       key: ch.key,
@@ -2057,9 +2072,12 @@ function chemListFor(type){
   });
 }
 
-function productListFor(type){
+function productListFor(type, customerId, bodyKey){
   const prefix = type === 'pool' ? 'pool' : (type === 'spa' ? 'spa' : 'fountain');
-  return chemConfig[type].dosages.map(d=>({
+  const lists = customerId
+    ? listsForBody(customerId, bodyKey || type, type)
+    : chemConfig[type];
+  return (lists.dosages || []).map(d=>({
     key: d.key,
     label: d.label || d.key,
     unit: d.unit || '',
@@ -2238,8 +2256,8 @@ function switchView(view, opts){
     hideCustomerForm();
   }
   if(view === 'report' && !opts.skipRefresh) refreshReportSelectors();
-  if(view === 'settings') renderOfflineStatus();
-  if(view === 'settings') syncPhotoRequireRows();
+  if(view === 'options') renderOfflineStatus();
+  if(view === 'options') syncPhotoRequireRows();
   if(view === 'home') renderHomeList();
   if(view === 'report'){
     // The tab always opens on Serviced today. Arriving from a customer row or
@@ -2931,7 +2949,10 @@ function syncGatePhotoBlock(){
   const block = document.getElementById('gatePhotoBlock');
   if(!block) return;
 
-  const show = gatePhotoApplies() && isLastSectionOfVisit();
+  // The whole step can be switched off in Settings, in which case it never
+  // appears regardless of any requirement set elsewhere.
+  const stepOn = appSettings.showGatePhoto !== false;
+  const show = stepOn && gatePhotoApplies() && isLastSectionOfVisit();
   block.style.display = show ? 'block' : 'none';
   if(!show) return;
 
@@ -4370,6 +4391,36 @@ function resizeImageFile(file, maxDim, quality){
   });
 }
 
+
+// Shows one photo at full size over everything else. Tap anywhere to close.
+function openPhotoFullSize(dataUrl){
+  if(!dataUrl) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(8,20,19,0.92);'
+    + 'display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out;';
+
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Photo';
+  img.style.cssText = 'max-width:100%;max-height:88vh;object-fit:contain;'
+    + 'border-radius:10px;display:block;';
+  overlay.appendChild(img);
+
+  const hint = document.createElement('div');
+  hint.textContent = 'Tap anywhere to close';
+  hint.style.cssText = 'position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));'
+    + "text-align:center;color:rgba(255,255,255,0.75);font-size:12.5px;"
+    + "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;pointer-events:none;";
+  overlay.appendChild(hint);
+
+  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  overlay.addEventListener('click', close);
+
+  document.body.appendChild(overlay);
+}
+
 function makePhotoController(ids){
   let currentDataUrl = null;
   const takeBtn = document.getElementById(ids.takeBtn);
@@ -4381,6 +4432,12 @@ function makePhotoController(ids){
   function showPreview(dataUrl){
     currentDataUrl = dataUrl;
     previewImg.src = dataUrl;
+    // A thumbnail, not the full photo — a full-size preview pushed the rest of
+    // the visit off the screen. Tapping it opens the whole thing.
+    previewImg.style.maxWidth = '25%';
+    previewImg.style.minWidth = '96px';
+    previewImg.style.cursor = 'zoom-in';
+    previewImg.title = 'Tap to see it full size';
     previewWrap.style.display = 'block';
     removeBtn.style.display = 'inline-flex';
     if(ids.onChange) ids.onChange();
@@ -4394,6 +4451,12 @@ function makePhotoController(ids){
     fileInput.value = '';
     if(ids.onChange) ids.onChange();
   }
+
+  // Every photo in the app goes through this controller, so one handler covers
+  // visit photos, before photos, gate photos and equipment photos alike.
+  previewImg.addEventListener('click', ()=>{
+    if(currentDataUrl) openPhotoFullSize(currentDataUrl);
+  });
 
   takeBtn.addEventListener('click', async ()=>{
     try{
@@ -4574,27 +4637,30 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     filterBackwashed: (document.getElementById('chkBackwashed') || {}).dataset ? document.getElementById('chkBackwashed').dataset.on === 'true' : false,
     saltCellCleaned: (document.getElementById('chkSaltCell') || {}).dataset ? document.getElementById('chkSaltCell').dataset.on === 'true' : false
   };
-  chemConfig.pool.chemicals.forEach(ch=>{
+  // The fields on screen come from THIS customer's list. Reading the global
+  // one meant a customer with a custom setup saved nothing at all.
+  const poolLists = listsForBody(customerId, 'pool', 'pool');
+  poolLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('pool','chem',ch.key));
     reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
-  chemConfig.pool.dosages.forEach(d=>{
+  poolLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('pool','dose',d.key));
     reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
   const anyValue = isFilterCleanVisit
     ? (reading.photo || reading.beforePhoto || reading.notes)
-    : (chemConfig.pool.chemicals.some(ch => reading[ch.key] !== '')
-      || chemConfig.pool.dosages.some(d => reading[d.key] !== '') || reading.photo);
+    : (poolLists.chemicals.some(ch => reading[ch.key] !== '')
+      || poolLists.dosages.some(d => reading[d.key] !== '') || reading.photo);
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   // Held, not saved — the whole visit is written when the last body is done
   stashSectionReading(customerId, 'pool', reading);
   visitSavedReadings.push({customerId, id: reading.id, type: 'pool'});
-  chemConfig.pool.chemicals.forEach(ch=>{
+  poolLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('pool','chem',ch.key));
     if(el) el.value = '';
   });
-  chemConfig.pool.dosages.forEach(d=>{
+  poolLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('pool','dose',d.key));
     if(el) el.value = '';
   });
@@ -4629,24 +4695,27 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
     photo: appSettings.storePhotos === false ? null : (spaPhotoController.getData() || null),
     beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('spa').getData() || null)
   };
-  chemConfig.spa.chemicals.forEach(ch=>{
+  // The fields on screen come from THIS customer's list. Reading the global
+  // one meant a customer with a custom setup saved nothing at all.
+  const spaLists = listsForBody(customerId, 'spa', 'spa');
+  spaLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('spa','chem',ch.key));
     reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
-  chemConfig.spa.dosages.forEach(d=>{
+  spaLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('spa','dose',d.key));
     reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
-  const anyValue = chemConfig.spa.chemicals.some(ch => reading[ch.key] !== '')
-    || chemConfig.spa.dosages.some(d => reading[d.key] !== '') || reading.photo;
+  const anyValue = spaLists.chemicals.some(ch => reading[ch.key] !== '')
+    || spaLists.dosages.some(d => reading[d.key] !== '') || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   stashSectionReading(customerId, 'spa', reading);
   visitSavedReadings.push({customerId, id: reading.id, type: 'spa'});
-  chemConfig.spa.chemicals.forEach(ch=>{
+  spaLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('spa','chem',ch.key));
     if(el) el.value = '';
   });
-  chemConfig.spa.dosages.forEach(d=>{
+  spaLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('spa','dose',d.key));
     if(el) el.value = '';
   });
@@ -4673,23 +4742,26 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
     photo: appSettings.storePhotos === false ? null : (fountainPhotoController.getData() || null),
     beforePhoto: appSettings.storePhotos === false ? null : (beforeControllerFor('fountain').getData() || null)
   };
-  chemConfig.fountain.chemicals.forEach(ch=>{
+  // The fields on screen come from THIS customer's list. Reading the global
+  // one meant a customer with a custom setup saved nothing at all.
+  const fountainLists = listsForBody(customerId, fountainId, 'fountain');
+  fountainLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('fountain','chem',ch.key));
     reading[ch.key] = el ? padLeadingZero(el.value) : '';
   });
-  chemConfig.fountain.dosages.forEach(d=>{
+  fountainLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('fountain','dose',d.key));
     reading[d.key] = el ? padLeadingZero(el.value) : '';
   });
-  const anyValue = chemConfig.fountain.chemicals.some(ch => reading[ch.key] !== '')
-    || chemConfig.fountain.dosages.some(d => reading[d.key] !== '') || reading.photo;
+  const anyValue = fountainLists.chemicals.some(ch => reading[ch.key] !== '')
+    || fountainLists.dosages.some(d => reading[d.key] !== '') || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
   stashSectionReading(customerId, fountainId, reading);
-  chemConfig.fountain.chemicals.forEach(ch=>{
+  fountainLists.chemicals.forEach(ch=>{
     const el = document.getElementById(fieldId('fountain','chem',ch.key));
     if(el) el.value = '';
   });
-  chemConfig.fountain.dosages.forEach(d=>{
+  fountainLists.dosages.forEach(d=>{
     const el = document.getElementById(fieldId('fountain','dose',d.key));
     if(el) el.value = '';
   });
@@ -5304,7 +5376,43 @@ function openTechEditor(t){
   document.getElementById('tcRequireBefore').checked = t.requireBeforePhoto === true;
   document.getElementById('tcRequireAfter').checked = t.requireAfterPhoto === true;
   document.getElementById('tcRequireGate').checked = t.requireGatePhoto === true;
+  syncTechPhotoRequirements();
   window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// A requirement for a step that has been switched off in Settings can never be
+// met, so it must not be tickable. Turning the step back on makes it available
+// again without losing whatever was set before.
+function syncTechPhotoRequirements(){
+  const pairs = [
+    ['tcRequireBefore', appSettings.showBeforePhotos === false, 'Before photos'],
+    ['tcRequireAfter',  appSettings.showAfterPhotos === false,  'After photos']
+  ];
+  pairs.forEach(([id, off, label])=>{
+    const box = document.getElementById(id);
+    if(!box) return;
+    box.disabled = off;
+    const row = box.closest('label') || box.parentElement;
+    if(row){
+      row.style.opacity = off ? '0.45' : '';
+      row.style.cursor = off ? 'not-allowed' : 'pointer';
+      row.title = off
+        ? label + ' are switched off in Settings, so this cannot be required.'
+        : '';
+    }
+  });
+
+  const note = document.getElementById('tcPhotoRequireNote');
+  if(note){
+    const off = pairs.filter(p => p[1]).map(p => p[2]);
+    if(off.length){
+      note.textContent = off.join(' and ') + (off.length === 1 ? ' is' : ' are')
+        + ' switched off in Settings, so that requirement cannot be set.';
+      note.style.display = 'block';
+    } else {
+      note.style.display = 'none';
+    }
+  }
 }
 
 document.getElementById('btnSaveTech').addEventListener('click', ()=>{
@@ -7006,7 +7114,7 @@ let pendingVisit = null;
 // sectionId is 'pool', 'spa', or a fountain's id
 
 // Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
-const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, showTechniciansTab: true };
+const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, showGatePhoto: true, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, showTechniciansTab: true };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -7092,6 +7200,23 @@ document.getElementById('settingRequireAfterPhotos').addEventListener('change', 
   showToast(appSettings.requireAfterPhotos ? 'After photos now required everywhere' : 'After photos no longer required everywhere');
 });
 
+
+document.getElementById('settingGatePhoto').addEventListener('change', (e)=>{
+  appSettings.showGatePhoto = e.target.checked;
+  saveSettings();
+  syncGateRequireRow();
+  showToast(appSettings.showGatePhoto ? 'Gate photo step turned on' : 'Gate photo step turned off');
+});
+
+// The Required toggle only makes sense while the step exists
+function syncGateRequireRow(){
+  const on = appSettings.showGatePhoto !== false;
+  const row = document.getElementById('requireGateRow');
+  const note = document.getElementById('requireGateNote');
+  if(row) row.style.display = on ? 'flex' : 'none';
+  if(note) note.style.display = on ? 'block' : 'none';
+}
+
 document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
   appSettings.requireGatePhoto = e.target.checked;
   saveSettings();
@@ -7127,6 +7252,7 @@ document.getElementById('settingTechniciansTab').addEventListener('change', (e)=
 document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
   appSettings.showAfterPhotos = e.target.checked;
   saveSettings();
+  syncTechPhotoRequirements();
   if(currentVisibleSection){
     currentVisitStep = 1;
     applyVisitStep({keepScroll: true});
@@ -7137,6 +7263,7 @@ document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
 document.getElementById('settingBeforePhotos').addEventListener('change', (e)=>{
   appSettings.showBeforePhotos = e.target.checked;
   saveSettings();
+  syncTechPhotoRequirements();
   if(currentVisibleSection){
     currentVisitStep = 1;
     applyVisitStep({keepScroll: true});
@@ -8232,8 +8359,13 @@ let fountainDraftValues = {};
 
 function fountainFieldIds(){
   const ids = [];
-  chemConfig.fountain.chemicals.forEach(item => ids.push(fieldId('fountain','chem',item.key)));
-  chemConfig.fountain.dosages.forEach(item => ids.push(fieldId('fountain','dose',item.key)));
+  // Whichever fountain is open, for whichever customer — a custom setup has
+  // its own field ids and the global list would miss them entirely.
+  const lists = currentVisitCustomerId
+    ? listsForBody(currentVisitCustomerId, currentVisitFountainId || 'fountain', 'fountain')
+    : chemConfig.fountain;
+  (lists.chemicals || []).forEach(item => ids.push(fieldId('fountain','chem',item.key)));
+  (lists.dosages || []).forEach(item => ids.push(fieldId('fountain','dose',item.key)));
   ids.push('inFountainNotes');
   return ids;
 }
@@ -8457,6 +8589,12 @@ async function discardVisitInProgress(){
   visitStepBySection = {};
   currentVisibleSection = null;
   currentVisitStep = 1;
+
+  // The ticks against each body of water live here. Without clearing it,
+  // reopening the customer reused the old list and showed the pool as done
+  // even though the report had been thrown away.
+  pendingVisit = null;
+  visitSavedReadings = [];
 }
 
 
@@ -9200,12 +9338,14 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   if(poolReadingId){
     const list = await loadReadings(customerId, 'pool');
     const reading = list.find(r=>r.id===poolReadingId);
-    if(reading) sections.push({label: 'Pool', reading, ...buildReadingSection(reading, CHEMICALS, PRODUCTS)});
+    if(reading) sections.push({label: 'Pool', reading, ...buildReadingSection(reading,
+      chemListFor('pool', customerId, 'pool'), productListFor('pool', customerId, 'pool'))});
   }
   if(spaReadingId){
     const list = await loadReadings(customerId, 'spa');
     const reading = list.find(r=>r.id===spaReadingId);
-    if(reading) sections.push({label: 'Spa', reading, ...buildReadingSection(reading, SPA_CHEMICALS, SPA_PRODUCTS)});
+    if(reading) sections.push({label: 'Spa', reading, ...buildReadingSection(reading,
+      chemListFor('spa', customerId, 'spa'), productListFor('spa', customerId, 'spa'))});
   }
   for(const ref of fountainReadingRefs){
     const list = await loadFountainReadings(customerId, ref.fountainId);
@@ -9213,7 +9353,9 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
     if(reading){
       const fountain = getValidFountains(customer).find(f => f.id === ref.fountainId);
       const label = fountain ? fountain.name : 'Fountain';
-      sections.push({label, reading, ...buildReadingSection(reading, FOUNTAIN_CHEMICALS, FOUNTAIN_PRODUCTS)});
+      sections.push({label, reading, ...buildReadingSection(reading,
+        chemListFor('fountain', customerId, ref.fountainId),
+        productListFor('fountain', customerId, ref.fountainId))});
     }
   }
 
@@ -9293,7 +9435,7 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
         productPairs: s.productPairs || [],
         servicePairs: s.servicePairs || []
       })),
-      {});
+      {technician: (currentUser && currentUser.name) ? currentUser.name : ''});
   }catch(e){
     // Never let a formatting problem stop a report going out
     currentReportHtml = '';
@@ -9388,7 +9530,7 @@ function emailBrand(){
   return {
     colour:   saved.colour || '#134E4A',
     greeting: saved.greeting !== undefined ? saved.greeting
-                : 'Here is the report from today\u2019s visit.',
+                : '',
     signoff:  saved.signoff !== undefined ? saved.signoff
                 : 'Thank you for your business.',
     showContact: saved.showContact !== false,
@@ -9470,6 +9612,10 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
     + '<tr><td style="padding:24px 26px 0;">'
     + (b.greeting ? '<div style="font-size:14.5px;color:#4A5A58;margin-bottom:16px;">'
         + esc(b.greeting) + '</div>' : '')
+    // Who actually did the work, above the customer's name
+    + (o.technician ? '<div style="font-size:12px;font-weight:700;color:#0F766E;'
+        + 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">'
+        + esc(o.technician) + '</div>' : '')
     + '<div style="font-size:17px;font-weight:700;color:#16302E;">'
     + esc(customer.name) + '</div>'
     + (customer.address ? '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">'
@@ -9795,6 +9941,8 @@ async function init(){
   document.getElementById('settingRouteReorder').checked = appSettings.allowRouteReorder !== false;
     document.getElementById('settingRequireSkipReason').checked = appSettings.requireSkipReason === true;
   document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+document.getElementById('settingGatePhoto').checked = appSettings.showGatePhoto !== false;
+syncGateRequireRow();
   document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
   document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
   document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;

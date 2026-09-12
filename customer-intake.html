@@ -1378,14 +1378,24 @@ input::placeholder{color:#A9BCB9;}
     </div>
 
 <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require a closed gate photo</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireGatePhoto">
-          <span class="toggle-slider"></span>
-        </label>
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Gate photo</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingGatePhoto">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can photograph the closed or locked gate on the last body of water they service. Proof the property was left secure.</p>
+        <div id="requireGateRow" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">
+          <label for="settingRequireGatePhoto" style="margin:0;font-weight:600;cursor:pointer;">Required</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingRequireGatePhoto">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p id="requireGateNote" style="font-size:12.5px;color:var(--muted);margin:10px 0 0;">Technicians must take it before they can submit the service report. A body of water&rsquo;s own tick on Readings and Dosages overrides this.</p>
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must photograph the closed or locked gate on the After photos step before they can submit the service report. Proof the property was left secure.</p>
     </div>
 
     <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Field app</div>
@@ -2911,7 +2921,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, showGatePhoto: true, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -3012,6 +3022,23 @@ document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
   saveSettings();
   showToast(appSettings.pushToTalkEnabled ? 'Voice entry button on' : 'Voice entry button off');
 });
+
+
+document.getElementById('settingGatePhoto').addEventListener('change', (e)=>{
+  appSettings.showGatePhoto = e.target.checked;
+  saveSettings();
+  syncGateRequireRow();
+  showToast(appSettings.showGatePhoto ? 'Gate photo step turned on' : 'Gate photo step turned off');
+});
+
+// The Required toggle only makes sense while the step exists
+function syncGateRequireRow(){
+  const on = appSettings.showGatePhoto !== false;
+  const row = document.getElementById('requireGateRow');
+  const note = document.getElementById('requireGateNote');
+  if(row) row.style.display = on ? 'flex' : 'none';
+  if(note) note.style.display = on ? 'block' : 'none';
+}
 
 document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
   appSettings.requireGatePhoto = e.target.checked;
@@ -5310,7 +5337,7 @@ function previewReportEmail(){
 // Stored as one object so the field apps can read it with a single lookup.
 const EMAIL_STYLE_DEFAULTS = {
   colour: '#134E4A',
-  greeting: 'Here is the report from today\u2019s visit.',
+  greeting: '',
   signoff: 'Thank you for your business.',
   showContact: true,
   showReadings: true
@@ -8172,7 +8199,9 @@ function openCustomSetup(cust, bodies){
   takeCustomSnapshot();
   renderChemConfigLists();
   renderExistingCustomSetups();
-  window.scrollTo({top: 0, behavior: 'smooth'});
+  // Deliberately no scroll. Picking a customer from the list further down the
+  // page used to throw you back to the top, so working through several in a row
+  // meant scrolling down again every time.
 }
 
 // Put the editors away without touching what was saved
@@ -8576,7 +8605,14 @@ function renderPhotoRequirements(){
 
   beforeBox.checked = lists.requireBeforePhoto === true;
   afterBox.checked = lists.requireAfterPhoto === true;
+  // The gate belongs to the property, not to a body of water — one gate photo
+  // covers the whole visit, and it is taken on whichever body is serviced last.
+  // So the tick only makes sense on the Pool tab; showing it on Spa and Extra
+  // implied three separate gate photos.
   const gateBox = document.getElementById('chkRequireGatePhoto');
+  const gateRow = gateBox ? gateBox.parentElement : null;
+  const onPool = selectedChemConfigType === 'pool';
+  if(gateRow) gateRow.style.display = onPool ? 'flex' : 'none';
   if(gateBox) gateBox.checked = lists.requireGatePhoto === true;
   renderCustomPhotoList();
 
@@ -13643,6 +13679,8 @@ document.getElementById('settingShowPoolSize').checked = appSettings.showPoolSiz
 document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
 document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
 document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
+document.getElementById('settingGatePhoto').checked = appSettings.showGatePhoto !== false;
+syncGateRequireRow();
 document.getElementById('settingStorePhotos').checked = appSettings.storePhotos !== false;
 document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
 renderMicSideButtons();
