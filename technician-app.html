@@ -479,6 +479,8 @@ select#customerSelect{font-weight:600;}
             <span id="homeJobLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
           </span>
         </div>
+        <button class="btn btn-ghost" id="btnReverseRoute" type="button"
+          style="width:auto;margin-top:10px;padding:7px 12px;font-size:12.5px;">Reverse route order</button>
         <span id="voiceModeIndicator" style="display:none;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
           <span id="voiceModeText">Voice entry off</span>
@@ -734,7 +736,14 @@ select#customerSelect{font-weight:600;}
 
   <!-- OPTIONS VIEW -->
   <div class="view" id="view-options">
-      <div class="card">
+    <div class="card" style="padding:14px 18px;">
+      <h2 style="margin-bottom:0;">Settings</h2>
+    </div>
+
+      <!-- Water balance (LSI) is hidden until calcium hardness and water temperature
+     are part of the readings. The calculator and the readout are still in the
+     app; only this switch is out of sight, so nothing is lost by restoring it. -->
+    <div class="card" style="display:none;">
         <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
             <h2 style="margin:0;">Water balance (LSI)</h2>
@@ -748,7 +757,10 @@ select#customerSelect{font-weight:600;}
       </div>
 
 
-      <div class="card">
+      <!-- "Works without a connection" is hidden. Offline still works exactly as
+     before — this card only reported on it, and the detail meant little to
+     anyone but us. The offline badge in the header still warns when it matters. -->
+    <div class="card" style="display:none;">
         <h2>Works without a connection</h2>
         <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Check this before going somewhere with no signal.</p>
         <div id="offlineStatus" style="font-size:13px;color:var(--ink);padding:11px 13px;border-radius:10px;background:var(--surface-alt);border:1px solid var(--line);line-height:1.5;">Checking&hellip;</div>
@@ -757,12 +769,14 @@ select#customerSelect{font-weight:600;}
 
 
     <div class="card">
-      <div class="section-head">
-        <div>
-          <h2 style="margin:0;">Signed in</h2>
-          <p id="signedInAs" style="font-size:12.5px;color:var(--muted);margin:4px 0 0;"></p>
-        </div>
-        <button class="btn btn-ghost" id="btnLogout" style="width:auto;">Sign out</button>
+      <!-- One line: heading, who it is, then Sign out pushed to the far right.
+           The name used to sit under the heading, which left the button
+           floating beside a two-line block. -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="margin:0;">Signed in</h2>
+        <p id="signedInAs" style="font-size:12.5px;color:var(--muted);margin:0;"></p>
+        <button class="btn btn-ghost" id="btnLogout"
+          style="width:auto;margin-left:auto;flex:0 0 auto;">Sign out</button>
       </div>
     </div>
     <div class="card">
@@ -2486,8 +2500,9 @@ function customerWantsGatePhoto(){
 }
 
 function gatePhotoApplies(){
-  const required = appSettings.requireGatePhoto === true
-    || techRequires('requireGatePhoto')
+  // Set per technician or per body of water — there is no app-wide tick to
+  // fall back on now that Settings only turns the step on and off.
+  const required = techRequires('requireGatePhoto')
     || customerWantsGatePhoto();
   if(!required) return false;
   if(typeof isFilterCleanVisit !== 'undefined' && isFilterCleanVisit) return false;
@@ -2565,11 +2580,10 @@ function afterPhotoRequiredFor(type){
     : chemConfig[type];
   if(lists && typeof lists.requireAfterPhoto === 'boolean') return lists.requireAfterPhoto;
 
-  // Not set for this body of water — fall back to the wider settings
-  // Per-technician before/after requirements were removed: the same thing
-  // settable per body of water AND per technician was confusing, and the body
-  // of water is the one that matters.
-  return appSettings.requireAfterPhotos === true;
+  // Not set for this body of water means not required. There is no app-wide
+  // fallback any more: the Settings toggle is gone, so a stored `true` could
+  // never be switched off and would silently demand a photo everywhere.
+  return false;
 }
 
 function refreshSaveButtons(){
@@ -4600,6 +4614,36 @@ function routeOrderToday(){
   return orderCustomersForDay(selectedHomeDay, base.concat(extra));
 }
 
+// Reverses today's route — last stop becomes first. Useful when a technician
+// starts from the far end of the run, or wants to come back the way they came.
+// Pressing it again puts the route back, since reversing twice is the original.
+document.getElementById('btnReverseRoute').addEventListener('click', ()=>{
+  let route = [];
+  try{ route = routeOrderToday(); }catch(e){ route = []; }
+  if(route.length < 2){
+    showToast('Nothing to reverse');
+    return;
+  }
+
+  // Remember where the route started, so "Remove changes" can put it back —
+  // the banner restores this rather than deleting the override, which would
+  // fall back to some older saved order instead.
+  orderBeforeDrag = route.map(c => c.id);
+
+  const ids = orderBeforeDrag.slice().reverse();
+  // Save it for this date straight away so the route on screen is the reversed
+  // one, then offer the same choice a drag reorder does — keep it for today
+  // only, or make it the order every week.
+  fieldRouteOrder[orderKey(selectedHomeDay, isoForDay(selectedHomeDay))] = ids;
+  saveFieldRouteOrder();
+  // The banner goes up BEFORE the list redraws: renderHomeList resets the
+  // remembered starting order unless a change is already pending, and doing it
+  // the other way round left "Remove changes" with nothing to put back.
+  showOrderBanner(ids);
+  renderHomeList();
+});
+
+
 
 // A customer's own choice always wins. Only where they have never been set
 // either way does the app-wide setting decide.
@@ -4843,26 +4887,9 @@ let pendingVisit = null;
 // sectionId is 'pool', 'spa', or a fountain's id
 
 // Extensible app-wide settings (Settings tab). Add new keys/defaults here as new options are built.
-const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', requireGatePhoto: false, requireBeforePhotos: false, requireAfterPhotos: false, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true };
+const DEFAULT_SETTINGS = { voiceModeEnabled: false, pushToTalkEnabled: true, micSide: 'right', showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
-// One-time correction. requireAfterPhotos used to default to ON, so devices
-// set up before this carry a stored `true` they never chose — which is why
-// spa and fountain kept demanding a photo with the tick box unticked.
-// Clear it once so the setting starts from off; anyone who genuinely wants it
-// can switch it on and that choice sticks.
-(function clearForcedAfterPhotoRequirement(){
-  try{
-    if(lsGet('afterPhotoDefaultFixed')) return;
-    const s = lsGet('settings');
-    if(s && s.requireAfterPhotos === true){
-      s.requireAfterPhotos = false;
-      lsSet('settings', s);
-      if(typeof appSettings === 'object' && appSettings) appSettings.requireAfterPhotos = false;
-    }
-    lsSet('afterPhotoDefaultFixed', true);
-  }catch(e){}
-})();
 
 // Voice entry has been removed — the browser chimed on every restart and that
 // sound can't be muted from a web app.
@@ -5911,14 +5938,10 @@ function missingRequiredPhoto(){
   if(!showsAfterPhotoStep(type)) afterWhy = '';
   if(typeof lists.requireBeforePhoto === 'boolean'){
     beforeWhy = lists.requireBeforePhoto ? 'this list\u2019s own setting' : '';
-  } else if(appSettings.requireBeforePhotos === true){
-    beforeWhy = 'app-wide setting';
   }
 
   if(typeof lists.requireAfterPhoto === 'boolean'){
     afterWhy = lists.requireAfterPhoto ? 'this list\u2019s own setting' : '';
-  } else if(appSettings.requireAfterPhotos === true){
-    afterWhy = 'app-wide setting';
   }
 
   const beforeNeeded = !!beforeWhy;

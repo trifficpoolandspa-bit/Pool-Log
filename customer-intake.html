@@ -1107,7 +1107,6 @@ input::placeholder{color:#A9BCB9;}
     <div class="card">
       <div class="section-head">
         <h2>Account</h2>
-        <button class="btn btn-ghost" id="btnAccountBack" style="width:auto;margin-left:auto;">Back</button>
       </div>
       <div class="seg-control" id="accountTabControl">
         <button class="history-type-btn active" data-acct="business">Business</button>
@@ -1232,7 +1231,10 @@ input::placeholder{color:#A9BCB9;}
   </div>
 
   <div class="view" id="view-settings">
-      <div class="card">
+      <!-- Water balance (LSI) is hidden until calcium hardness and water temperature
+     are part of the readings. The calculator and the readout are still in the
+     app; only this switch is out of sight, so nothing is lost by restoring it. -->
+    <div class="card" style="display:none;">
         <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
             <h2 style="margin:0;">Water balance (LSI)</h2>
@@ -1246,16 +1248,21 @@ input::placeholder{color:#A9BCB9;}
       </div>
 
 
-      <div class="card">
+      <!-- "Works without a connection" is hidden. Offline still works exactly as
+     before — this card only reported on it, and the detail meant little to
+     anyone but us. The offline badge in the header still warns when it matters. -->
+    <div class="card" style="display:none;">
         <h2>Works without a connection</h2>
         <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">Check this before going somewhere with no signal.</p>
         <div id="offlineStatus" style="font-size:13px;color:var(--ink);padding:11px 13px;border-radius:10px;background:var(--surface-alt);border:1px solid var(--line);line-height:1.5;">Checking&hellip;</div>
       </div>
 
 
-    <div class="card">
-      <h2>Settings</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 0;">How the apps behave. Your company details live under Account, top right.</p>
+    <!-- Tighter than a normal card: .card h2 carries a 14px bottom margin for
+         the content that usually follows it, and with nothing below that margin
+         just sat there and pushed the word upward. -->
+    <div class="card" style="padding:14px 18px;">
+      <h2 style="margin-bottom:0;">Settings</h2>
     </div>
 
     <div class="card">
@@ -1334,48 +1341,37 @@ input::placeholder{color:#A9BCB9;}
     <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:24px 0 10px;">Photos</div>
 
 <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Before photos step</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingBeforePhotos" checked>
-          <span class="toggle-slider"></span>
-        </label>
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">Before photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingBeforePhotos" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit starts with a Before photos step so you can capture the pool before any work is done. Turning this off removes that step entirely. To make a before photo compulsory, tick Required next to that body of water on Readings and Dosages.</p>
+        
       </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps starts with a Before photos step so techs can capture the pool before any work is done. Turning this off removes that step entirely.</p>
+    </div>
+    <div class="card">
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
+          <h2 style="margin:0;">After photos</h2>
+          <label class="toggle-switch">
+            <input type="checkbox" id="settingAfterPhotos" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit ends with an After photos step so you can capture the pool once the work is done. Turning this off removes that step entirely. To make an after photo compulsory, tick Required next to that body of water on Readings and Dosages.</p>
+        
+      </div>
     </div>
 
-<div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">After photos step</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingAfterPhotos" checked>
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, each visit in the field apps ends with an After photos step so techs can capture the pool once the work is done. Turning this off removes that step entirely.</p>
-    </div>
 
-<div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require before photos</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireBeforePhotos">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take a before photo on every pool, spa, and extra body of water before moving on. Has no effect while the Before photos step is switched off below.</p>
-    </div>
 
-<div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require after photos</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireAfterPhotos">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians must take an after photo before they can submit the service report. Has no effect while the After photos step is switched off below.</p>
-    </div>
+
+
+
 
 <div class="card">
       <div class="field">
@@ -1386,15 +1382,8 @@ input::placeholder{color:#A9BCB9;}
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can photograph the closed or locked gate on the last body of water they service. Proof the property was left secure.</p>
-        <div id="requireGateRow" style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);">
-          <label for="settingRequireGatePhoto" style="margin:0;font-weight:600;cursor:pointer;">Required</label>
-          <label class="toggle-switch">
-            <input type="checkbox" id="settingRequireGatePhoto">
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <p id="requireGateNote" style="font-size:12.5px;color:var(--muted);margin:10px 0 0;">Technicians must take it before they can submit the service report. A body of water&rsquo;s own tick on Readings and Dosages overrides this.</p>
+        <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, technicians can photograph the closed or locked gate on the last body of water they service. Proof the property was left secure. To make it compulsory, tick Required on the Pool tab of Readings and Dosages &mdash; the gate belongs to the property, so there is no separate tick on Spa or Extra.</p>
+        
       </div>
     </div>
 
@@ -2921,26 +2910,9 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, showGatePhoto: true, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, showGatePhoto: true, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
-// One-time correction. requireAfterPhotos used to default to ON, so devices
-// set up before this carry a stored `true` they never chose — which is why
-// spa and fountain kept demanding a photo with the tick box unticked.
-// Clear it once so the setting starts from off; anyone who genuinely wants it
-// can switch it on and that choice sticks.
-(function clearForcedAfterPhotoRequirement(){
-  try{
-    if(lsGet('afterPhotoDefaultFixed')) return;
-    const s = lsGet('settings');
-    if(s && s.requireAfterPhotos === true){
-      s.requireAfterPhotos = false;
-      lsSet('settings', s);
-      if(typeof appSettings === 'object' && appSettings) appSettings.requireAfterPhotos = false;
-    }
-    lsSet('afterPhotoDefaultFixed', true);
-  }catch(e){}
-})();
 
 
 function saveSettings(){
@@ -2949,6 +2921,10 @@ function saveSettings(){
 
 document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
   appSettings.showAfterPhotos = e.target.checked;
+  // Deliberately does NOT switch the requirement on. The app-wide setting is
+  // inherited by every body of water whose own tick is not set, so forcing it
+  // on here made spa and fountain demand a photo while their boxes looked
+  // unticked. An unticked box means "follow Settings", not "no".
   saveSettings();
   showToast(appSettings.showAfterPhotos ? 'After photos step turned on in the field apps' : 'After photos step turned off');
 });
@@ -2975,6 +2951,10 @@ document.getElementById('settingRouteReorder').addEventListener('change', (e)=>{
 
 document.getElementById('settingBeforePhotos').addEventListener('change', (e)=>{
   appSettings.showBeforePhotos = e.target.checked;
+  // Deliberately does NOT switch the requirement on. The app-wide setting is
+  // inherited by every body of water whose own tick is not set, so forcing it
+  // on here made spa and fountain demand a photo while their boxes looked
+  // unticked. An unticked box means "follow Settings", not "no".
   saveSettings();
   showToast(appSettings.showBeforePhotos ? 'Before photos step turned on in the field apps' : 'Before photos step turned off');
 });
@@ -3026,37 +3006,18 @@ document.getElementById('settingPushToTalk').addEventListener('change', (e)=>{
 
 document.getElementById('settingGatePhoto').addEventListener('change', (e)=>{
   appSettings.showGatePhoto = e.target.checked;
+  // Deliberately does NOT switch the requirement on. The app-wide setting is
+  // inherited by every body of water whose own tick is not set, so forcing it
+  // on here made spa and fountain demand a photo while their boxes looked
+  // unticked. An unticked box means "follow Settings", not "no".
   saveSettings();
-  syncGateRequireRow();
   showToast(appSettings.showGatePhoto ? 'Gate photo step turned on' : 'Gate photo step turned off');
 });
 
-// The Required toggle only makes sense while the step exists
-function syncGateRequireRow(){
-  const on = appSettings.showGatePhoto !== false;
-  const row = document.getElementById('requireGateRow');
-  const note = document.getElementById('requireGateNote');
-  if(row) row.style.display = on ? 'flex' : 'none';
-  if(note) note.style.display = on ? 'block' : 'none';
-}
 
-document.getElementById('settingRequireGatePhoto').addEventListener('change', (e)=>{
-  appSettings.requireGatePhoto = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireGatePhoto ? 'Gate photo now required' : 'Gate photo no longer required');
-});
 
-document.getElementById('settingRequireAfterPhotos').addEventListener('change', (e)=>{
-  appSettings.requireAfterPhotos = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireAfterPhotos ? 'After photos now required everywhere' : 'After photos no longer required everywhere');
-});
 
-document.getElementById('settingRequireBeforePhotos').addEventListener('change', (e)=>{
-  appSettings.requireBeforePhotos = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireBeforePhotos ? 'Before photos now required everywhere' : 'Before photos no longer required everywhere');
-});
+
 
 document.getElementById('settingShowPoolSize').addEventListener('change', (e)=>{
   appSettings.showPoolSizeInProfile = e.target.checked;
@@ -5592,14 +5553,6 @@ document.querySelectorAll('#accountTabControl .history-type-btn').forEach(b=>{
 });
 
 document.getElementById('btnAccount').addEventListener('click', ()=> switchView('account'));
-document.getElementById('btnAccountBack').addEventListener('click', ()=> switchView('customers'));
-
-// Reuse the Settings backup controls rather than duplicating the logic
-document.getElementById('btnAcctBackup').addEventListener('click', ()=>{
-  const btn = document.getElementById('btnBackupDownload');
-  if(btn) btn.click();
-  else showToast('Backup is on the Settings page');
-});
 
 document.getElementById('btnAcctRestore').addEventListener('click', ()=>{
   const btn = document.getElementById('btnBackupRestore');
@@ -8619,16 +8572,25 @@ function renderPhotoRequirements(){
   // If the step itself is switched off in Settings, the requirement can't apply
   const beforeOff = appSettings.showBeforePhotos === false;
   const afterOff = appSettings.showAfterPhotos === false;
+  // The gate photo has a step of its own now, so it follows the same rule
+  const gateOff = appSettings.showGatePhoto === false;
   beforeBox.disabled = beforeOff;
   afterBox.disabled = afterOff;
   beforeBox.parentElement.style.opacity = beforeOff ? '0.45' : '';
   afterBox.parentElement.style.opacity = afterOff ? '0.45' : '';
+  if(gateBox){
+    gateBox.disabled = gateOff;
+    const gRow = gateBox.parentElement;
+    if(gRow){
+      gRow.style.opacity = gateOff ? '0.45' : '';
+      gRow.style.cursor = gateOff ? 'not-allowed' : 'pointer';
+    }
+  }
 
-  // The gate photo has no on/off step of its own, so this tick always applies
-  // even when the app-wide gate setting is switched off.
   const off = [];
   if(beforeOff) off.push('Before photos');
   if(afterOff) off.push('After photos');
+  if(gateOff && onPool) off.push('Gate photo');
   if(off.length){
     note.textContent = off.join(' and ') + (off.length === 1 ? ' is' : ' are') +
       ' switched off in Settings, so that requirement has no effect until it is turned back on.';
@@ -9577,13 +9539,12 @@ function renderTechProfile(techId){
   const phHead = document.createElement('div');
   phHead.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;"
     + 'color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:16px 0 4px;';
-  phHead.textContent = 'Photos this technician must take';
+  phHead.textContent = 'Gate photo for this technician';
   meta.appendChild(phHead);
 
-  checkRow('Require after photo', 'requireAfterPhoto',
-    'This technician cannot submit a service report until an after photo is taken.');
-  checkRow('Require before photo', 'requireBeforePhoto',
-    'This technician must take a before photo on each body of water before moving on.');
+  // Before and after photo requirements are set per body of water on Readings
+  // and Dosages, not per technician — the field apps stopped reading the
+  // per-technician ones, so offering them here was a switch that did nothing.
   checkRow('Require closed gate photo', 'requireGatePhoto',
     'This technician must photograph the closed or locked gate before submitting.');
 
@@ -13676,11 +13637,7 @@ renderTechnicianList();
 populateTechnicianSelect();
 renderEquipmentTypeList();
 document.getElementById('settingShowPoolSize').checked = appSettings.showPoolSizeInProfile;
-document.getElementById('settingRequireBeforePhotos').checked = appSettings.requireBeforePhotos === true;
-document.getElementById('settingRequireAfterPhotos').checked = appSettings.requireAfterPhotos === true;
-document.getElementById('settingRequireGatePhoto').checked = appSettings.requireGatePhoto === true;
 document.getElementById('settingGatePhoto').checked = appSettings.showGatePhoto !== false;
-syncGateRequireRow();
 document.getElementById('settingStorePhotos').checked = appSettings.storePhotos !== false;
 document.getElementById('settingPushToTalk').checked = appSettings.pushToTalkEnabled !== false;
 renderMicSideButtons();
