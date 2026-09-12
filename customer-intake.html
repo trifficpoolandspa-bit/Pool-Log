@@ -1427,16 +1427,7 @@ input::placeholder{color:#A9BCB9;}
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, a technician cannot skip a service without attaching a photo showing why &mdash; a locked gate, a dog in the yard, an empty pool. Turning this on also requires a reason, since the two are asked for on the same screen.</p>
     </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <h2 style="margin:0;">Require readings before moving on</h2>
-        <label class="toggle-switch">
-          <input type="checkbox" id="settingRequireReadings">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <p style="font-size:12.5px;color:var(--muted);margin:16px 0 0;">When on, every chemical reading must be filled in before a technician can move past the readings step. Dosages are not affected &mdash; those are only required where a dosage has its own tick on Readings and Dosages.</p>
-    </div>
+    
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
         <h2 style="margin:0;">Dosage suggestion buttons</h2>
@@ -2920,7 +2911,7 @@ function saveChemConfig(){
   lsSet('chemConfig', chemConfig);
 }
 
-const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, requireReadings: false, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
+const DEFAULT_SETTINGS = { showPoolSizeInProfile: true, requireBeforePhotos: false, requireAfterPhotos: false, requireGatePhoto: false, pushToTalkEnabled: true, micSide: 'right', showDosageSuggestions: true, showBeforePhotos: true, showAfterPhotos: true, allowRouteReorder: true, showWaterBalance: false, autoNotifyAll: false, autoNotifyAllLead: 2, requireSkipReason: false, requireSkipPhoto: false, applyPoolChemicalsToAll: false, applyPoolDosagesToAll: false };
 let appSettings = Object.assign({}, DEFAULT_SETTINGS, lsGet('settings') || {});
 
 // One-time correction. requireAfterPhotos used to default to ON, so devices
@@ -2956,13 +2947,6 @@ document.getElementById('settingRequireSkipReason').addEventListener('change', (
   appSettings.requireSkipReason = e.target.checked;
   saveSettings();
   showToast(appSettings.requireSkipReason ? 'Skip reasons are now required' : 'Skip reasons no longer required');
-});
-document.getElementById('settingRequireReadings').addEventListener('change', (e)=>{
-  appSettings.requireReadings = e.target.checked;
-  saveSettings();
-  showToast(appSettings.requireReadings
-    ? 'Readings are now required before moving on'
-    : 'Readings are no longer required');
 });
 
 document.getElementById('settingRequireSkipPhoto').addEventListener('change', (e)=>{
@@ -9839,7 +9823,10 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
   }
 
   const id = 'tech_' + Date.now();
-  technicians.push({id, name, phone, email, username, password, isAdmin, canPhotoEquipment});
+  // An after photo is the proof the work was done, so every new technician
+  // starts with it required. It can be turned off per technician afterwards.
+  technicians.push({id, name, phone, email, username, password, isAdmin,
+                    canPhotoEquipment, requireAfterPhoto: true});
   saveTechnicians();
   renderTechnicianList();
   populateTechnicianSelect();
@@ -13669,7 +13656,6 @@ document.getElementById('settingAutoNotifyAll').checked = appSettings.autoNotify
 document.getElementById('settingAutoNotifyLead').value = String(appSettings.autoNotifyAllLead || 2);
 document.getElementById('settingAutoNotifyLeadField').style.display =
   appSettings.autoNotifyAll === true ? 'block' : 'none';
-document.getElementById('settingRequireReadings').checked = appSettings.requireReadings === true;
 document.getElementById('settingAfterPhotos').checked = appSettings.showAfterPhotos !== false;
 applyPoolGallonsFieldVisibility();
 

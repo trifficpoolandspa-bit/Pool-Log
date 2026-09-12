@@ -121,6 +121,16 @@ input:focus,select:focus,textarea:focus{
   border-color:var(--teal-mid);
   box-shadow:0 0 0 3px rgba(31,138,140,0.15);
 }
+
+/* Without this the global input rule stretches every checkbox to the full width
+   of its row, which shoves the label text across to the far right. */
+input[type="checkbox"]{
+  accent-color:var(--teal-mid);
+  width:18px;height:18px;
+  flex-shrink:0;
+  cursor:pointer;
+}
+input[type="checkbox"]:focus{outline:none;}
 input::placeholder{color:#A9BCB9;font-size:13px;}
 textarea{min-height:52px;resize:vertical;}
 
@@ -3332,9 +3342,9 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
     : (chemConfig.pool.chemicals.some(c => reading[c.key] !== '')
       || chemConfig.pool.dosages.some(p => reading[p.key] !== '') || reading.photo);
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
-  const list = await loadReadings(customerId);
-  list.unshift(reading);
-  await saveReadings(customerId, list);
+  // Held, not saved — the whole visit is written when the last body is done
+  stashSectionReading(customerId, 'pool', reading);
+  visitSavedReadings.push({customerId, id: reading.id, type: 'pool'});
   chemConfig.pool.chemicals.forEach(item=>{ document.getElementById(fieldId('pool','chem',item.key)).value=''; });
   chemConfig.pool.dosages.forEach(item=>{ document.getElementById(fieldId('pool','dose',item.key)).value=''; });
   document.getElementById('inNotes').value = '';
@@ -3377,9 +3387,8 @@ document.getElementById('btnSaveSpaReading').addEventListener('click', async ()=
   const anyValue = chemConfig.spa.chemicals.some(c => reading[c.key] !== '')
     || chemConfig.spa.dosages.some(p => reading[p.key] !== '') || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
-  const list = await loadReadings(customerId, 'spa');
-  list.unshift(reading);
-  await saveReadings(customerId, list, 'spa');
+  stashSectionReading(customerId, 'spa', reading);
+  visitSavedReadings.push({customerId, id: reading.id, type: 'spa'});
   chemConfig.spa.chemicals.forEach(item=>{ document.getElementById(fieldId('spa','chem',item.key)).value=''; });
   chemConfig.spa.dosages.forEach(item=>{ document.getElementById(fieldId('spa','dose',item.key)).value=''; });
   document.getElementById('inSpaNotes').value = '';
@@ -3414,9 +3423,7 @@ document.getElementById('btnSaveFountainReading').addEventListener('click', asyn
   const anyValue = chemConfig.fountain.chemicals.some(c => reading[c.key] !== '')
     || chemConfig.fountain.dosages.some(p => reading[p.key] !== '') || reading.photo;
   if(!anyValue){ showToast('Enter at least one reading or product'); return; }
-  const list = await loadFountainReadings(customerId, fountainId);
-  list.unshift(reading);
-  await saveFountainReadings(customerId, fountainId, list);
+  stashSectionReading(customerId, fountainId, reading);
   chemConfig.fountain.chemicals.forEach(item=>{ document.getElementById(fieldId('fountain','chem',item.key)).value=''; });
   chemConfig.fountain.dosages.forEach(item=>{ document.getElementById(fieldId('fountain','dose',item.key)).value=''; });
   document.getElementById('inFountainNotes').value = '';
@@ -5900,7 +5907,6 @@ function missingReadingFields(){
   const lists = cid ? listsForBody(cid, type === 'fountain' ? currentVisitFountainId : type, type)
                     : chemConfig[type];
 
-  const requireAll = appSettings.requireReadings === true;
   const items = onReadings ? (lists.chemicals || []) : (lists.dosages || []);
   const kind = onReadings ? 'chem' : 'dose';
 
@@ -5908,7 +5914,9 @@ function missingReadingFields(){
   items.forEach(item=>{
     // The blanket setting covers READINGS only. Dosages are required solely
     // where a dosage carries its own tick.
-    const needed = item.required === true || (requireAll && onReadings);
+    // Required is set per reading now — the blanket "require everything"
+    // setting is gone, so a reading is compulsory only where it says so.
+    const needed = item.required === true;
     if(!needed) return;
     const el = document.getElementById(fieldId(type, kind, item.key));
     if(el && String(el.value).trim() === ''){
@@ -5973,7 +5981,10 @@ function visitStepCardsFor(type){
   return steps;
 }
 
-function applyVisitStep(){
+// keepScroll: the settings toggles rebuild the visit steps, and jumping to the
+// top every time you flip a switch makes Settings almost unusable. Moving
+// between steps still scrolls, because there the top is where you want to be.
+function applyVisitStep(opts){
   if(!currentVisibleSection) return;
   const steps = visitStepCardsFor(currentVisibleSection);
   if(!steps) return;
@@ -5992,7 +6003,7 @@ function applyVisitStep(){
   refreshSaveButtons();
   syncStepChrome();
   armBackButton();
-  window.scrollTo({top: 0, behavior: 'smooth'});
+  if(!(opts && opts.keepScroll)) window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
 // Labels for the fixed bottom bar, by step
@@ -6092,13 +6103,14 @@ function syncStepChrome(){
       goToVisitStep(currentVisitStep - 1);
       return;
     }
-    // Leaving by this button is a deliberate exit, so anything unsaved goes
-    if(hasUnsavedSectionData()){
+    // Leaving by this button is a deliberate exit, so the whole report goes —
+    // including any section already saved during this visit
+    if(visitHasAnything()){
       const ok = await confirmDialog(
         "This will remove all readings taken. Are you sure you'd like to cancel the report?",
         'Cancel report');
       if(!ok) return;
-      discardVisitInProgress();
+      await discardVisitInProgress();
     }
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
   visitLeftOpenFor = null;
@@ -6588,7 +6600,12 @@ function showVisitSection(sectionId){
     document.getElementById('visitFountainTitle').textContent = sectionLabel(customer, sectionId) + ' readings';
     visitVoiceController.setTarget(buildVoiceFieldsForType('fountain'), function(){});
     currentVisibleSection = 'fountain';
+    // renderAllConfigFields rebuilds EVERY section's inputs, not just this
+    // fountain's — which blanked anything already typed for the pool or spa.
+    // Hold the whole visit before rebuilding and put it back afterwards.
+    captureVisitDraft();
     renderAllConfigFields();
+    restoreVisitDraft(currentVisitCustomerId);
     restoreFountainDraft(sectionId);
   }
   renderVisitSectionButtons();
@@ -6671,8 +6688,46 @@ function restoreVisitDraft(customerId){
 }
 
 
+
+// Is there anything to lose by leaving? Either something typed and not yet
+// saved, or a section already saved during this same visit. The second case
+// used to be missed entirely: once a technician saved the pool, leaving was
+// treated as having nothing to discard, so the half-report stayed behind.
+function visitHasAnything(){
+  return hasUnsavedSectionData() || visitSavedReadings.length > 0;
+}
+
+
+// Readings saved during the visit currently open. A technician can save the
+// pool, move on to the spa, then decide to cancel — and the pool reading is
+// already in storage by then. Cancelling has to take those back out, or the
+// customer ends up with half a report they were never meant to have.
+let visitSavedReadings = [];
+
+async function removeVisitSavedReadings(){
+  for(const rec of visitSavedReadings){
+    try{
+      const list = await loadReadings(rec.customerId, rec.type);
+      const left = (list || []).filter(r => r.id !== rec.id);
+      if(left.length !== (list || []).length){
+        await saveReadings(rec.customerId, left, rec.type);
+      }
+    }catch(e){
+      // One failure must not stop the rest being removed
+    }
+  }
+  visitSavedReadings = [];
+  readingsCache = {};
+}
+
 // Throws away everything typed for the current visit that hasn't been saved
-function discardVisitInProgress(){
+async function discardVisitInProgress(){
+  // Nothing held for this customer survives a cancelled report
+  if(currentVisitCustomerId) clearVisitPackage(currentVisitCustomerId);
+  // Anything already written for this visit goes too — cancelling means there
+  // should be no report at all, not a partial one.
+  await removeVisitSavedReadings();
+
   const view = document.getElementById('view-visit');
   if(view){
     view.querySelectorAll('input, textarea').forEach(el=>{
@@ -6714,32 +6769,42 @@ function discardVisitInProgress(){
 // by the browser before our handler can push a replacement, so a single entry
 // is consumed and the page is left. The cushion absorbs a burst; each Back
 // press then tops it back up.
-const BACK_CUSHION = 8;
-let backEntries = 0;
+// How many places back the app remembers. Past this, Back does nothing.
+const NAV_STACK_LIMIT = 5;
 
+// Keep one history entry sitting in front of the app at all times.
+//
+// The old version counted entries in a variable and tried to hold a cushion of
+// eight. That count drifts from the browser's real history — a reload, a
+// restored tab, or a throttled pushState and it is wrong, and Back walks
+// straight out to the sign-in screen. Counting cannot be made reliable.
+//
+// Instead: one guard entry, replaced the instant it is consumed. Back always
+// has something to eat, so it can never leave the app, however many times it
+// is pressed. When there is nowhere left to go it simply does nothing.
 function armBackButton(){
-  let pushed = 0;
-  while(backEntries < BACK_CUSHION){
-    try{
-      history.pushState({poollog:true}, '');
-      backEntries++;
-      pushed++;
-    }catch(e){
-      // Refused, most likely throttled — top up again shortly
-      setTimeout(armBackButton, 250);
-      break;
-    }
-    // Don't push the whole cushion in one go after a single Back press
-    if(pushed >= 3) break;
+  try{
+    history.pushState({poollog:true}, '');
+    backGuardArmed = true;
+  }catch(e){
+    // Throttled — try again shortly rather than leaving the app unguarded
+    setTimeout(()=>{
+      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
+    }, 250);
   }
-  backGuardArmed = backEntries > 0;
 }
 
 // Where the technician has actually been, so Back retraces their steps rather
 // than guessing. Each entry is a place in the app they can be returned to.
 const navStack = [];
 
+// While Back is being handled, switching views must not record a new place —
+// otherwise going back adds the place you just left, and Back bounces between
+// two views forever instead of running out.
+let navigatingBack = false;
+
 function rememberPlace(){
+  if(navigatingBack) return;
   const place = {
     view: currentViewName,
     section: currentVisibleSection,
@@ -6751,7 +6816,7 @@ function rememberPlace(){
   if(last && last.view === place.view && last.section === place.section
      && last.step === place.step && last.customerId === place.customerId) return;
   navStack.push(place);
-  if(navStack.length > 40) navStack.shift();
+  if(navStack.length > NAV_STACK_LIMIT) navStack.shift();
 }
 
 // Returns to the most recent place that is not where we already are
@@ -6781,10 +6846,11 @@ window.addEventListener('focus', ()=> armBackButton());
 window.addEventListener('pageshow', ()=> armBackButton());
 
 window.addEventListener('popstate', async ()=>{
-  // One entry was just consumed. Account for it and top the cushion back up
-  // before anything else runs, so a burst of presses can't empty it.
-  backEntries = Math.max(0, backEntries - 1);
+  // The guard entry was just consumed — put another one back immediately, and
+  // before anything else runs, so a burst of presses can never empty it.
   armBackButton();
+  navigatingBack = true;
+  setTimeout(()=>{ navigatingBack = false; }, 0);
 
   if(currentViewName === 'visit'){
     if(currentVisitStep > 1){
@@ -6794,7 +6860,7 @@ window.addEventListener('popstate', async ()=>{
 
     // Nothing entered means nothing to lose, so just leave — same as the
     // on-screen Return to route button.
-    if(hasUnsavedSectionData()){
+    if(visitHasAnything()){
       if(backPromptOpen) return;
       backPromptOpen = true;
       let ok = false;
@@ -6809,7 +6875,7 @@ window.addEventListener('popstate', async ()=>{
         armBackButton();     // they stayed, so make sure a guard is ready
         return;
       }
-      discardVisitInProgress();
+      await discardVisitInProgress();
     }
     visitDraft = {customerId: null, values: {}, section: null, step: 1};
   visitLeftOpenFor = null;
@@ -6817,13 +6883,16 @@ window.addEventListener('popstate', async ()=>{
     return;
   }
 
-  // Anywhere else, retrace to wherever they came from. Falling back to the
-  // route only when there is no history left to walk.
+  // Retrace to wherever they came from.
   const place = goBackOnePlace();
   if(place && place.view && place.view !== currentViewName){
     switchView(place.view);
     return;
   }
+
+  // Nothing recorded left to go back to. Land on the route if they are
+  // somewhere else, and otherwise do nothing at all — pressing Back on the
+  // route should never sign them out.
   if(currentViewName !== 'home') switchView('home');
 });
 
@@ -6838,6 +6907,56 @@ function viewingToday(){
   return d.toDateString() === new Date().toDateString();
 }
 
+
+// Which bodies of water this customer already had serviced today. A visit
+// reopened later in the day must not treat those as still outstanding —
+// otherwise finishing the spa throws the technician back into the pool.
+//
+// Deliberately synchronous: readings come straight from localStorage, and
+// making openVisit await here left pendingVisit unset for anything that
+// called it without awaiting.
+
+// Bodies of water already filled in for this customer but not yet submitted
+function heldSectionsFor(customerId){
+  const out = {};
+  const pkg = loadVisitPackage(customerId);
+  if(!pkg) return out;
+  Object.keys(pkg.sections || {}).forEach(id=>{
+    const r = pkg.sections[id];
+    if(r && r.id) out[id] = r.id;
+  });
+  return out;
+}
+
+function sectionsAlreadyDoneToday(customer){
+  const done = {};
+  if(!customer) return done;
+  const todayStr = todayDateStr();
+  const sameDay = r => r && r.date && String(r.date).slice(0, 10) === todayStr;
+  const firstToday = (key)=>{
+    try{
+      const list = lsGet(key);
+      return Array.isArray(list) ? list.find(sameDay) : null;
+    }catch(e){ return null; }
+  };
+
+  if(customer.hasPool){
+    const hit = firstToday('readings:' + customer.id);
+    if(hit) done.pool = hit.id;
+  }
+  if(customer.hasSpa){
+    const hit = firstToday('spaReadings:' + customer.id);
+    if(hit) done.spa = hit.id;
+  }
+  (customer.fountains || []).forEach(f=>{
+    const fid = typeof f === 'string' ? f : f.id;
+    if(!fid) return;
+    const hit = firstToday('fountainReadings:' + customer.id + ':' + fid);
+    if(hit) done[fid] = hit.id;
+  });
+  return done;
+}
+
 async function openVisit(customerId){
   if(!viewingToday()){
     const d = dateForWeekday(selectedHomeDay);
@@ -6848,10 +6967,32 @@ async function openVisit(customerId){
     return;
   }
 
-  if(currentVisitCustomerId && currentVisitCustomerId !== customerId && hasUnsavedSectionData()){
+  // A part-finished report for somebody else. Only one visit can be in
+  // progress at a time, so say plainly what will be lost before losing it.
+  // Checked before the generic warning below, which says far less.
+  const other = otherOpenPackage(customerId);
+  if(!other && currentVisitCustomerId && currentVisitCustomerId !== customerId
+     && hasUnsavedSectionData()){
     const confirmed = await confirmDialog('You have unsaved readings for this visit. Switching customers will discard them. Continue?', 'Discard & switch');
     if(!confirmed) return;
   }
+
+  if(other){
+    const who = customers.find(x => x.id === other.customerId);
+    const bodies = Object.keys(other.pkg.sections || {}).length;
+    const ok = await confirmDialog(
+      'You have a service report part-finished for '
+      + (who ? who.name : 'another customer') + ' \u2014 '
+      + bodies + ' body of water' + (bodies === 1 ? '' : 's') + ' filled in but not submitted.'
+      + '\n\nStarting a report here will throw that away. It cannot be recovered.',
+      'Discard and start here');
+    if(!ok) return;
+    clearVisitPackage(other.customerId);
+    if(pendingVisit && pendingVisit.customerId === other.customerId) pendingVisit = null;
+  }
+
+  // A fresh visit — nothing saved yet that a cancel should undo
+  if(currentVisitCustomerId !== customerId) visitSavedReadings = [];
 
   const customer = customers.find(c => c.id === customerId);
   if(!customer) return;
@@ -6872,7 +7013,11 @@ async function openVisit(customerId){
     pendingVisit = {
       customerId,
       neededSections: computeNeededSections(customer),
-      doneSections: {}
+      // Bodies serviced earlier today, plus anything held from a visit that
+      // was interrupted — a dead battery must not cost the technician work.
+      doneSections: Object.assign(
+        sectionsAlreadyDoneToday(customer),
+        heldSectionsFor(customerId))
     };
     visitStepBySection = {};
     fountainDraftValues = {};
@@ -6931,7 +7076,11 @@ async function openVisit(customerId){
     const target = (resuming && visitDraft.section
       && pendingVisit.neededSections.indexOf(visitDraft.section) !== -1)
       ? visitDraft.section
-      : pendingVisit.neededSections[0];
+      // Open on the first body of water still outstanding. Landing on one that
+      // was already serviced this morning makes the technician hunt for the
+      // tab that actually needs doing.
+      : (pendingVisit.neededSections.find(id => pendingVisit.doneSections[id] === undefined)
+         || pendingVisit.neededSections[0]);
     if(resuming && visitDraft.fountainId) currentVisitFountainId = visitDraft.fountainId;
     if(resuming && visitDraft.step) visitStepBySection[target] = visitDraft.step;
     showVisitSection(target);
@@ -6983,6 +7132,101 @@ function markSectionDone(sectionId, readingId){
   showToast('Next: ' + sectionLabel(cust, next));
 }
 
+
+
+// No remove helper existed — everything so far only ever wrote or read
+function lsRemove(key){
+  try{ localStorage.removeItem(STORAGE_PREFIX + key); }catch(e){}
+}
+
+// ---------- The visit package ----------
+// A service report covers the whole property, not one body of water at a time.
+// Submitting the pool used to write a real reading straight away, so a visit
+// abandoned halfway left a permanent half-report in the customer's history.
+//
+// Instead, each body is held in a package on disk. Nothing appears in history,
+// nothing is emailed and nothing counts as serviced until the final submit.
+// It is kept on disk rather than in memory so a dead battery or a closed tab
+// loses nothing — reopening the customer picks up exactly where they were.
+function packageKey(customerId){ return 'visitPackage:' + customerId; }
+
+function loadVisitPackage(customerId){
+  if(!customerId) return null;
+  const p = lsGet(packageKey(customerId));
+  if(!p || !p.sections) return null;
+  // A package from a previous day is stale — the readings belong to that day,
+  // not this one, and silently committing them later would be wrong.
+  if(p.day && p.day !== todayDateStr()){
+    lsRemove(packageKey(customerId));
+    return null;
+  }
+  return p;
+}
+
+function saveVisitPackage(customerId, pkg){
+  if(!customerId) return;
+  lsSet(packageKey(customerId), pkg);
+}
+
+function clearVisitPackage(customerId){
+  if(!customerId) return;
+  lsRemove(packageKey(customerId));
+}
+
+// Any package belonging to someone other than this customer
+function otherOpenPackage(exceptCustomerId){
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const full = localStorage.key(i);
+      if(!full || full.indexOf(STORAGE_PREFIX + 'visitPackage:') !== 0) continue;
+      const id = full.slice((STORAGE_PREFIX + 'visitPackage:').length);
+      if(id === exceptCustomerId) continue;
+      const p = loadVisitPackage(id);
+      if(p && Object.keys(p.sections || {}).length) return {customerId: id, pkg: p};
+    }
+  }catch(e){}
+  return null;
+}
+
+// Holds one body of water's readings until the visit is submitted
+function stashSectionReading(customerId, sectionId, reading){
+  const pkg = loadVisitPackage(customerId)
+           || {customerId, day: todayDateStr(), startedAt: new Date().toISOString(), sections: {}};
+  pkg.sections[sectionId] = reading;
+  saveVisitPackage(customerId, pkg);
+}
+
+// Writes every held body of water into the real reading history, at once
+async function commitVisitPackage(customerId){
+  const pkg = loadVisitPackage(customerId);
+  if(!pkg) return [];
+  const committed = [];
+
+  for(const sectionId of Object.keys(pkg.sections)){
+    const reading = pkg.sections[sectionId];
+    if(!reading) continue;
+    if(sectionId === 'pool'){
+      const list = await loadReadings(customerId, 'pool');
+      list.unshift(reading);
+      await saveReadings(customerId, list, 'pool');
+      committed.push({type:'pool', id: reading.id});
+    } else if(sectionId === 'spa'){
+      const list = await loadReadings(customerId, 'spa');
+      list.unshift(reading);
+      await saveReadings(customerId, list, 'spa');
+      committed.push({type:'spa', id: reading.id});
+    } else {
+      const list = await loadFountainReadings(customerId, sectionId);
+      list.unshift(reading);
+      await saveFountainReadings(customerId, sectionId, list);
+      committed.push({type:'fountain', fountainId: sectionId, id: reading.id});
+    }
+  }
+
+  clearVisitPackage(customerId);
+  return committed;
+}
+
 async function finalizeVisitSend(){
   if(!pendingVisit) return;
   const { customerId, doneSections } = pendingVisit;
@@ -7000,6 +7244,10 @@ async function finalizeVisitSend(){
   visitVoiceController.stopListening();
   await releaseVisitWakeLock();
 
+  // This is the moment the visit becomes real. Everything held for every body
+  // of water is written to the reading history in one go.
+  await commitVisitPackage(customerId);
+
   pendingVisit = null;
   visitDraft = {customerId: null, values: {}, section: null, step: 1};
   visitLeftOpenFor = null;
@@ -7008,6 +7256,9 @@ async function finalizeVisitSend(){
   const customer = customers.find(c => c.id === customerId);
   if(customer){
     customer.lastServicedDate = todayDateStr();
+  // The report is finished and meant to stay, so a later cancel on a different
+  // visit must not reach back and delete it
+  visitSavedReadings = [];
     customer.lastServicedAt = new Date().toISOString();
     if(elapsedMs !== null) customer.lastServiceDurationMs = elapsedMs;
     await saveCustomers();
