@@ -4208,11 +4208,16 @@ function captureFromCamera(maxDim, quality){
     });
 
     function stop(){
-      // Turn the torch off before releasing the camera, or it can stay lit
+      // Turn the torch off before releasing the camera, or it can stay lit.
+      // applyConstraints returns a promise, so the try/catch around it caught
+      // nothing — on some Android devices it rejects with "setPhotoOptions
+      // failed" and surfaced as an unhandled error in front of the technician.
+      // The torch going out is best-effort; a failure here is not worth a word.
       try{
         const track = stream && stream.getVideoTracks()[0];
         if(track && track.getCapabilities && (track.getCapabilities() || {}).torch){
-          track.applyConstraints({advanced: [{torch: false}]});
+          const p = track.applyConstraints({advanced: [{torch: false}]});
+          if(p && typeof p.catch === 'function') p.catch(()=>{});
         }
       }catch(e){}
       if(stream) stream.getTracks().forEach(t => t.stop());
@@ -8425,27 +8430,48 @@ async function discardVisitInProgress(){
 // How many places back the app remembers. Past this, Back does nothing.
 const NAV_STACK_LIMIT = 5;
 
-// Keep one history entry sitting in front of the app at all times.
+// Guard entries that Chrome will actually honour.
 //
-// The old version counted entries in a variable and tried to hold a cushion of
-// eight. That count drifts from the browser's real history — a reload, a
-// restored tab, or a throttled pushState and it is wrong, and Back walks
-// straight out to the sign-in screen. Counting cannot be made reliable.
+// Chrome's history manipulation intervention marks any history entry added
+// WITHOUT a user gesture as skippable, and the hardware back button jumps
+// straight past it. Pushing a replacement inside the popstate handler is not a
+// gesture, so the guard was being ignored and the second Back press walked out
+// of the app to the sign-in screen.
 //
-// Instead: one guard entry, replaced the instant it is consumed. Back always
-// has something to eat, so it can never leave the app, however many times it
-// is pressed. When there is nowhere left to go it simply does nothing.
-function armBackButton(){
+// A user gesture clears that flag for every same-document entry, so the guard
+// has to be topped up during a real tap. That is what armBackButton does on
+// pointerdown. Note this cannot be tested with history.back(), which ignores
+// the intervention entirely — only the real button skips.
+const GUARD_TARGET = 3;      // survives a burst of presses between taps
+let guardDepth = 0;
+
+function pushGuardEntry(){
   try{
     history.pushState({poollog:true}, '');
+    guardDepth++;
     backGuardArmed = true;
+    return true;
   }catch(e){
-    // Throttled — try again shortly rather than leaving the app unguarded
-    setTimeout(()=>{
-      try{ history.pushState({poollog:true}, ''); backGuardArmed = true; }catch(e2){}
-    }, 250);
+    return false;
   }
 }
+
+function armBackButton(){
+  // Top up to the target. Called on every tap, so the count self-corrects
+  // even if it drifts from the browser's real history.
+  let tries = 0;
+  while(guardDepth < GUARD_TARGET && tries < GUARD_TARGET){
+    if(!pushGuardEntry()) break;
+    tries++;
+  }
+}
+
+// Every tap re-arms the guard, and the gesture also un-marks entries Chrome
+// had flagged as skippable. Capture phase, so it runs even where a handler
+// stops propagation.
+['pointerdown','touchstart','mousedown','keydown'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{ armBackButton(); }, true);
+});
 
 // Where the technician has actually been, so Back retraces their steps rather
 // than guessing. Each entry is a place in the app they can be returned to.
@@ -8499,9 +8525,11 @@ window.addEventListener('focus', ()=> armBackButton());
 window.addEventListener('pageshow', ()=> armBackButton());
 
 window.addEventListener('popstate', async ()=>{
-  // The guard entry was just consumed — put another one back immediately, and
-  // before anything else runs, so a burst of presses can never empty it.
-  armBackButton();
+  // One guard was just consumed. Replacing it here helps, but Chrome may mark
+  // that replacement skippable — the real protection is the top-up that
+  // happens on the technician's next tap.
+  guardDepth = Math.max(0, guardDepth - 1);
+  pushGuardEntry();
   navigatingBack = true;
   setTimeout(()=>{ navigatingBack = false; }, 0);
 
@@ -8622,6 +8650,12 @@ function heldSectionsFor(customerId){
 function sectionsAlreadyDoneToday(customer){
   const done = {};
   if(!customer) return done;
+
+  // A customer sent back for a redo starts from scratch. Their earlier reports
+  // still stand, but none of those bodies of water count as done for this
+  // visit — otherwise the redo ticks them off and the technician can only
+  // service whichever one happened to be left, and the report goes out short.
+  if(customer.pendingRedo) return done;
   const todayStr = todayDateStr();
   const sameDay = r => r && r.date && String(r.date).slice(0, 10) === todayStr;
   const firstToday = (key)=>{
