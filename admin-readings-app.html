@@ -565,7 +565,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitPoolBeforePhotoSection" style="display:none;">
       <div id="customPhotos_pool_before" style="display:none;"></div>
-      <h2>Before photos</h2>
+      <h2>Before Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBefore" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBefore" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
@@ -594,7 +594,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitPoolPhotoSection" style="display:none;">
       <div id="customPhotos_pool_after" style="display:none;"></div>
-      <h2>After photos</h2>
+      <h2>After Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="gatePhotoBlock" style="display:none;margin-bottom:16px;padding:14px;border:1.5px solid #E8B5A8;border-radius:11px;background:#FBEAE6;text-align:center;">
         <div style="font-size:14px;font-weight:700;color:#B8492E;margin-bottom:4px;">Closed gate photo required</div>
@@ -628,7 +628,7 @@ select#customerSelect{font-weight:600;}
     <!-- SPA SECTION -->
     <div class="card" id="visitSpaBeforePhotoSection" style="display:none;">
       <div id="customPhotos_spa_before" style="display:none;"></div>
-      <h2>Before photos</h2>
+      <h2>Before Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeSpa" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBeforeSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
@@ -641,7 +641,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitSpaSection" style="display:none;">
-      <h2>Today's spa strip</h2>
+      <h2>Chemical Readings</h2>
 
       <div id="spaChemFields"></div>
       <div id="spa_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
@@ -654,7 +654,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitSpaPhotoSection" style="display:none;">
       <div id="customPhotos_spa_after" style="display:none;"></div>
-      <h2>After photos</h2>
+      <h2>After Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapSpa" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewSpa" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
@@ -677,7 +677,7 @@ select#customerSelect{font-weight:600;}
     <!-- FOUNTAIN SECTION -->
     <div class="card" id="visitFountainBeforePhotoSection" style="display:none;">
       <div id="customPhotos_fountain_before" style="display:none;"></div>
-      <h2>Before photos</h2>
+      <h2>Before Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool before you start work.</p>
       <div id="photoPreviewWrapBeforeFountain" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewBeforeFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Before photo preview">
@@ -690,7 +690,7 @@ select#customerSelect{font-weight:600;}
     </div>
 
     <div class="card" id="visitFountainSection" style="display:none;">
-      <h2 id="visitFountainTitle">Fountain readings</h2>
+      <h2 id="visitFountainTitle">Chemical Readings</h2>
       <div id="fountainChemFields"></div>
       <div id="fountain_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
@@ -702,7 +702,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitFountainPhotoSection" style="display:none;">
       <div id="customPhotos_fountain_after" style="display:none;"></div>
-      <h2>After photos</h2>
+      <h2>After Photos</h2>
       <p class="voice-hint" style="margin:0 0 14px;">Take a photo of the pool now that the work is done.</p>
       <div id="photoPreviewWrapFountain" style="display:none;margin-bottom:12px;">
         <img id="photoPreviewFountain" style="max-width:100%;border-radius:10px;border:1px solid var(--line);display:block;" alt="Visit photo preview">
@@ -739,14 +739,8 @@ select#customerSelect{font-weight:600;}
       <div class="field"><label>Phone</label><input id="tcPhone" type="tel" placeholder="(555) 123-4567"></div>
 
       <div class="field">
-        <label>Photos required for this technician</label>
-        <p style="font-size:11.5px;color:var(--muted);margin:0 0 8px;">These apply on top of the app-wide settings. Leaving one off means this technician follows whatever Settings says.</p>
-        <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
-          <input type="checkbox" id="tcRequireBefore" style="margin:0;"> Require before photo
-        </label>
-        <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
-          <input type="checkbox" id="tcRequireAfter" style="margin:0;"> Require after photo
-        </label>
+        <label>Gate photo for this technician</label>
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 8px;">Before and after photo requirements are set per body of water on Readings and Dosages, not here. Leaving this off means the technician follows whatever Settings says.</p>
         <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
           <input type="checkbox" id="tcRequireGate" style="margin:0;"> Require gate photo
         </label>
@@ -2987,8 +2981,10 @@ function afterPhotoRequiredFor(type){
     : chemConfig[type];
   if(lists && typeof lists.requireAfterPhoto === 'boolean') return lists.requireAfterPhoto;
 
-  // Not set for this body of water — fall back to the wider settings
-  if(techRequires('requireAfterPhoto')) return true;
+  // Not set for this body of water — fall back to the app-wide setting.
+  // Per-technician before/after requirements were removed: having the same
+  // thing settable per body of water AND per technician was confusing, and the
+  // body of water is the one that actually matters.
   return appSettings.requireAfterPhotos === true;
 }
 
@@ -5373,47 +5369,10 @@ function openTechEditor(t){
   document.getElementById('tcName').value = t.name || '';
   document.getElementById('tcEmail').value = t.email || '';
   document.getElementById('tcPhone').value = t.phone || '';
-  document.getElementById('tcRequireBefore').checked = t.requireBeforePhoto === true;
-  document.getElementById('tcRequireAfter').checked = t.requireAfterPhoto === true;
   document.getElementById('tcRequireGate').checked = t.requireGatePhoto === true;
-  syncTechPhotoRequirements();
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
-// A requirement for a step that has been switched off in Settings can never be
-// met, so it must not be tickable. Turning the step back on makes it available
-// again without losing whatever was set before.
-function syncTechPhotoRequirements(){
-  const pairs = [
-    ['tcRequireBefore', appSettings.showBeforePhotos === false, 'Before photos'],
-    ['tcRequireAfter',  appSettings.showAfterPhotos === false,  'After photos']
-  ];
-  pairs.forEach(([id, off, label])=>{
-    const box = document.getElementById(id);
-    if(!box) return;
-    box.disabled = off;
-    const row = box.closest('label') || box.parentElement;
-    if(row){
-      row.style.opacity = off ? '0.45' : '';
-      row.style.cursor = off ? 'not-allowed' : 'pointer';
-      row.title = off
-        ? label + ' are switched off in Settings, so this cannot be required.'
-        : '';
-    }
-  });
-
-  const note = document.getElementById('tcPhotoRequireNote');
-  if(note){
-    const off = pairs.filter(p => p[1]).map(p => p[2]);
-    if(off.length){
-      note.textContent = off.join(' and ') + (off.length === 1 ? ' is' : ' are')
-        + ' switched off in Settings, so that requirement cannot be set.';
-      note.style.display = 'block';
-    } else {
-      note.style.display = 'none';
-    }
-  }
-}
 
 document.getElementById('btnSaveTech').addEventListener('click', ()=>{
   const name = document.getElementById('tcName').value.trim();
@@ -5423,8 +5382,6 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
     t.name = name;
     t.email = document.getElementById('tcEmail').value.trim();
     t.phone = document.getElementById('tcPhone').value.trim();
-    t.requireBeforePhoto = document.getElementById('tcRequireBefore').checked;
-    t.requireAfterPhoto = document.getElementById('tcRequireAfter').checked;
     t.requireGatePhoto = document.getElementById('tcRequireGate').checked;
     saveAdminTechnicians();
     showToast('Technician updated');
@@ -7082,6 +7039,7 @@ document.getElementById('reportReadingSelect').addEventListener('change', (e)=>{
 
 let currentReportText = '';
 let currentReportHtml = '';
+let currentReportPhotos = [];
 let currentVisitCustomerId = null;
 
 let visitTimerStart = null;
@@ -7252,7 +7210,6 @@ document.getElementById('settingTechniciansTab').addEventListener('change', (e)=
 document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
   appSettings.showAfterPhotos = e.target.checked;
   saveSettings();
-  syncTechPhotoRequirements();
   if(currentVisibleSection){
     currentVisitStep = 1;
     applyVisitStep({keepScroll: true});
@@ -7263,7 +7220,6 @@ document.getElementById('settingAfterPhotos').addEventListener('change', (e)=>{
 document.getElementById('settingBeforePhotos').addEventListener('change', (e)=>{
   appSettings.showBeforePhotos = e.target.checked;
   saveSettings();
-  syncTechPhotoRequirements();
   if(currentVisibleSection){
     currentVisitStep = 1;
     applyVisitStep({keepScroll: true});
@@ -7624,13 +7580,15 @@ function missingRequiredPhoto(){
   if(!showsAfterPhotoStep(type)) afterWhy = '';
   if(typeof lists.requireBeforePhoto === 'boolean'){
     beforeWhy = lists.requireBeforePhoto ? 'this list\u2019s own setting' : '';
-  } else if(techRequires('requireBeforePhoto')) beforeWhy = 'your technician profile';
-  else if(appSettings.requireBeforePhotos === true) beforeWhy = 'app-wide setting';
+  } else if(appSettings.requireBeforePhotos === true){
+    beforeWhy = 'app-wide setting';
+  }
 
   if(typeof lists.requireAfterPhoto === 'boolean'){
     afterWhy = lists.requireAfterPhoto ? 'this list\u2019s own setting' : '';
-  } else if(techRequires('requireAfterPhoto')) afterWhy = 'your technician profile';
-  else if(appSettings.requireAfterPhotos === true) afterWhy = 'app-wide setting';
+  } else if(appSettings.requireAfterPhotos === true){
+    afterWhy = 'app-wide setting';
+  }
 
   const beforeNeeded = !!beforeWhy;
   const afterNeeded = !!afterWhy;
@@ -7765,7 +7723,7 @@ function applyVisitStep(opts){
   if(!steps) return;
   document.querySelectorAll('[data-final-step-label]').forEach(btn=>{
     btn.textContent = appSettings.showAfterPhotos !== false
-      ? 'After photos \u2192'
+      ? 'After Photos \u2192'
       : finishBodyLabel();
   });
   steps.forEach((entry, i)=>{
@@ -7797,6 +7755,15 @@ function currentSectionId(){
   return currentVisibleSection;
 }
 
+
+// Body of water names read as proper nouns in a button — "Continue to Spa",
+// not "Continue to spa". A fountain's own name is left as the company typed it
+// beyond the first letter.
+function capitaliseFirst(s){
+  const t = String(s || '');
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
 function isLastBodyOfWater(){
   if(!pendingVisit) return true;
   const here = currentSectionId();
@@ -7826,7 +7793,7 @@ function nextBodyLabel(){
 function finishBodyLabel(){
   return isLastBodyOfWater()
     ? 'Submit service report'
-    : 'Continue to ' + nextBodyLabel() + ' \u2192';
+    : 'Continue to ' + capitaliseFirst(nextBodyLabel()) + ' \u2192';
 }
 
 function stepNextLabel(){
@@ -7839,10 +7806,10 @@ function stepNextLabel(){
     return finishBodyLabel();
   }
   const id = Array.isArray(nextEntry) ? nextEntry[0] : nextEntry;
-  if(id.indexOf('BeforePhotoSection') !== -1) return 'Before photos \u2192';
+  if(id.indexOf('BeforePhotoSection') !== -1) return 'Before Photos \u2192';
   if(id === 'visit' + cap + 'Section') return 'Chemical Readings \u2192';
   if(id.indexOf('ProductsSection') !== -1) return 'Chemicals Added \u2192';
-  if(id.indexOf('PhotoSection') !== -1) return 'After photos \u2192';
+  if(id.indexOf('PhotoSection') !== -1) return 'After Photos \u2192';
   return 'Next \u2192';
 }
 
@@ -8394,6 +8361,49 @@ function restoreFountainDraft(fountainId){
   if(draft && draft.__beforePhoto) fountainBeforePhotoController.setData(draft.__beforePhoto);
 }
 
+
+// Puts a finished body of water's readings back on screen. The values are held
+// in the package until the visit is submitted, so coming back to a completed
+// tab should show what was recorded rather than a blank form with the quick
+// buttons still lit.
+function restoreFinishedSection(type){
+  const cid = currentVisitCustomerId;
+  if(!cid) return false;
+  const pkg = loadVisitPackage(cid);
+  if(!pkg) return false;
+
+  const sectionId = type === 'fountain' ? currentVisitFountainId : type;
+  const reading = (pkg.sections || {})[sectionId];
+  if(!reading) return false;
+
+  const lists = listsForBody(cid, sectionId, type);
+  (lists.chemicals || []).forEach(item=>{
+    const el = document.getElementById(fieldId(type, 'chem', item.key));
+    if(el && reading[item.key] !== undefined) el.value = reading[item.key];
+  });
+  (lists.dosages || []).forEach(item=>{
+    const el = document.getElementById(fieldId(type, 'dose', item.key));
+    if(el && reading[item.key] !== undefined) el.value = reading[item.key];
+  });
+
+  const notesId = type === 'pool' ? 'inNotes'
+    : (type === 'spa' ? 'inSpaNotes' : 'inFountainNotes');
+  const notes = document.getElementById(notesId);
+  if(notes && reading.notes !== undefined) notes.value = reading.notes;
+
+  // Photos come back too — they are part of what was recorded
+  const after = type === 'pool' ? poolPhotoController
+    : (type === 'spa' ? spaPhotoController : fountainPhotoController);
+  if(after && reading.photo) after.setData(reading.photo);
+  const before = beforeControllerFor(type);
+  if(before && reading.beforePhoto) before.setData(reading.beforePhoto);
+  if(type === 'pool' && reading.gatePhoto && typeof gatePhotoController !== 'undefined'){
+    gatePhotoController.setData(reading.gatePhoto);
+  }
+
+  return true;
+}
+
 function showVisitSection(sectionId){
   // Preserve whatever's in progress before leaving the current section
   stashFountainDraft();
@@ -8437,7 +8447,9 @@ function showVisitSection(sectionId){
   } else {
     currentVisitFountainId = sectionId;
     const customer = customers.find(c => c.id === currentVisitCustomerId);
-    document.getElementById('visitFountainTitle').textContent = sectionLabel(customer, sectionId) + ' readings';
+    // Every body of water uses the same wording for this step; the fountain's
+    // own name is already shown on its tab above.
+    document.getElementById('visitFountainTitle').textContent = 'Chemical Readings';
     visitVoiceController.setTarget(buildVoiceFieldsForType('fountain'), function(){});
     currentVisibleSection = 'fountain';
     // renderAllConfigFields rebuilds EVERY section's inputs, not just this
@@ -8448,6 +8460,10 @@ function showVisitSection(sectionId){
     restoreVisitDraft(currentVisitCustomerId);
     restoreFountainDraft(sectionId);
   }
+  // If this body was already finished, put what was recorded back on screen.
+  // Done after the section is visible so the fields exist to write into.
+  restoreFinishedSection(currentVisibleSection);
+
   renderVisitSectionButtons();
   applyVisitStep();
 }
@@ -9328,6 +9344,78 @@ function buildReadingSection(reading, chemList, prodList){
           namedHtml, namedText};
 }
 
+
+// Every photo taken on this visit, in the order a customer would expect to see
+// them. EmailJS takes several attachments — each is its own Variable Attachment
+// in the template — so there is no reason to send only one.
+
+// Photos are stored as WebP because it is roughly a third smaller. Email is a
+// different problem: WebP is not always offered as an attachment content type
+// and some mail clients still will not preview it. So convert to JPEG on the
+// way out — storage stays small, the customer gets something that opens
+// anywhere.
+function webpToJpegDataUrl(dataUrl){
+  return new Promise((resolve)=>{
+    if(!dataUrl){ resolve(''); return; }
+    // Already a JPEG, nothing to do
+    if(dataUrl.indexOf('image/jpeg') !== -1){ resolve(dataUrl); return; }
+    try{
+      const img = new Image();
+      // If the image never decodes, neither onload nor onerror may fire — and
+      // an email that hangs forever is worse than one with an unconverted
+      // photo. Give up after a moment and send what we already have.
+      let settled = false;
+      const finish = (value)=>{ if(settled) return; settled = true; resolve(value); };
+      setTimeout(()=> finish(dataUrl), 4000);
+
+      img.onload = ()=>{
+        try{
+          const canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth || img.width;
+          canvas.height = img.naturalHeight || img.height;
+          const ctx = canvas.getContext('2d');
+          // JPEG has no transparency, so anything see-through would go black
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          finish(canvas.toDataURL('image/jpeg', 0.82));
+        }catch(e){ finish(dataUrl); }
+      };
+      // Conversion failed — send what we have rather than nothing
+      img.onerror = ()=> finish(dataUrl);
+      img.src = dataUrl;
+    }catch(e){ resolve(dataUrl); }
+  });
+}
+
+const MAX_REPORT_PHOTOS = 6;
+
+function collectReportPhotos(sections){
+  const out = [];
+  const add = (dataUrl, name)=>{
+    if(!dataUrl || out.length >= MAX_REPORT_PHOTOS) return;
+    // Held as-is here; converted to JPEG just before sending
+    out.push({name: name, source: dataUrl});
+  };
+
+  (sections || []).forEach(s=>{
+    const r = s.reading || {};
+    const label = String(s.label || 'photo').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    if(r.beforePhoto) add(r.beforePhoto, label + '-before.jpg');
+    if(r.photo) add(r.photo, label + '-after.jpg');
+    // Anything the company added themselves
+    Object.keys(r.customPhotos || {}).forEach(k=>{
+      add(r.customPhotos[k], label + '-' + String(k).replace(/[^a-z0-9]+/gi, '-') + '.jpg');
+    });
+  });
+
+  // The gate goes last — it is proof the property was left secure
+  const gate = (sections || []).map(s => (s.reading || {}).gatePhoto).find(Boolean);
+  if(gate) add(gate, 'gate.jpg');
+
+  return out;
+}
+
 async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId, fountainReadingRefs){
   fountainReadingRefs = fountainReadingRefs || [];
   const customer = customers.find(c=>c.id===customerId);
@@ -9445,6 +9533,8 @@ async function renderFullCombinedReport(customerId, poolReadingId, spaReadingId,
   // attachment via EmailJS) — prefer earliest section with a photo (pool, then spa, then fountains in order).
   const sectionWithPhoto = sections.find(s => s.reading.photo);
   const attachablePhoto = sectionWithPhoto ? sectionWithPhoto.reading.photo : '';
+  // Everything taken this visit, for the email
+  currentReportPhotos = collectReportPhotos(sections);
   const photoCount = sections.filter(s => s.reading.photo).length;
 
   document.getElementById('reportActions').style.display = 'flex';
@@ -9656,10 +9746,25 @@ async function sendViaEmailJS(customerId, type){
     message: currentReportHtml || currentReportText,
     message_text: currentReportText
   };
+  // The whole visit's photos, one Variable Attachment each. Strip the
+  // "data:image/webp;base64," prefix — EmailJS wants the raw base64 content.
+  // A template with fewer slots than this ignores the extras rather than
+  // failing, so adding slots is what turns each one on.
+  // All at once rather than one after another — six photos converted in
+  // sequence would keep the technician waiting for no reason.
+  const photos = currentReportPhotos || [];
+  const converted = await Promise.all(photos.map(p => webpToJpegDataUrl(p.source)));
+  converted.forEach((jpeg, idx)=>{
+    templateParams['photo_' + (idx + 1)] = String(jpeg).split(',')[1] || '';
+    templateParams['photo_' + (idx + 1) + '_name'] = photos[idx].name;
+  });
+  templateParams.photo_count = String((currentReportPhotos || []).length);
+
+  // Kept for templates still using the original single-attachment slot
   if(photo){
-    // Strip the "data:image/jpeg;base64," prefix — EmailJS wants the raw base64 content
     templateParams.photo_attachment = photo.split(',')[1] || '';
   }
+
 
   try{
     emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY });
@@ -10050,6 +10155,62 @@ if('serviceWorker' in navigator){
   });
 }
 
+
+
+// ---------- Show / hide a password ----------
+// Every password field gets an eye button. Typing a password blind on a phone,
+// in sunlight, with wet hands is how people end up locked out of their own app.
+function addPasswordReveal(input){
+  if(!input || input.dataset.revealAdded === '1') return;
+  input.dataset.revealAdded = '1';
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;display:block;';
+  input.parentNode.insertBefore(wrap, input);
+  wrap.appendChild(input);
+  input.style.paddingRight = '46px';
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Show password');
+  btn.title = 'Show password';
+  btn.style.cssText = 'position:absolute;right:6px;top:50%;transform:translateY(-50%);'
+    + 'width:34px;height:34px;padding:0;border:none;background:none;cursor:pointer;'
+    + 'display:flex;align-items:center;justify-content:center;color:var(--muted);';
+
+  // Drawn rather than a font glyph, so it looks the same on every device
+  const eyeOpen = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path>'
+    + '<circle cx="12" cy="12" r="3"></circle></svg>';
+  const eyeShut = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" '
+    + 'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M17.9 17.9A10.7 10.7 0 0 1 12 19c-7 0-11-7-11-7a19.6 19.6 0 0 1 5.1-5.9"></path>'
+    + '<path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 11 7 11 7a19.7 19.7 0 0 1-2.2 3.2"></path>'
+    + '<path d="M14.1 14.1a3 3 0 1 1-4.2-4.2"></path>'
+    + '<line x1="2" y1="2" x2="22" y2="22"></line></svg>';
+
+  btn.innerHTML = eyeOpen;
+  btn.addEventListener('click', ()=>{
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    btn.innerHTML = showing ? eyeOpen : eyeShut;
+    const label = showing ? 'Show password' : 'Hide password';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    input.focus();
+  });
+
+  wrap.appendChild(btn);
+}
+
+// Catches every password field in the page, including any added later
+function addPasswordReveals(){
+  document.querySelectorAll('input[type="password"]').forEach(addPasswordReveal);
+}
+
+document.addEventListener('DOMContentLoaded', addPasswordReveals);
+addPasswordReveals();
 
 </script>
 </body>
