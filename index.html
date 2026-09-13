@@ -129,15 +129,13 @@ input:focus{
 
   <button class="btn btn-primary" id="btnLogin">Sign in</button>
 
-  <!-- DEV SHORTCUTS — remove this whole block before real use -->
-  <div class="devbar" id="devBar">
-    <p>Dev shortcuts — remove before launch</p>
+  <!-- The office site is where customers, routes and settings are managed.
+       It is shown because a technician signing in here needs somewhere to go
+       to set the company up; it is not a shortcut past the sign-in. -->
+  <div class="devbar" id="officeBar">
+    <p>Setting up, or managing customers?</p>
     <div class="row">
-      <button class="btn btn-ghost" id="btnDevTech">Technician app</button>
-      <button class="btn btn-ghost" id="btnDevAdmin">Admin app</button>
-    </div>
-    <div class="row" style="margin-top:8px;">
-      <button class="btn btn-ghost" id="btnDevSite">Website (customers)</button>
+      <button class="btn btn-ghost" id="btnOfficeSite">Open the office site</button>
     </div>
   </div>
 </div>
@@ -152,6 +150,23 @@ function lsSet(key, value){
   try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); }
   catch(e){}
 }
+
+
+// ---------- Beta tester accounts ----------
+// No server yet, so accounts travel with the build. Created only on a device
+// that has none; a device with its own list is left alone. Remove before any
+// real launch.
+const BETA_ACCOUNTS = [
+  {id: 'beta_owner', name: 'Owner', username: 'poollog', password: 'letmein', requireAfterPhoto: true}
+];
+
+(function seedBetaAccounts(){
+  try{
+    const existing = lsGet('technicians');
+    if(Array.isArray(existing) && existing.length) return;
+    lsSet('technicians', BETA_ACCOUNTS.map(a => Object.assign({}, a)));
+  }catch(e){}
+})();
 
 function showError(msg){
   const el = document.getElementById('loginError');
@@ -210,14 +225,7 @@ document.getElementById('loginUsername').addEventListener('keydown', (e)=>{
   if(tech) goTo(routeFor(tech));
 })();
 
-// ---- DEV SHORTCUTS — remove this block before real use ----
-document.getElementById('btnDevTech').addEventListener('click', ()=>{
-  goTo('./technician-app.html?dev=1');
-});
-document.getElementById('btnDevAdmin').addEventListener('click', ()=>{
-  goTo('./admin-readings-app.html?dev=1');
-});
-document.getElementById('btnDevSite').addEventListener('click', ()=>{
+document.getElementById('btnOfficeSite').addEventListener('click', ()=>{
   goTo('./customer-intake.html');
 });
 </script>
