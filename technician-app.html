@@ -435,7 +435,6 @@ select#customerSelect{font-weight:600;}
     <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
     <p id="loginError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
     <button class="btn btn-primary" id="btnLogin" style="width:100%;">Sign in</button>
-    <button class="btn btn-ghost" id="btnDevSkip" style="width:100%;margin-top:8px;font-size:12.5px;">Skip sign-in (dev)</button>
   </div>
 </div>
 
@@ -467,23 +466,26 @@ select#customerSelect{font-weight:600;}
   <!-- HOME VIEW -->
   <div class="view active" id="view-home">
     <div class="card" id="homeHeaderCard">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-        <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;flex:1;">
-          <h2 style="margin:0;" id="homeDayHeading">Today</h2>
-          <span style="margin-left:auto;display:inline-flex;align-items:baseline;gap:6px;">
-            <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
-            <span id="homeStopLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
-          </span>
-          <span style="display:inline-flex;align-items:baseline;gap:6px;">
-            <span id="homeJobCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);"></span>
-            <span id="homeJobLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
-          </span>
-        </div>
+      <!-- Day and the reverse button on one line, the counts on their own line
+           underneath. They used to share a line with the heading, which left
+           the button competing with them for the right-hand edge. -->
+      <div style="display:flex;align-items:center;gap:12px;">
+        <h2 style="margin:0;" id="homeDayHeading">Today</h2>
         <button class="btn btn-ghost" id="btnReverseRoute" type="button"
           style="width:auto;margin-left:auto;flex:0 0 auto;padding:7px 12px;font-size:12.5px;white-space:nowrap;">Reverse route order</button>
         <span id="voiceModeIndicator" style="display:none;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
           <span id="voiceModeText">Voice entry off</span>
+        </span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:6px;">
+        <span style="display:inline-flex;align-items:baseline;gap:6px;">
+          <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
+          <span id="homeStopLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
+        </span>
+        <span style="display:inline-flex;align-items:baseline;gap:6px;">
+          <span id="homeJobCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--gold);"></span>
+          <span id="homeJobLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
         </span>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin:10px 0 14px;">
@@ -6987,7 +6989,8 @@ const NAV_STACK_LIMIT = 5;
 // has to be topped up during a real tap. That is what armBackButton does on
 // pointerdown. Note this cannot be tested with history.back(), which ignores
 // the intervention entirely — only the real button skips.
-const GUARD_TARGET = 3;      // survives a burst of presses between taps
+const GUARD_TARGET = 8;      // presses with no tap in between still have
+                             // somewhere to land
 let guardDepth = 0;
 
 function pushGuardEntry(){
@@ -7001,9 +7004,10 @@ function pushGuardEntry(){
   }
 }
 
+// Only ever called from a real user gesture. That matters: Chrome marks any
+// history entry pushed WITHOUT a gesture as skippable and the back button
+// jumps straight past it, so a guard pushed from anywhere else is imaginary.
 function armBackButton(){
-  // Top up to the target. Called on every tap, so the count self-corrects
-  // even if it drifts from the browser's real history.
   let tries = 0;
   while(guardDepth < GUARD_TARGET && tries < GUARD_TARGET){
     if(!pushGuardEntry()) break;
@@ -7070,11 +7074,12 @@ window.addEventListener('focus', ()=> armBackButton());
 window.addEventListener('pageshow', ()=> armBackButton());
 
 window.addEventListener('popstate', async ()=>{
-  // One guard was just consumed. Replacing it here helps, but Chrome may mark
-  // that replacement skippable — the real protection is the top-up that
-  // happens on the technician's next tap.
+  // One guard was just consumed. Do NOT push a replacement here: this is not a
+  // user gesture, so Chrome would mark the new entry skippable and jump past it
+  // on the next press — while guardDepth counted it as real. That mismatch is
+  // exactly why the second press kept escaping to the sign-in screen. Just
+  // count the loss honestly; the next tap tops the guard back up.
   guardDepth = Math.max(0, guardDepth - 1);
-  pushGuardEntry();
   navigatingBack = true;
   setTimeout(()=>{ navigatingBack = false; }, 0);
 
@@ -7931,13 +7936,20 @@ function emailBrand(){
 }
 
 function emailContactLine(){
+  // Mail clients turn anything that looks like a phone number, email address or
+  // web address into a blue underlined link, which is unreadable against the
+  // dark header. Wrapping each piece in its own styled span, and declaring the
+  // colour on every level, keeps them plain white text.
+  const plain = (text)=>
+    '<span style="color:#4A5A58;text-decoration:none;">' + esc(text) + '</span>';
+
   const bits = [];
   const phone = lsGet('accountPhone');
   const mail  = lsGet('accountEmail');
   const site  = lsGet('businessWebsite');
-  if(phone) bits.push(esc(phone));
-  if(mail)  bits.push(esc(mail));
-  if(site)  bits.push(esc(site));
+  if(phone) bits.push(plain(phone));
+  if(mail)  bits.push(plain(mail));
+  if(site)  bits.push(plain(site));
   return bits.join(' &nbsp;&middot;&nbsp; ');
 }
 
@@ -7985,7 +7997,17 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
 
   const contact = b.showContact ? emailContactLine() : '';
 
-  return '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#F4F6F5;">'
+  // A head, purely to stop mail clients turning the contact line into blue
+  // underlined links. format-detection asks them not to; the style block
+  // catches Apple Mail and Gmail, which link anyway and then restyle it.
+  return '<!DOCTYPE html><html><head>'
+    + '<meta charset="utf-8">'
+    + '<meta name="format-detection" content="telephone=no,address=no,email=no,date=no">'
+    + '<style>a[href^="tel"],a[href^="mailto"],a[href^="http"],a[x-apple-data-detectors]{'
+    + 'color:inherit !important;text-decoration:none !important;'
+    + 'font-size:inherit !important;font-family:inherit !important;'
+    + 'font-weight:inherit !important;}</style>'
+    + '</head><body style="margin:0;padding:0;background:#F4F6F5;">'
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
     + 'style="background:#F4F6F5;padding:24px 12px;">'
     + '<tr><td align="center">'
@@ -7996,8 +8018,6 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
     // Header
     + '<tr><td style="background:' + esc(b.colour) + ';padding:22px 26px;">'
     + '<div style="font-size:19px;font-weight:700;color:#FFFFFF;">' + esc(company) + '</div>'
-    + (contact ? '<div style="font-size:12.5px;color:rgba(255,255,255,0.85);margin-top:5px;">'
-        + contact + '</div>' : '')
     + '</td></tr>'
 
     // Who and when
@@ -8005,9 +8025,11 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
     + (b.greeting ? '<div style="font-size:14.5px;color:#4A5A58;margin-bottom:16px;">'
         + esc(b.greeting) + '</div>' : '')
     // Who actually did the work, above the customer's name
+    // Say what the name is. On its own above the customer's name it read as
+    // though it might be a second customer, or the company, or nothing at all.
     + (o.technician ? '<div style="font-size:12px;font-weight:700;color:#0F766E;'
         + 'text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px;">'
-        + esc(o.technician) + '</div>' : '')
+        + 'Technician: ' + esc(o.technician) + '</div>' : '')
     + '<div style="font-size:17px;font-weight:700;color:#16302E;">'
     + esc(customer.name) + '</div>'
     + (customer.address ? '<div style="font-size:13.5px;color:#6B7B79;margin-top:3px;">'
@@ -8029,6 +8051,11 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
         + 'border-top:1px solid #E6E9E8;">' + esc(b.signoff) + '</div>' : '')
     + '<div style="font-size:13.5px;font-weight:600;color:#16302E;margin-top:10px;">'
     + esc(company) + '</div>'
+    // Phone, email and website sit here rather than in the header — they are
+    // how a customer replies, which is what they want at the end, and on a
+    // light background they read properly.
+    + (contact ? '<div style="font-size:12.5px;color:#4A5A58;margin-top:4px;">'
+        + contact + '</div>' : '')
     + (lsGet('licenseNumber') ? '<div style="font-size:11.5px;color:#8A9997;margin-top:3px;">'
         + 'License ' + esc(lsGet('licenseNumber')) + '</div>' : '')
     + '</td></tr>'
@@ -8268,7 +8295,6 @@ function hideLogin(){
 function attachLoginHandlers(afterLogin){
   const btn = document.getElementById('btnLogin');
   const pass = document.getElementById('loginPassword');
-  const skip = document.getElementById('btnDevSkip');
 
   function attempt(){
     const u = document.getElementById('loginUsername').value.trim().toLowerCase();
@@ -8276,7 +8302,7 @@ function attachLoginHandlers(afterLogin){
     const err = document.getElementById('loginError');
     const techs = lsGet('technicians') || [];
     if(techs.length === 0){
-      err.textContent = 'No accounts set up yet — add technicians on the website first, or use Skip sign-in.';
+      err.textContent = 'No accounts set up yet — add technicians on the website first.';
       err.style.display = 'block';
       return;
     }
@@ -8294,13 +8320,6 @@ function attachLoginHandlers(afterLogin){
 
   if(btn) btn.addEventListener('click', attempt);
   if(pass) pass.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') attempt(); });
-  if(skip) skip.addEventListener('click', ()=>{
-    const techs = lsGet('technicians') || [];
-    const who = techs[0] || null;
-    // Remember it, so reopening the app doesn't drop back to the login screen
-    if(who) lsSet('session', {techId: who.id});
-    afterLogin(who);
-  });
 }
 
 function logout(){
@@ -8319,8 +8338,6 @@ async function init(){
   document.getElementById('settingWaterBalance').checked = appSettings.showWaterBalance === true;
   updateVoiceModeIndicator();
 
-  // DEV BYPASS — ?dev=1 skips sign-in. Remove before real use.
-  const devMode = new URLSearchParams(window.location.search).get('dev') === '1';
   const session = loadSession();
 
   function enter(user){
@@ -8333,7 +8350,7 @@ async function init(){
 
   attachLoginHandlers(enter);
 
-  if(devMode || session){
+  if(session){
     const techs = lsGet('technicians') || [];
     enter(session || techs.find(t => !t.isAdmin) || techs[0] || null);
   } else {

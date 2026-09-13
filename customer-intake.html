@@ -1296,7 +1296,7 @@ input::placeholder{color:#A9BCB9;}
       <div class="btn-row" style="margin-top:12px;">
         <button class="btn btn-ghost" id="btnFreeSpace" style="width:auto;">Clear old photos</button>
         <button class="btn btn-ghost" id="btnClearAllPhotos" style="width:auto;color:var(--rust);border-color:#EFC9BC;">Clear service report photos</button>
-        <button class="btn btn-secondary" id="btnMovePhotos" style="width:auto;">Move photos to database</button>
+        
       
       <div id="storageBreakdown" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;"></div>
       <div id="photoRetentionNotice" style="display:none;margin-top:14px;padding:12px 14px;border-radius:10px;font-size:12.5px;line-height:1.5;"></div>
@@ -10226,27 +10226,6 @@ document.getElementById('settingStorePhotos').addEventListener('change', (e)=>{
 });
 
 
-document.getElementById('btnMovePhotos').addEventListener('click', async ()=>{
-  const before = storageUsage();
-  showToast('Moving photos…');
-  const r = await migrateEquipmentPhotos({force: true});
-  renderStorageMeter();
-
-  if(!r || r.found === 0){
-    showToast('No equipment photos are held in browser storage');
-    return;
-  }
-  if(r.failed){
-    await confirmDialog(
-      'Moved ' + r.moved + ' of ' + r.found + ' photos. ' + r.failed + ' could not be moved.\n\n'
-      + (r.lastError || 'The browser refused the database.')
-      + '\n\nThis usually means private browsing is on, or the browser is blocking storage for this site.',
-      'OK');
-    return;
-  }
-  const freed = Math.max(0, (before - storageUsage()) / (1024 * 1024)).toFixed(2);
-  showToast('Moved ' + r.moved + ' photos — freed ' + freed + ' MB');
-});
 
 
 
