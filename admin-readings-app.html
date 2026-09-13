@@ -489,7 +489,7 @@ select#customerSelect{font-weight:600;}
           </span>
         </div>
         <button class="btn btn-ghost" id="btnReverseRoute" type="button"
-          style="width:auto;margin-top:10px;padding:7px 12px;font-size:12.5px;">Reverse route order</button>
+          style="width:auto;margin-left:auto;flex:0 0 auto;padding:7px 12px;font-size:12.5px;white-space:nowrap;">Reverse route order</button>
         <span id="voiceModeIndicator" style="display:none;">
           <span id="voiceModeDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;flex-shrink:0;"></span>
           <span id="voiceModeText">Voice entry off</span>
@@ -9724,7 +9724,6 @@ async function sendViaEmailJS(customerId, type){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
   const custName = actions.dataset.customerName;
-  const photo = actions.dataset.photo;
 
   const templateParams = {
     to_email: email,
@@ -9746,10 +9745,9 @@ async function sendViaEmailJS(customerId, type){
   });
   templateParams.photo_count = String((currentReportPhotos || []).length);
 
-  // Kept for templates still using the original single-attachment slot
-  if(photo){
-    templateParams.photo_attachment = photo.split(',')[1] || '';
-  }
+  // The original single-attachment slot is deliberately NOT sent. Keeping it
+  // alongside the numbered ones meant the first photo went twice — once as
+  // "visit photo" from the old slot and once under its real name.
 
 
   try{
