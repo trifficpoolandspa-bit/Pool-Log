@@ -5525,6 +5525,10 @@ function siteLogout(){
   const p = document.getElementById('sitePassword');
   if(u) u.value = '';
   if(p) p.value = '';
+  // Back to the customer list behind the sign-in screen. Otherwise signing
+  // back in drops you wherever you happened to be when you signed out —
+  // usually the Account page, since that is where the sign-out button is.
+  try{ switchView('customers'); }catch(e){}
   showSiteLogin();
 }
 
@@ -5549,6 +5553,7 @@ function attemptSiteLogin(){
   lsSet('ownerSession', true);
   siteUser = owner;
   document.getElementById('sitePassword').value = '';
+  try{ switchView('customers'); }catch(e){}
   hideSiteLogin();
 }
 
