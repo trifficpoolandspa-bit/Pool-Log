@@ -2399,6 +2399,31 @@ function lsSet(key, value){
   }
 }
 
+// ---------- Beta tester accounts ----------
+// There is no server yet, so accounts cannot be pushed to anyone's device.
+// Instead each beta build carries the accounts for the people testing it: the
+// first time the app opens on a device with no technicians set up, these are
+// created. After that the device's own list wins and this is ignored, so a
+// tester who renames themselves or adds staff keeps those changes.
+//
+// To add or change a tester: edit this list, commit, and tell them to reload.
+// Remove the whole block before any real launch — passwords in a public file
+// are fine for four known testers and nothing beyond that.
+const BETA_ACCOUNTS = [
+  {id: 'beta_owner', name: 'Owner', username: 'poollog', password: 'letmein', requireAfterPhoto: true}
+];
+
+(function seedBetaAccounts(){
+  try{
+    if(!Array.isArray(BETA_ACCOUNTS) || !BETA_ACCOUNTS.length) return;
+    const existing = lsGet('technicians');
+    // Only ever on a fresh device. Never overwrite a real list.
+    if(Array.isArray(existing) && existing.length) return;
+    lsSet('technicians', BETA_ACCOUNTS.map(a => Object.assign({}, a)));
+  }catch(e){}
+})();
+
+
 // How close storage is to full, so it can be shown before it becomes a problem
 function storageUsage(){
   let bytes = 0;

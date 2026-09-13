@@ -1172,6 +1172,32 @@ input::placeholder{color:#A9BCB9;}
       <div id="acctPlanNote" style="margin-top:16px;padding:12px 14px;border-radius:10px;
         background:var(--surface-alt);border:1px solid var(--line);font-size:12.5px;
         color:var(--muted);line-height:1.55;"></div>
+
+      <!-- Sign-in details. The starter account that comes with the app is the
+           same for everyone, so the first thing anyone should do is change it
+           to something of their own. -->
+      <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--line);">
+        <h2 style="margin:0 0 4px;">Your sign-in</h2>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">What you type on the sign-in screen of the technician and admin apps. Change these from the ones you were given.</p>
+
+        <div class="field">
+          <label>Username</label>
+          <input id="acctUsername" autocomplete="username" placeholder="Choose a username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input id="acctPassword" type="password" autocomplete="new-password" placeholder="Choose a password">
+        </div>
+        <div class="field">
+          <label>Your name</label>
+          <input id="acctDisplayName" placeholder="The name that appears on reports">
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnSaveSignIn" style="width:auto;">Save sign-in details</button>
+        </div>
+        <p id="acctSignInNote" style="font-size:12.5px;margin:10px 0 0;display:none;"></p>
+      </div>
     </div>
 
     <div class="card acct-panel" id="acctEmailPanel" style="display:none;">
@@ -1837,6 +1863,31 @@ function lsSet(key, value){
     return false;
   }
 }
+
+// ---------- Beta tester accounts ----------
+// There is no server yet, so accounts cannot be pushed to anyone's device.
+// Instead each beta build carries the accounts for the people testing it: the
+// first time the app opens on a device with no technicians set up, these are
+// created. After that the device's own list wins and this is ignored, so a
+// tester who renames themselves or adds staff keeps those changes.
+//
+// To add or change a tester: edit this list, commit, and tell them to reload.
+// Remove the whole block before any real launch — passwords in a public file
+// are fine for four known testers and nothing beyond that.
+const BETA_ACCOUNTS = [
+  {id: 'beta_owner', name: 'Owner', username: 'poollog', password: 'letmein', requireAfterPhoto: true}
+];
+
+(function seedBetaAccounts(){
+  try{
+    if(!Array.isArray(BETA_ACCOUNTS) || !BETA_ACCOUNTS.length) return;
+    const existing = lsGet('technicians');
+    // Only ever on a fresh device. Never overwrite a real list.
+    if(Array.isArray(existing) && existing.length) return;
+    lsSet('technicians', BETA_ACCOUNTS.map(a => Object.assign({}, a)));
+  }catch(e){}
+})();
+
 
 // How close storage is to full, so it can be shown before it becomes a problem
 function storageUsage(){
@@ -5443,7 +5494,77 @@ function renderAccountButton(){
   }
 }
 
+
+// ---------- Your own sign-in ----------
+// Everyone starts on the same account that ships with the app, so the point of
+// this is to replace it with something only they know. It edits the account
+// itself, which is what the sign-in screen checks, so the change takes effect
+// the moment it is saved.
+// Works on the page's own technicians array, not a fresh copy from storage.
+// The page re-saves that array whenever the technician list is touched, so
+// editing a detached copy looked like it worked and was then overwritten.
+function signInAccount(){
+  const list = (typeof technicians !== 'undefined' && Array.isArray(technicians))
+    ? technicians : [];
+  if(!list.length) return null;
+  const session = lsGet('session');
+  if(session && session.techId){
+    const mine = list.find(t => t.id === session.techId);
+    if(mine) return mine;
+  }
+  return list[0];
+}
+
+function renderSignInFields(){
+  const who = signInAccount();
+  const u = document.getElementById('acctUsername');
+  const p = document.getElementById('acctPassword');
+  const n = document.getElementById('acctDisplayName');
+  if(!u || !p || !n) return;
+  u.value = who ? (who.username || '') : '';
+  p.value = who ? (who.password || '') : '';
+  n.value = who ? (who.name || '') : '';
+}
+
+function saveSignInDetails(){
+  const note = document.getElementById('acctSignInNote');
+  const say = (msg, ok)=>{
+    if(!note) return;
+    note.textContent = msg;
+    note.style.color = ok ? 'var(--teal-deep)' : 'var(--rust)';
+    note.style.display = 'block';
+  };
+
+  const username = document.getElementById('acctUsername').value.trim();
+  const password = document.getElementById('acctPassword').value;
+  const name = document.getElementById('acctDisplayName').value.trim();
+
+  if(!username){ say('Enter a username.', false); return; }
+  if(!password){ say('Enter a password.', false); return; }
+  if(!name){ say('Enter the name that should appear on reports.', false); return; }
+
+  const who = signInAccount();
+  if(!who){ say('No account to change.', false); return; }
+
+  // Somebody else already using that username would lock one of them out
+  const clash = technicians.find(t => t.id !== who.id
+    && (t.username || '').toLowerCase() === username.toLowerCase());
+  if(clash){ say('Somebody else is already using that username.', false); return; }
+
+  who.username = username;
+  who.password = password;
+  who.name = name;
+  saveTechnicians();
+
+  // Anyone signed in on this device stays signed in — the account is the same
+  // one, it just answers to a different username now.
+  say('Saved. Use these next time you sign in.', true);
+  if(typeof renderTechnicianList === 'function') renderTechnicianList();
+  if(typeof populateTechnicianSelect === 'function') populateTechnicianSelect();
+}
+
 function renderAccountPlan(){
+  renderSignInFields();
   const box = document.getElementById('acctPlanSummary');
   const note = document.getElementById('acctPlanNote');
   if(!box) return;
@@ -13770,6 +13891,8 @@ function addPasswordReveals(){
 document.addEventListener('DOMContentLoaded', addPasswordReveals);
 addPasswordReveals();
 
+
+document.getElementById('btnSaveSignIn').addEventListener('click', saveSignInDetails);
 </script>
 </body>
 </html>
