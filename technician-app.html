@@ -478,7 +478,7 @@ select#customerSelect{font-weight:600;}
           <span id="voiceModeText">Voice entry off</span>
         </span>
       </div>
-      <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-top:6px;">
+      <div style="display:flex;align-items:baseline;justify-content:center;gap:14px;flex-wrap:wrap;margin-top:6px;">
         <span style="display:inline-flex;align-items:baseline;gap:6px;">
           <span id="homeStopCount" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;color:var(--teal-deep);"></span>
           <span id="homeStopLabel" style="font-size:11.5px;font-weight:600;color:var(--muted);"></span>
@@ -562,6 +562,9 @@ select#customerSelect{font-weight:600;}
       <!-- Filter backwash / salt cell sit here rather than by the submit
            button: the dosages fill themselves in, so that step gets skipped
            past, but the readings are typed one by one. -->
+      <div class="btn-row" id="poolSkipRow" style="margin-bottom:12px;">
+        <button class="btn btn-ghost" id="btnPoolSkip" type="button" style="width:auto;">Skip this pool</button>
+      </div>
       <div id="poolServiceChecks" style="display:none;margin-bottom:14px;"></div>
       <div id="poolChemFields"></div>
       <div id="pool_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
@@ -622,6 +625,9 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitSpaSection" style="display:none;">
       <h2>Chemical Readings</h2>
+      <div class="btn-row" id="spaSkipRow" style="margin-bottom:12px;">
+        <button class="btn btn-ghost" id="btnSpaSkip" type="button" style="width:auto;">Skip this spa</button>
+      </div>
       <div id="spaChemFields"></div>
       <div id="spa_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
@@ -670,6 +676,9 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitFountainSection" style="display:none;">
       <h2 id="visitFountainTitle">Chemical Readings</h2>
+      <div class="btn-row" id="fountainSkipRow" style="margin-bottom:12px;">
+        <button class="btn btn-ghost" id="btnFountainSkip" type="button" style="width:auto;">Skip this fountain</button>
+      </div>
       <div id="fountainChemFields"></div>
       <div id="fountain_waterBalance" style="display:none;margin:10px 0 0;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-alt);"></div>
     </div>
@@ -3271,27 +3280,51 @@ function openPhotoFullSize(dataUrl){
   const overlay = document.createElement('div');
   overlay.className = 'confirm-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(8,20,19,0.92);'
-    + 'display:flex;align-items:center;justify-content:center;padding:16px;cursor:zoom-out;';
+    + 'display:flex;flex-direction:column;cursor:zoom-out;';
 
   const img = document.createElement('img');
   img.src = dataUrl;
   img.alt = 'Photo';
-  img.style.cssText = 'max-width:100%;max-height:88vh;object-fit:contain;'
-    + 'border-radius:10px;display:block;';
+  img.style.cssText = 'flex:1;width:100%;min-height:0;object-fit:contain;padding:16px;'
+    + 'box-sizing:border-box;display:block;';
   overlay.appendChild(img);
 
-  const hint = document.createElement('div');
-  hint.textContent = 'Tap anywhere to close';
-  hint.style.cssText = 'position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));'
-    + "text-align:center;color:rgba(255,255,255,0.75);font-size:12.5px;"
-    + "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;pointer-events:none;";
-  overlay.appendChild(hint);
+  // No button. The whole overlay closes on a tap, so the only thing needed is
+  // to say so clearly — at a size that is actually noticed against a
+  // full-screen photo.
+  const bar = document.createElement('div');
+  bar.style.cssText = 'flex:0 0 auto;padding:20px calc(20px + env(safe-area-inset-bottom));'
+    + 'text-align:center;background:#000;';
 
-  const close = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); };
+  const hint = document.createElement('div');
+  hint.textContent = 'Tap the photo to close';
+  hint.style.cssText = 'color:#fff;font-size:17px;font-weight:600;letter-spacing:0.01em;'
+    + "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;pointer-events:none;";
+  bar.appendChild(hint);
+
+  overlay.appendChild(bar);
+
+  let closed = false;
+  const close = ()=>{
+    if(closed) return;
+    closed = true;
+    photoViewerOpen = false;
+    if(overlay.parentNode) document.body.removeChild(overlay);
+  };
+
   overlay.addEventListener('click', close);
+
+  // The phone's own Back must close this, not fall through to the visit — where
+  // it was reaching the "cancel this report" prompt and losing the whole visit.
+  photoViewerOpen = true;
+  closePhotoViewer = close;
 
   document.body.appendChild(overlay);
 }
+
+// Set while a photo is open full size, so the Back handler deals with it first
+let photoViewerOpen = false;
+let closePhotoViewer = null;
 
 function makePhotoController(ids){
   let currentDataUrl = null;
@@ -4233,6 +4266,7 @@ function renderHomeList(){
     row.className = 'cust-row';
     row.style.flexWrap = 'nowrap';
     row.innerHTML = `<div style="display:flex;align-items:center;min-width:0;flex:1 1 auto;">
+        <div style="flex-shrink:0;width:26px;text-align:center;margin-right:8px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--muted);">${idx + 1}</div>
         <div style="min-width:0;flex:1 1 auto;"><div class="cust-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.name}${filterCleanIds.has(c.id) ? ' <span style="background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;vertical-align:middle;margin-left:6px;">FILTER CLEAN</span>' : ''}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div>${workOrderIds.has(c.id) ? '<div style="display:flex;align-items:center;gap:6px;margin-top:5px;min-width:0;"><span style="flex-shrink:0;background:var(--teal-mid);color:#fff;font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:5px;">JOB</span><span style="font-size:12.5px;font-weight:600;color:var(--teal-deep);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + workOrderTitles[c.id] + '</span></div>' : ''}</div>
       </div>`;
 
@@ -7108,6 +7142,13 @@ window.addEventListener('popstate', async ()=>{
   navigatingBack = true;
   setTimeout(()=>{ navigatingBack = false; }, 0);
 
+  // A photo open full size closes first. Falling through to the visit meant
+  // Back reached the cancel-this-report prompt and threw the visit away.
+  if(photoViewerOpen && typeof closePhotoViewer === 'function'){
+    closePhotoViewer();
+    return;
+  }
+
   if(currentViewName === 'visit'){
     if(currentVisitStep > 1){
       goToVisitStep(currentVisitStep - 1);
@@ -7358,6 +7399,41 @@ async function openVisit(customerId){
   if(appSettings.voiceModeEnabled){
     visitVoiceController.startListening();
   }
+}
+
+
+// ---------- Skipping a body of water ----------
+// A spa drained for repairs, a fountain switched off for winter. The visit
+// should carry on to the rest of the property rather than forcing a reading
+// that is not there. Nothing is recorded for a skipped body — it simply does
+// not appear in the report.
+async function skipBodyOfWater(type){
+  if(!pendingVisit || !currentVisitCustomerId) return;
+
+  const sectionId = type === 'fountain' ? currentVisitFountainId : type;
+  if(!sectionId) return;
+
+  const label = type === 'fountain'
+    ? (sectionLabel(customers.find(c => c.id === currentVisitCustomerId), sectionId) || 'fountain')
+    : type;
+
+  const ok = await confirmDialog(
+    'Skip the ' + label + ' on this visit?\n\n'
+    + 'No readings or photos will be recorded for it, and it will not appear on '
+    + 'the service report.', 'Skip it');
+  if(!ok) return;
+
+  // Anything already typed for this body goes, so a half-filled reading cannot
+  // be committed later by accident
+  const pkg = loadVisitPackage(currentVisitCustomerId);
+  if(pkg && pkg.sections && pkg.sections[sectionId]){
+    delete pkg.sections[sectionId];
+    saveVisitPackage(currentVisitCustomerId, pkg);
+  }
+
+  // Marked done so the visit moves on; no reading id, so nothing is committed
+  markSectionDone(sectionId, 'skipped');
+  showToast(label.charAt(0).toUpperCase() + label.slice(1) + ' skipped');
 }
 
 function markSectionDone(sectionId, readingId){
@@ -8514,6 +8590,82 @@ function addPasswordReveals(){
 document.addEventListener('DOMContentLoaded', addPasswordReveals);
 addPasswordReveals();
 
+
+// ---------- Phone number formatting ----------
+// Typed digits become (623) 555-0142 as they go in. Nobody wants to type
+// brackets on a phone keypad, and a list where every number is punctuated
+// differently is harder to scan.
+function formatPhoneNumber(raw){
+  const s = String(raw == null ? '' : raw);
+
+  // A number written for somewhere else — a +country code, an extension — is
+  // left exactly as typed rather than mangled into a US shape.
+  if(/[+a-zA-Z]/.test(s)) return s;
+
+  const digits = s.replace(/\D/g, '');
+
+  // 11 digits starting with 1 is the same number with a country code
+  const d = (digits.length === 11 && digits.charAt(0) === '1')
+    ? digits.slice(1) : digits;
+
+  if(d.length === 0) return '';
+  if(d.length <= 3) return d.length === 3 && /\)|-/.test(s) ? '(' + d + ') ' : d;
+  if(d.length <= 6) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+  if(d.length <= 10) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+
+  // Longer than a US number — leave it be rather than cutting digits off
+  return s;
+}
+
+// Formats as the person types, without fighting them: the caret stays where
+// they expect and deleting a bracket does not immediately put it back.
+function attachPhoneFormatting(input){
+  if(!input || input.dataset.phoneFormatted === '1') return;
+  input.dataset.phoneFormatted = '1';
+  if(!input.getAttribute('inputmode')) input.setAttribute('inputmode', 'tel');
+
+  let lastLength = 0;
+  input.addEventListener('input', ()=>{
+    const before = input.value;
+    // Deleting backwards through punctuation should just delete
+    const deleting = before.length < lastLength;
+    lastLength = before.length;
+    if(deleting) return;
+
+    const formatted = formatPhoneNumber(before);
+    if(formatted !== before){
+      const atEnd = input.selectionStart === before.length;
+      input.value = formatted;
+      if(atEnd){
+        input.selectionStart = input.selectionEnd = formatted.length;
+      }
+    }
+  });
+
+  // Tidy it up on the way out, so a half-typed number still lands formatted
+  input.addEventListener('blur', ()=>{
+    const tidy = formatPhoneNumber(input.value);
+    if(tidy !== input.value){
+      input.value = tidy;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    lastLength = input.value.length;
+  });
+}
+
+// Every phone field in the page, including any added later
+function attachAllPhoneFormatting(){
+  document.querySelectorAll('input[type="tel"]').forEach(attachPhoneFormatting);
+}
+
+document.addEventListener('DOMContentLoaded', attachAllPhoneFormatting);
+attachAllPhoneFormatting();
+
+
+['Pool','Spa','Fountain'].forEach(T=>{
+  const b = document.getElementById('btn' + T + 'Skip');
+  if(b) b.addEventListener('click', ()=> skipBodyOfWater(T.toLowerCase()));
+});
 </script>
 </body>
 </html>

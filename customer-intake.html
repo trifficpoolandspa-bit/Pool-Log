@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PoolLog — Customer Intake</title>
-<link rel="manifest" href="./manifest.json">
+<!-- Its own manifest, so adding this to a Home Screen gives an icon that
+     opens the office site rather than the technician sign-in. -->
+  <link rel="manifest" href="./manifest-office.json">
 <meta name="theme-color" content="#0E4A4D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -672,7 +674,7 @@ input::placeholder{color:#A9BCB9;}
 
   <div class="view" id="view-tech-detail">
     <div class="card">
-      <a href="#" id="backToTechs" style="font-size:12.5px;font-weight:600;color:var(--teal-deep);text-decoration:none;">← Back to technicians</a>
+      <button class="btn btn-ghost" id="backToTechs" type="button" style="width:auto;">← Back to Technicians</button>
       <div class="section-head" style="margin-top:12px;">
         <div>
           <h2 id="techDetailName">Technician</h2>
@@ -699,24 +701,38 @@ input::placeholder{color:#A9BCB9;}
         <h2>Assigned customers</h2>
         <span class="section-count" id="techAssignedCount"></span>
       </div>
-      <div class="field" style="max-width:260px;">
-        <label>Service day</label>
-        <select id="techAssignedDay"></select>
+      <div style="display:flex;align-items:flex-end;gap:12px;">
+        <div class="field" style="max-width:260px;flex:1;margin-bottom:0;">
+          <label>Service day</label>
+          <select id="techAssignedDay"></select>
+        </div>
+        <button class="btn btn-primary" id="btnShowAssignCustomers"
+          style="width:auto;margin-left:auto;flex:0 0 auto;white-space:nowrap;">Edit customers</button>
       </div>
-      <div id="techAssignedList"></div>
-      <button class="btn btn-primary" id="btnShowAssignCustomers" style="width:auto;margin-top:14px;">+ Assign customer</button>
+      <div id="techAssignedList" style="margin-top:14px;"></div>
     </div>
-    <div class="card" id="techAssignCard" style="display:none;">
+    <!-- Opens over the page rather than unfolding below it. As a panel further
+         down, pressing the button scrolled you away from the list you were
+         working on and back again every time you finished. -->
+    <div id="techAssignOverlay" style="display:none;position:fixed;inset:0;z-index:300;
+      background:rgba(8,20,19,0.45);align-items:center;justify-content:center;padding:16px;">
+    <div class="card" id="techAssignCard" style="display:none;max-width:620px;width:100%;
+      max-height:86vh;overflow:auto;margin:0;">
       <div class="section-head">
-        <h2>Assign customers</h2>
+        <h2>Edit customers</h2>
         <button class="btn btn-ghost" id="btnDoneAssigning" style="width:auto;">Done</button>
       </div>
       <p style="font-size:12.5px;color:var(--muted);margin:-8px 0 12px;">Check a customer to assign them to this technician, then set which day they're serviced.</p>
+      <div class="field" style="margin-bottom:12px;">
+        <input id="techAssignSearch" placeholder="Search customers by name or address" autocomplete="off">
+      </div>
       <div class="btn-row" style="margin-bottom:12px;">
         <button class="btn btn-ghost" id="btnAssignSelectAll" style="width:auto;padding:6px 12px;font-size:12px;">Select all</button>
         <button class="btn btn-ghost" id="btnAssignSelectNone" style="width:auto;padding:6px 12px;font-size:12px;">Unassign all</button>
       </div>
+      <div id="techAssignPager"></div>
       <div id="techAssignList"></div>
+    </div>
     </div>
   </div>
 
@@ -2551,7 +2567,15 @@ function renderRouteAssignList(routeId){
       const info = document.createElement('div');
       info.className = 'cust-info';
       const otherRoute = !isAssigned && c.routeId ? routeLabelFor(c.routeId) : null;
-      info.innerHTML = `<div class="cust-name">${displayName(c.name)}</div><div class="cust-meta">${c.address || 'No address on file'}${c.day ? ' · ' + c.day : ''}${otherRoute ? ' · Currently: ' + otherRoute : ''}</div>`;
+      // Same treatment as assigning to a technician: ticking this moves the
+      // customer off the route they are on now.
+      info.innerHTML = `<div class="cust-name">${displayName(c.name)}</div>`
+        + `<div class="cust-meta">${c.address || 'No address on file'}${c.day ? ' · ' + c.day : ''}</div>`
+        + (otherRoute
+            ? `<div style="margin-top:5px;text-align:center;font-size:13px;font-weight:700;`
+              + `color:var(--rust);background:#FDF0EB;border:1px solid #EFC9BC;`
+              + `border-radius:8px;padding:4px 10px;">Currently ${otherRoute}</div>`
+            : '');
 
       label.appendChild(checkbox);
       label.appendChild(avatar);
@@ -9552,12 +9576,39 @@ function renderTechAssignList(techId){
   const activeCustomers = customers.filter(c => c.active !== false);
   if(activeCustomers.length === 0){
     container.innerHTML = emptyState('No active customers yet — add one in the Add a customer tab.');
+    const noPager = document.getElementById('techAssignPager');
+    if(noPager) noPager.innerHTML = '';
     return;
   }
-  container.innerHTML = '';
-  activeCustomers
+
+  // Search by name or address. With a few hundred customers, scrolling to find
+  // one is slower than typing three letters of it.
+  const term = (document.getElementById('techAssignSearch') || {value: ''})
+    .value.trim().toLowerCase();
+  const matches = activeCustomers
     .slice()
-    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)))
+    .filter(c => !term
+      || (c.name || '').toLowerCase().includes(term)
+      || (c.address || '').toLowerCase().includes(term))
+    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
+
+  container.innerHTML = '';
+  if(matches.length === 0){
+    container.innerHTML = emptyState('No customers match "' + term + '".');
+    const emptyPager = document.getElementById('techAssignPager');
+    if(emptyPager) emptyPager.innerHTML = '';
+    techAssignPage = 1;
+    return;
+  }
+
+  const ASSIGN_PER_PAGE = 15;
+  const assignTotalPages = Math.max(1, Math.ceil(matches.length / ASSIGN_PER_PAGE));
+  if(techAssignPage > assignTotalPages) techAssignPage = assignTotalPages;
+  if(techAssignPage < 1) techAssignPage = 1;
+  const assignStart = (techAssignPage - 1) * ASSIGN_PER_PAGE;
+
+  matches
+    .slice(assignStart, assignStart + ASSIGN_PER_PAGE)
     .forEach(c=>{
       const isAssigned = c.technicianId === techId;
       const row = document.createElement('div');
@@ -9582,7 +9633,16 @@ function renderTechAssignList(techId){
       const info = document.createElement('div');
       info.className = 'cust-info';
       const otherTech = !isAssigned ? technicianNameById(c.technicianId) : null;
-      info.innerHTML = `<div class="cust-name">${displayName(c.name)}</div><div class="cust-meta">${c.address || 'No address on file'}${otherTech ? ' · Currently: ' + otherTech : ''}</div>`;
+      // Someone else's customer. Ticking them moves them off that technician's
+      // route, so this needs to be impossible to miss rather than the same grey
+      // as the address beside it.
+      info.innerHTML = `<div class="cust-name">${displayName(c.name)}</div>`
+        + `<div class="cust-meta">${c.address || 'No address on file'}</div>`
+        + (otherTech
+            ? `<div style="margin-top:5px;text-align:center;font-size:13px;font-weight:700;`
+              + `color:var(--rust);background:#FDF0EB;border:1px solid #EFC9BC;`
+              + `border-radius:8px;padding:4px 10px;">Currently ${otherTech}</div>`
+            : '');
 
       label.appendChild(checkbox);
       label.appendChild(avatar);
@@ -9620,6 +9680,56 @@ function renderTechAssignList(techId){
       row.appendChild(daySelect);
       container.appendChild(row);
     });
+
+  // Above the list, between it and the Select all row, so the pages are visible
+  // without scrolling to the foot of fifteen customers first.
+  const pagerHost = document.getElementById('techAssignPager');
+  if(pagerHost) pagerHost.innerHTML = '';
+  if(pagerHost && assignTotalPages > 1){
+    const pager = document.createElement('div');
+    pager.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:6px;'
+      + 'flex-wrap:wrap;margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid var(--line);';
+
+    const step = (label, to, disabled)=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.style.cssText = 'min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line);'
+        + 'background:#fff;color:var(--teal-deep);border-radius:8px;cursor:pointer;font-size:14px;';
+      b.disabled = disabled;
+      if(disabled) b.style.opacity = '0.35';
+      b.addEventListener('click', ()=>{
+        if(b.disabled) return;
+        techAssignPage = to;
+        renderTechAssignList(techId);
+      });
+      return b;
+    };
+
+    pager.appendChild(step('\u2039', techAssignPage - 1, techAssignPage === 1));
+    for(let p = 1; p <= assignTotalPages; p++){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = p;
+      const isCurrent = p === techAssignPage;
+      b.style.cssText = 'min-width:30px;height:30px;padding:0 8px;border-radius:8px;cursor:pointer;'
+        + "font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;"
+        + (isCurrent
+          ? 'background:var(--teal-deep);color:#fff;border:1px solid var(--teal-deep);'
+          : 'background:#fff;color:var(--teal-deep);border:1px solid var(--line);');
+      b.addEventListener('click', ()=>{ techAssignPage = p; renderTechAssignList(techId); });
+      pager.appendChild(b);
+    }
+    pager.appendChild(step('\u203A', techAssignPage + 1, techAssignPage === assignTotalPages));
+
+    const info = document.createElement('div');
+    info.style.cssText = 'width:100%;text-align:center;font-size:11.5px;color:var(--muted);margin-top:8px;';
+    info.textContent = 'Showing ' + (assignStart + 1) + '\u2013'
+      + Math.min(assignStart + ASSIGN_PER_PAGE, matches.length) + ' of ' + matches.length;
+    pager.appendChild(info);
+
+    pagerHost.appendChild(pager);
+  }
 }
 
 
@@ -9763,9 +9873,12 @@ function renderTechProfile(techId){
 }
 
 let techAssignedDayFilter = '';
+let techAssignedPage = 1;
+let techAssignPage = 1;
 
 document.getElementById('techAssignedDay').addEventListener('change', (e)=>{
   techAssignedDayFilter = e.target.value;
+  techAssignedPage = 1;
   if(currentTechDetailId) renderTechAssignedList(currentTechDetailId);
 });
 
@@ -9790,9 +9903,12 @@ function renderTechAssignedList(techId){
     ? assigned.length + (assigned.length === 1 ? ' customer' : ' customers') : '';
 
   if(assigned.length === 0){
-    container.innerHTML = emptyState('No customers assigned to this technician yet — check some below.');
+    container.innerHTML = emptyState('No customers assigned to this technician yet — press Edit customers to add some.');
+    techAssignedPage = 1;
     return;
   }
+
+
   // Day dropdown, showing a count beside each day
   const daySel = document.getElementById('techAssignedDay');
   if(daySel){
@@ -9831,10 +9947,21 @@ function renderTechAssignedList(techId){
   container.innerHTML = '';
   if(shown.length === 0){
     container.innerHTML = emptyState('No customers on that day.');
+    techAssignedPage = 1;
     return;
   }
 
-  shown.forEach(c=>{
+  // Ten at a time, the same as the customers tab. A technician with sixty
+  // customers was an unreadable wall otherwise. Paged on the filtered list, so
+  // choosing a day gives the pages for that day.
+  const TECH_PER_PAGE = 10;
+  const techTotalPages = Math.max(1, Math.ceil(shown.length / TECH_PER_PAGE));
+  if(techAssignedPage > techTotalPages) techAssignedPage = techTotalPages;
+  if(techAssignedPage < 1) techAssignedPage = 1;
+  const techPageStart = (techAssignedPage - 1) * TECH_PER_PAGE;
+  const techPageItems = shown.slice(techPageStart, techPageStart + TECH_PER_PAGE);
+
+  techPageItems.forEach(c=>{
     const row = document.createElement('div');
     row.className = 'cust-row';
     const metaParts = [];
@@ -9843,15 +9970,9 @@ function renderTechAssignedList(techId){
     metaParts.push(badgeText(c));
     row.innerHTML = `<div class="cust-left"><div class="cust-avatar">${initialOf(c.name)}</div><div class="cust-info"><div class="cust-name">${displayName(c.name)}</div><div class="cust-meta">${metaParts.join(' · ')}</div></div></div>`;
 
-    const techForRow = technicians.find(t => t.id === techId);
-    if(techForRow && techForRow.canPhotoEquipment){
-      const photosBtn = document.createElement('button');
-      photosBtn.className = 'btn btn-ghost';
-      photosBtn.style.cssText = 'width:auto;flex-shrink:0;padding:6px 10px;font-size:12px;';
-      photosBtn.textContent = 'Equipment photos';
-      photosBtn.addEventListener('click', ()=> openCustomerEquipmentPhotos(c));
-      row.appendChild(photosBtn);
-    }
+    // No equipment photo button here. Each row already carries a name, day,
+    // address and status; a second button per customer made the list hard to
+    // read. Equipment photos are still reachable from the customer itself.
 
     const removeBtn = document.createElement('button');
     removeBtn.className = 'btn btn-ghost';
@@ -9878,14 +9999,80 @@ function renderTechAssignedList(techId){
 
     container.appendChild(row);
   });
+
+  // Page buttons, matching the customers tab
+  if(techTotalPages > 1){
+    const pager = document.createElement('div');
+    pager.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:6px;'
+      + 'flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line);';
+
+    const step = (label, to, disabled)=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.style.cssText = 'min-width:30px;height:30px;padding:0 8px;border:1px solid var(--line);'
+        + 'background:#fff;color:var(--teal-deep);border-radius:8px;cursor:pointer;font-size:14px;';
+      b.disabled = disabled;
+      if(disabled) b.style.opacity = '0.35';
+      b.addEventListener('click', ()=>{
+        if(b.disabled) return;
+        techAssignedPage = to;
+        renderTechAssignedList(techId);
+      });
+      return b;
+    };
+
+    pager.appendChild(step('\u2039', techAssignedPage - 1, techAssignedPage === 1));
+
+    for(let p = 1; p <= techTotalPages; p++){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = p;
+      const isCurrent = p === techAssignedPage;
+      b.style.cssText = 'min-width:30px;height:30px;padding:0 8px;border-radius:8px;cursor:pointer;'
+        + "font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;"
+        + (isCurrent
+          ? 'background:var(--teal-deep);color:#fff;border:1px solid var(--teal-deep);'
+          : 'background:#fff;color:var(--teal-deep);border:1px solid var(--line);');
+      b.addEventListener('click', ()=>{ techAssignedPage = p; renderTechAssignedList(techId); });
+      pager.appendChild(b);
+    }
+
+    pager.appendChild(step('\u203A', techAssignedPage + 1, techAssignedPage === techTotalPages));
+
+    const info = document.createElement('div');
+    info.style.cssText = 'width:100%;text-align:center;font-size:11.5px;color:var(--muted);margin-top:8px;';
+    info.textContent = 'Showing ' + (techPageStart + 1) + '\u2013'
+      + Math.min(techPageStart + TECH_PER_PAGE, shown.length) + ' of ' + shown.length;
+    pager.appendChild(info);
+
+    container.appendChild(pager);
+  }
 }
 
 let currentTechDetailId = null;
 
-document.getElementById('btnShowAssignCustomers').addEventListener('click', ()=>{
-  const card = document.getElementById('techAssignCard');
-  card.style.display = 'block';
-  card.scrollIntoView({behavior:'smooth'});
+function openAssignOverlay(){
+  // Opens clean — last time's search term and page would otherwise be waiting
+  const search = document.getElementById('techAssignSearch');
+  if(search) search.value = '';
+  techAssignPage = 1;
+  if(currentTechDetailId) renderTechAssignList(currentTechDetailId);
+  document.getElementById('techAssignOverlay').style.display = 'flex';
+  document.getElementById('techAssignCard').style.display = 'block';
+}
+
+function closeAssignOverlay(){
+  document.getElementById('techAssignOverlay').style.display = 'none';
+  document.getElementById('techAssignCard').style.display = 'none';
+  if(currentTechDetailId) renderTechAssignedList(currentTechDetailId);
+}
+
+document.getElementById('btnShowAssignCustomers').addEventListener('click', openAssignOverlay);
+
+// Tapping the dark area closes it, the same as every other dialog here
+document.getElementById('techAssignOverlay').addEventListener('click', (e)=>{
+  if(e.target.id === 'techAssignOverlay') closeAssignOverlay();
 });
 
 document.getElementById('btnAssignSelectAll').addEventListener('click', async ()=>{
@@ -9923,15 +10110,15 @@ document.getElementById('btnAssignSelectNone').addEventListener('click', async (
   showToast('All customers unassigned');
 });
 
-document.getElementById('btnDoneAssigning').addEventListener('click', ()=>{
-  document.getElementById('techAssignCard').style.display = 'none';
-  if(currentTechDetailId) renderTechAssignedList(currentTechDetailId);
-  window.scrollTo({top: 0, behavior: 'smooth'});
-});
+document.getElementById('btnDoneAssigning').addEventListener('click', closeAssignOverlay);
 
 function openTechDetail(t){
   currentTechDetailId = t.id;
+  // The overlay must go too, or opening another technician leaves the dark
+  // backdrop over the page with nothing on it
+  document.getElementById('techAssignOverlay').style.display = 'none';
   document.getElementById('techAssignCard').style.display = 'none';
+  techAssignedPage = 1;
   document.getElementById('techDetailName').textContent = t.name;
   const contactParts = [];
   if(t.phone) contactParts.push(t.phone);
@@ -10722,118 +10909,6 @@ document.getElementById('backupFileInput').addEventListener('change', async (e)=
 // ---------- Equipment photos for a customer, from a technician's page ----------
 let techEquipPhotoTarget = null;   // {customerId, itemId}
 
-function openCustomerEquipmentPhotos(customer){
-  const types = Array.isArray(customer.equipmentTypeOptions) && customer.equipmentTypeOptions.length
-    ? customer.equipmentTypeOptions.map(t => t === 'Chlorinator' ? 'Chlorination' : t)
-    : [...DEFAULT_EQUIPMENT_TYPES];
-
-  const overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.innerHTML = `
-    <div class="confirm-box" style="max-width:440px;max-height:86vh;display:flex;flex-direction:column;">
-      <h3 style="font-size:15px;margin:0 0 4px;">${customer.name} — equipment photos</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">Photos save straight to this customer's profile.</p>
-      <div id="ceList" style="flex:1;overflow-y:auto;margin-bottom:14px;"></div>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="ceDone" style="flex:1;">Done</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-
-  function persist(){
-    const target = customers.find(x => x.id === customer.id);
-    if(target){
-      target.equipment = customer.equipment;
-      saveCustomers();
-    }
-  }
-
-  function ensureItem(type){
-    if(!Array.isArray(customer.equipment)) customer.equipment = [];
-    let item = customer.equipment.find(i => i.type === type);
-    if(!item){
-      item = {id:'equip_' + Date.now() + '_' + Math.random().toString(36).slice(2,7), type, photos:[]};
-      customer.equipment.push(item);
-      persist();
-    }
-    if(!Array.isArray(item.photos)) item.photos = [];
-    return item;
-  }
-
-  function render(){
-    const listEl = overlay.querySelector('#ceList');
-    listEl.innerHTML = '';
-    types.forEach(type=>{
-      const item = (customer.equipment || []).find(i => i.type === type);
-      const count = item && item.photos ? item.photos.length : 0;
-
-      const block = document.createElement('div');
-      block.style.cssText = 'padding:10px 2px;border-bottom:1px solid var(--line);';
-
-      const head = document.createElement('div');
-      head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;';
-      const name = document.createElement('div');
-      name.style.cssText = 'font-size:14px;font-weight:600;';
-      name.textContent = type + (count ? ' · ' + count + (count === 1 ? ' photo' : ' photos') : '');
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'btn btn-secondary';
-      addBtn.style.cssText = 'width:auto;padding:6px 12px;font-size:12px;flex-shrink:0;';
-      addBtn.textContent = 'Take photo';
-      addBtn.addEventListener('click', ()=>{
-        const it = ensureItem(type);
-        techEquipPhotoTarget = {customerId: customer.id, itemId: it.id, rerender: render};
-        document.getElementById('techEquipPhotoInput').click();
-      });
-      head.appendChild(name);
-      head.appendChild(addBtn);
-      block.appendChild(head);
-
-      if(count){
-        const strip = document.createElement('div');
-        strip.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;';
-        item.photos.forEach((p, i)=>{
-          const holder = document.createElement('div');
-          holder.style.cssText = 'width:96px;';
-          const img = document.createElement('img');
-          photoDataUrl(p).then(src => { if(src) img.src = src; });
-          img.alt = type + ' photo';
-          img.style.cssText = 'width:100%;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:zoom-in;';
-          img.addEventListener('click', async ()=>{
-            const src = await photoDataUrl(p);
-            if(src) openHistoryPhotoModal(src, type);
-          });
-          const del = document.createElement('button');
-          del.type = 'button';
-          del.textContent = 'Remove';
-          del.style.cssText = 'width:100%;border:none;background:none;color:var(--rust);font-size:11px;cursor:pointer;padding:4px 0 0;';
-          del.addEventListener('click', async ()=>{
-            const ok = await confirmDialog('Delete this photo? This can\'t be undone.');
-            if(!ok) return;
-            item.photos.splice(i, 1);
-            persist();
-            render();
-          });
-          holder.appendChild(img);
-          holder.appendChild(del);
-          strip.appendChild(holder);
-        });
-        block.appendChild(strip);
-      }
-
-      listEl.appendChild(block);
-    });
-  }
-
-  render();
-  const cleanup = ()=>{
-    techEquipPhotoTarget = null;
-    document.body.removeChild(overlay);
-  };
-  overlay.querySelector('#ceDone').addEventListener('click', cleanup);
-  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
-}
-
 document.getElementById('techEquipPhotoInput').addEventListener('change', async (e)=>{
   const file = e.target.files[0];
   if(!file || !techEquipPhotoTarget){ e.target.value = ''; return; }
@@ -10993,7 +11068,13 @@ function showHistory(customerId, name){
         cap.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:4px;';
         cap.textContent = lbl;
         const img = document.createElement('img');
-        img.src = data;
+        // A reference is fetched from the database; anything older is already
+        // the image itself
+        if(isPhotoRef(data)){
+          resolvePhoto(data).then(src=>{ if(src) img.src = src; });
+        } else {
+          img.src = data;
+        }
         img.alt = lbl + ' photo';
         img.addEventListener('click', ()=> openHistoryPhotoModal(r, fmtDate(r.date)));
         holder.appendChild(cap);
@@ -11007,12 +11088,14 @@ function showHistory(customerId, name){
   });
 }
 
-function openHistoryPhotoModal(source, dateLabel){
-  // Accepts either a reading (with beforePhoto / photo) or a single data URL
-  const before = (source && source.beforePhoto) || null;
-  const after = (source && typeof source === 'object' && 'photo' in source)
-    ? source.photo
-    : (typeof source === 'string' ? source : null);
+async function openHistoryPhotoModal(source, dateLabel){
+  // Accepts either a reading (with beforePhoto / photo) or a single data URL.
+  // Either may be a database reference rather than the image itself.
+  const before = await resolvePhoto((source && source.beforePhoto) || null);
+  const after = await resolvePhoto(
+    (source && typeof source === 'object' && 'photo' in source)
+      ? source.photo
+      : (typeof source === 'string' ? source : null));
 
   const shot = (label, data)=> data ? `
     <div style="margin-bottom:14px;">
@@ -11656,6 +11739,22 @@ function photoDbDo(mode, fn){
 async function savePhotoData(id, dataUrl){
   await photoDbDo('readwrite', s => s.put(dataUrl, id));
   return id;
+}
+
+
+// Photos live in the database, not on the reading — the reading carries a
+// reference to one. Without resolving it, the office site was setting an image
+// source to a string like "idb:readings:c1_photo" and showing nothing.
+const PHOTO_REF = 'idb:';
+
+function isPhotoRef(v){
+  return typeof v === 'string' && v.indexOf(PHOTO_REF) === 0;
+}
+
+async function resolvePhoto(v){
+  if(!v) return null;
+  if(isPhotoRef(v)) return await loadPhotoData(v.slice(PHOTO_REF.length));
+  return v;                                  // an older reading, still inline
 }
 
 async function loadPhotoData(id){
@@ -12742,6 +12841,24 @@ function inlineTextarea(cust, field){
   };
 }
 
+
+// Opens a dropdown's list immediately. Focusing alone leaves it shut, so
+// changing anything took two taps: one to reveal the dropdown, one to open it.
+function openSelectNow(sel){
+  if(!sel) return;
+  try{
+    if(typeof sel.showPicker === 'function'){
+      sel.showPicker();
+      return;
+    }
+  }catch(e){
+    // Refused in this context — it is still focused and tappable
+    return;
+  }
+  // Older browsers honour a synthesised press while the element has focus
+  try{ sel.dispatchEvent(new MouseEvent('mousedown', {bubbles: true})); }catch(e){}
+}
+
 function inlineSelect(cust, field, options){
   return (row, done)=>{
     const sel = document.createElement('select');
@@ -12755,6 +12872,7 @@ function inlineSelect(cust, field, options){
     });
     row.appendChild(sel);
     sel.focus();
+    openSelectNow(sel);
     const commit = ()=>{
       cust[field] = sel.value;
       saveCustomerField();
@@ -13019,6 +13137,21 @@ function viewCustomer(c){
     dayPill.style.display = 'none';
     dayPill.after(sel);
     sel.focus();
+
+    // Open the list straight away. Focusing alone left a closed dropdown sitting
+    // there, so changing a day took two taps instead of one. showPicker is the
+    // supported way to do it; older browsers fall back to a synthetic tap,
+    // which most of them honour while the element already has focus.
+    try{
+      if(typeof sel.showPicker === 'function'){
+        sel.showPicker();
+      } else {
+        sel.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+      }
+    }catch(e){
+      // Refused — the technician can still tap it, exactly as before
+    }
+
     let committed = false;
     const commit = ()=>{
       if(committed) return;
@@ -13954,6 +14087,84 @@ addPasswordReveals();
 document.getElementById('btnSaveSignIn').addEventListener('click', saveSignInDetails);
 
 document.getElementById('btnSiteLogout').addEventListener('click', siteLogout);
+
+// Typing filters the list and goes back to the first page — staying on page 4
+// of a search that now has one result would just look empty.
+document.getElementById('techAssignSearch').addEventListener('input', ()=>{
+  techAssignPage = 1;
+  if(currentTechDetailId) renderTechAssignList(currentTechDetailId);
+});
+
+// ---------- Phone number formatting ----------
+// Typed digits become (623) 555-0142 as they go in. Nobody wants to type
+// brackets on a phone keypad, and a list where every number is punctuated
+// differently is harder to scan.
+function formatPhoneNumber(raw){
+  const s = String(raw == null ? '' : raw);
+
+  // A number written for somewhere else — a +country code, an extension — is
+  // left exactly as typed rather than mangled into a US shape.
+  if(/[+a-zA-Z]/.test(s)) return s;
+
+  const digits = s.replace(/\D/g, '');
+
+  // 11 digits starting with 1 is the same number with a country code
+  const d = (digits.length === 11 && digits.charAt(0) === '1')
+    ? digits.slice(1) : digits;
+
+  if(d.length === 0) return '';
+  if(d.length <= 3) return d.length === 3 && /\)|-/.test(s) ? '(' + d + ') ' : d;
+  if(d.length <= 6) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+  if(d.length <= 10) return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6);
+
+  // Longer than a US number — leave it be rather than cutting digits off
+  return s;
+}
+
+// Formats as the person types, without fighting them: the caret stays where
+// they expect and deleting a bracket does not immediately put it back.
+function attachPhoneFormatting(input){
+  if(!input || input.dataset.phoneFormatted === '1') return;
+  input.dataset.phoneFormatted = '1';
+  if(!input.getAttribute('inputmode')) input.setAttribute('inputmode', 'tel');
+
+  let lastLength = 0;
+  input.addEventListener('input', ()=>{
+    const before = input.value;
+    // Deleting backwards through punctuation should just delete
+    const deleting = before.length < lastLength;
+    lastLength = before.length;
+    if(deleting) return;
+
+    const formatted = formatPhoneNumber(before);
+    if(formatted !== before){
+      const atEnd = input.selectionStart === before.length;
+      input.value = formatted;
+      if(atEnd){
+        input.selectionStart = input.selectionEnd = formatted.length;
+      }
+    }
+  });
+
+  // Tidy it up on the way out, so a half-typed number still lands formatted
+  input.addEventListener('blur', ()=>{
+    const tidy = formatPhoneNumber(input.value);
+    if(tidy !== input.value){
+      input.value = tidy;
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    lastLength = input.value.length;
+  });
+}
+
+// Every phone field in the page, including any added later
+function attachAllPhoneFormatting(){
+  document.querySelectorAll('input[type="tel"]').forEach(attachPhoneFormatting);
+}
+
+document.addEventListener('DOMContentLoaded', attachAllPhoneFormatting);
+attachAllPhoneFormatting();
+
 </script>
 </body>
 </html>
