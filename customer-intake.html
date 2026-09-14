@@ -397,7 +397,7 @@ input::placeholder{color:#A9BCB9;}
   <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
     <h2 style="font-size:20px;margin:0 0 4px;">PoolLog</h2>
     <p style="font-size:12.5px;color:#5E7371;margin:0 0 18px;">Sign in to manage your customers and settings.</p>
-    <div class="field"><label>Username</label><input id="siteUsername" autocomplete="username" placeholder="Your username"></div>
+    <div class="field"><label>Email</label><input id="siteUsername" type="email" autocomplete="username" inputmode="email" placeholder="you@yourcompany.com"></div>
     <div class="field"><label>Password</label><input id="sitePassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
     <p id="siteLoginError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
     <button class="btn btn-primary" id="btnSiteLogin" style="width:100%;">Sign in</button>
@@ -1202,30 +1202,15 @@ input::placeholder{color:#A9BCB9;}
         background:var(--surface-alt);border:1px solid var(--line);font-size:12.5px;
         color:var(--muted);line-height:1.55;"></div>
 
-      <!-- Sign-in details. The starter account that comes with the app is the
-           same for everyone, so the first thing anyone should do is change it
-           to something of their own. -->
+      <!-- The office sign-in is a real account on the server now, so it is not
+           editable here. Showing the old username and password boxes would
+           offer to change something that no longer controls anything. -->
       <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--line);">
         <h2 style="margin:0 0 4px;">Your sign-in</h2>
-        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">What you type to open this site. It is yours alone &mdash; your technicians sign in to the field apps with their own usernames, set on the Technicians page, and cannot open this site.</p>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">Your account for this site. Your technicians sign in to the field apps with their own usernames, set on the Technicians page, and cannot open this site.</p>
 
-        <div class="field">
-          <label>Username</label>
-          <input id="acctUsername" autocomplete="username" placeholder="Choose a username">
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input id="acctPassword" type="password" autocomplete="new-password" placeholder="Choose a password">
-        </div>
-        <div class="field">
-          <label>Your name</label>
-          <input id="acctDisplayName" placeholder="The name that appears on reports">
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" id="btnSaveSignIn" style="width:auto;">Save sign-in details</button>
-        </div>
-        <p id="acctSignInNote" style="font-size:12.5px;margin:10px 0 0;display:none;"></p>
+        <div id="acctSignInWho" style="font-size:14px;color:var(--ink);line-height:1.7;"></div>
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0;">Changing your password is not built into the app yet. Until it is, it is done from your account on the server.</p>
       </div>
     </div>
 
@@ -5542,7 +5527,108 @@ function hideSiteLogin(){
   if(el) el.style.display = 'none';
 }
 
-function siteLogout(){
+
+// ---------- Supabase ----------
+// The office site signs in against a real server, so accounts are genuine:
+// one password, any device, and a reset that works. The field apps keep their
+// local sign-in, because a technician in a back yard with no signal still has
+// to be able to start a visit.
+//
+// Both values below are meant to be public — the publishable key only ever
+// grants what the database's own security rules allow, which is nothing until
+// somebody signs in.
+const SUPABASE_URL = 'https://myxxahrlmzvrbcmopwyo.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_32m_kcK3pQpClCGAvAAogg_Ut9RBFS1';
+
+// The signed-in session, kept so a reload does not sign you out
+function sbSession(){ return lsGet('sbSession') || null; }
+function setSbSession(s){ lsSet('sbSession', s || null); }
+
+async function sbFetch(path, opts){
+  const o = opts || {};
+  const session = sbSession();
+  const headers = Object.assign({
+    'apikey': SUPABASE_KEY,
+    'Content-Type': 'application/json'
+  }, o.headers || {});
+  // A signed-in request carries the user's token; without it the database
+  // sees an anonymous caller and every policy refuses.
+  if(session && session.access_token){
+    headers['Authorization'] = 'Bearer ' + session.access_token;
+  }
+  // A dead connection must not escape as an exception — every caller would
+  // have to guard, and one that forgot would break the page instead of showing
+  // the sign-in screen.
+  let res;
+  try{
+    res = await fetch(SUPABASE_URL + path, Object.assign({}, o, {headers}));
+  }catch(e){
+    return {ok: false, status: 0, body: null, offline: true};
+  }
+  let body = null;
+  try{ body = await res.json(); }catch(e){}
+  return {ok: res.ok, status: res.status, body: body};
+}
+
+// Exchange an email and password for a session
+async function sbSignIn(email, password){
+  const res = await sbFetch('/auth/v1/token?grant_type=password', {
+    method: 'POST',
+    body: JSON.stringify({email: email, password: password})
+  });
+  if(res.offline){
+    return {ok: false, message: 'Could not reach the server. Check your connection.'};
+  }
+  if(!res.ok || !res.body || !res.body.access_token){
+    const msg = (res.body && (res.body.error_description || res.body.msg || res.body.message)) || '';
+    return {ok: false, message: /invalid/i.test(msg)
+      ? 'That email and password don\u2019t match.'
+      : (msg || 'Could not sign in. Check your connection.')};
+  }
+  setSbSession(res.body);
+  return {ok: true};
+}
+
+// A session expires after an hour; the refresh token gets a fresh one without
+// asking the person to sign in again.
+async function sbRefresh(){
+  const session = sbSession();
+  if(!session || !session.refresh_token) return false;
+  const res = await sbFetch('/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    body: JSON.stringify({refresh_token: session.refresh_token})
+  });
+  if(res.ok && res.body && res.body.access_token){
+    setSbSession(res.body);
+    return true;
+  }
+  setSbSession(null);
+  return false;
+}
+
+// Who is signed in, and which company they belong to
+async function sbWhoAmI(){
+  let res = await sbFetch('/rest/v1/members?select=user_id,role,name,company_id,companies(name)');
+  if(res.status === 401){
+    // Token expired — refresh once and try again
+    if(await sbRefresh()){
+      res = await sbFetch('/rest/v1/members?select=user_id,role,name,company_id,companies(name)');
+    }
+  }
+  if(!res.ok || !Array.isArray(res.body) || !res.body.length) return null;
+  return res.body[0];
+}
+
+async function sbSignOut(){
+  const session = sbSession();
+  if(session && session.access_token){
+    try{ await sbFetch('/auth/v1/logout', {method: 'POST'}); }catch(e){}
+  }
+  setSbSession(null);
+}
+
+async function siteLogout(){
+  await sbSignOut();
   lsSet('ownerSession', false);
   siteUser = null;
   const u = document.getElementById('siteUsername');
@@ -5556,41 +5642,79 @@ function siteLogout(){
   showSiteLogin();
 }
 
-function attemptSiteLogin(){
+async function attemptSiteLogin(){
   const err = document.getElementById('siteLoginError');
   const say = (msg)=>{ if(err){ err.textContent = msg; err.style.display = 'block'; } };
+  const btn = document.getElementById('btnSiteLogin');
 
-  const u = document.getElementById('siteUsername').value.trim().toLowerCase();
-  const p = document.getElementById('sitePassword').value;
-  const owner = lsGet('ownerAccount');
+  const email = document.getElementById('siteUsername').value.trim();
+  const pass = document.getElementById('sitePassword').value;
 
-  if(!owner || !owner.username){ say('No owner account set up on this device yet.'); return; }
+  if(!email){ say('Enter your email address.'); return; }
+  if(!pass){ say('Enter your password.'); return; }
 
-  // Only the owner. A technician's login is for the field apps and must not
-  // open the office site — they would see every customer and every setting.
-  if((owner.username || '').toLowerCase() !== u || owner.password !== p){
-    say("That username and password don't match.");
+  // Signing in goes to the server, so it takes a moment and can fail
+  if(btn){ btn.disabled = true; btn.textContent = 'Signing in\u2026'; }
+  const done = ()=>{ if(btn){ btn.disabled = false; btn.textContent = 'Sign in'; } };
+
+  let result;
+  try{
+    result = await sbSignIn(email, pass);
+  }catch(e){
+    done();
+    say('Could not reach the server. Check your connection.');
     return;
   }
 
+  if(!result.ok){ done(); say(result.message); return; }
+
+  // Signed in, but not necessarily part of a company. Without a membership
+  // row there is no data to see, so say that rather than showing an empty app.
+  const me = await sbWhoAmI();
+  if(!me){
+    await sbSignOut();
+    done();
+    say('That account is not attached to a company yet.');
+    return;
+  }
+
+  done();
   if(err) err.style.display = 'none';
+  siteUser = {
+    name: me.name || email,
+    email: email,
+    role: me.role,
+    companyId: me.company_id,
+    companyName: me.companies ? me.companies.name : ''
+  };
   lsSet('ownerSession', true);
-  siteUser = owner;
   document.getElementById('sitePassword').value = '';
   try{ switchView('customers'); }catch(e){}
   hideSiteLogin();
 }
 
-function guardSiteSession(){
-  // Its own session key, so signing in to a field app does not open the site
-  const owner = lsGet('ownerAccount');
-  if(lsGet('ownerSession') && owner && owner.username){
-    siteUser = owner;
-    hideSiteLogin();
-    return true;
+async function guardSiteSession(){
+  // A stored session is checked against the server rather than trusted, so an
+  // account removed elsewhere cannot keep working on this device.
+  if(!sbSession()){ showSiteLogin(); return false; }
+
+  const me = await sbWhoAmI();
+  if(!me){
+    setSbSession(null);
+    lsSet('ownerSession', false);
+    showSiteLogin();
+    return false;
   }
-  showSiteLogin();
-  return false;
+
+  siteUser = {
+    name: me.name || '',
+    role: me.role,
+    companyId: me.company_id,
+    companyName: me.companies ? me.companies.name : ''
+  };
+  lsSet('ownerSession', true);
+  hideSiteLogin();
+  return true;
 }
 
 document.addEventListener('DOMContentLoaded', ()=>{
@@ -5601,49 +5725,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
   guardSiteSession();
 });
 
-// ---------- The owner's own sign-in ----------
-// Edits the owner account, which is what the office site checks. Nothing to do
-// with technicians: those are managed on the Technicians page and only open the
-// field apps.
+// ---------- Who is signed in ----------
+// Read-only now. The account lives on the server, so the app shows it rather
+// than pretending it can be edited here.
 function renderSignInFields(){
-  const owner = lsGet('ownerAccount') || {};
-  const u = document.getElementById('acctUsername');
-  const p = document.getElementById('acctPassword');
-  const n = document.getElementById('acctDisplayName');
-  if(!u || !p || !n) return;
-  u.value = owner.username || '';
-  p.value = owner.password || '';
-  n.value = owner.name || '';
-}
-
-function saveSignInDetails(){
-  const note = document.getElementById('acctSignInNote');
-  const say = (msg, ok)=>{
-    if(!note) return;
-    note.textContent = msg;
-    note.style.color = ok ? 'var(--teal-deep)' : 'var(--rust)';
-    note.style.display = 'block';
-  };
-
-  const username = document.getElementById('acctUsername').value.trim();
-  const password = document.getElementById('acctPassword').value;
-  const name = document.getElementById('acctDisplayName').value.trim();
-
-  if(!username){ say('Enter a username.', false); return; }
-  if(!password){ say('Enter a password.', false); return; }
-  if(!name){ say('Enter your name.', false); return; }
-
-  // A technician using the same username would be confusing at best
-  const techs = lsGet('technicians') || [];
-  if(techs.some(t => (t.username || '').toLowerCase() === username.toLowerCase())){
-    say('One of your technicians already uses that username. Pick another.', false);
+  const box = document.getElementById('acctSignInWho');
+  if(!box) return;
+  if(!siteUser){
+    box.textContent = 'Not signed in.';
     return;
   }
-
-  lsSet('ownerAccount', {name: name, username: username, password: password});
-  lsSet('ownerSession', true);
-  siteUser = {name: name, username: username, password: password};
-  say('Saved. Use these next time you sign in to this site.', true);
+  const rows = [];
+  if(siteUser.name) rows.push('<strong>' + esc(siteUser.name) + '</strong>');
+  if(siteUser.email) rows.push(esc(siteUser.email));
+  if(siteUser.companyName) rows.push(esc(siteUser.companyName));
+  if(siteUser.role) rows.push('Signed in as ' + esc(siteUser.role));
+  box.innerHTML = rows.join('<br>');
 }
 
 function renderAccountPlan(){
@@ -14084,7 +14181,6 @@ document.addEventListener('DOMContentLoaded', addPasswordReveals);
 addPasswordReveals();
 
 
-document.getElementById('btnSaveSignIn').addEventListener('click', saveSignInDetails);
 
 document.getElementById('btnSiteLogout').addEventListener('click', siteLogout);
 
