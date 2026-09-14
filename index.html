@@ -218,15 +218,19 @@ document.getElementById('loginUsername').addEventListener('keydown', (e)=>{
 
 // If already signed in, go straight through.
 //
-// The owner is checked first. Owners are usually technicians as well, so
-// without this the office site was unreachable: opening the site sent them
-// into the field app every time, and from an installed app there is no address
-// bar to type a different address into.
+// Which app depends on how this page was opened. The service icon asks for the
+// service app (?app=service); anything else, an owner goes to the office site.
+// Without that, both Home Screen icons landed in the same place — the owner
+// redirect hijacked the service icon too.
 (function(){
-  const owner = lsGet('ownerAccount');
-  if(lsGet('ownerSession') && owner && owner.username){
-    goTo('./customer-intake.html');
-    return;
+  const wantsService = new URLSearchParams(window.location.search).get('app') === 'service';
+
+  if(!wantsService){
+    const owner = lsGet('ownerAccount');
+    if(lsGet('ownerSession') && owner && owner.username){
+      goTo('./customer-intake.html');
+      return;
+    }
   }
 
   const session = lsGet('session');

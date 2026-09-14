@@ -1,7 +1,7 @@
 {
   "name": "PoolLog",
   "short_name": "PoolLog",
-  "start_url": "./index.html",
+  "start_url": "./index.html?app=service",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F4F7F6",
