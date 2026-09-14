@@ -1,0 +1,16 @@
+{
+  "name": "PoolLog Office",
+  "short_name": "Office",
+  "start_url": "./customer-intake.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F7F6",
+  "theme_color": "#114B4F",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
