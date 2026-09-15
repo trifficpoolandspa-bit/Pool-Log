@@ -950,6 +950,47 @@ console.log('\n=== Account page ===');
 }
 
 
+console.log('\n=== The Account page opens on Business after leaving it ===');
+{
+  const {dom} = load('customer-intake.html', {seed: {companyName: 'Blue Water Pools', customers: []}});
+  const w = dom.window, d = w.document;
+  w.console.warn = ()=>{};
+  w.Element.prototype.scrollIntoView = function(){};
+  try{
+    const press = t => Array.from(d.querySelectorAll('#accountTabControl .history-type-btn'))
+      .find(b => b.dataset.acct === t).click();
+    const shown = () => ['acctBusiness','acctContact','acctPlan','acctEmailPanel','acctData']
+      .filter(id => d.getElementById(id) && d.getElementById(id).style.display === 'block');
+    const activeBtn = () => { const b = d.querySelector('#accountTabControl .history-type-btn.active'); return b ? b.dataset.acct : ''; };
+
+    d.getElementById('btnAccount').click();
+    check('  it opens on Business', shown().join() === 'acctBusiness' && activeBtn() === 'business', shown().join() + ' ' + activeBtn());
+
+    // Every other tab, left through the real navigation buttons
+    const navs = Array.from(d.querySelectorAll('.tab[data-view]')).map(t => t.dataset.view);
+    check('  there are other tabs to leave through', navs.length >= 3, navs.join());
+    ['plan','contact','email','data'].forEach((acct, i)=>{
+      const view = navs[i % navs.length];
+      press(acct);
+      check('  ' + acct + ' is showing before leaving', shown().join().length > 0 && activeBtn() === acct);
+      d.querySelector('.tab[data-view="' + view + '"]').click();
+      d.getElementById('btnAccount').click();
+      check('  after ' + acct + ', leaving to ' + view + ' and coming back shows Business',
+            shown().join() === 'acctBusiness', shown().join());
+      check('  with the Business button highlighted', activeBtn() === 'business', activeBtn());
+    });
+
+    // Settings is reached from its own button, not the tab row
+    press('plan');
+    w.eval("switchView('settings')");
+    d.getElementById('btnAccount').click();
+    check('  leaving to Settings and back shows Business too', shown().join() === 'acctBusiness', shown().join());
+  }catch(e){
+    check('  account tab reset', false, e.message);
+  }
+}
+
+
 console.log('\n=== Salt pool skipping can be turned off ===');
 {
   const seed = {
