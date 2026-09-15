@@ -1388,7 +1388,7 @@ input::placeholder{color:#A9BCB9;}
 
     <div class="card">
       <h2>Customer sync</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Customers are saved on this device first and copied to the server whenever there is a connection, so every device you sign in on sees the same list. Before the first sync on a device, a copy of everything here is kept safely in the browser.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Customers are saved on this device first and copied to the server whenever there is a connection, so every device you sign in on sees the same list. When two people change the same customer, each keeps the fields they changed; if both changed the same field, the newer change wins. Before the first sync on a device, a copy of everything here is kept safely in the browser.</p>
       <div class="btn-row">
         <button class="btn btn-primary" id="btnSyncNow" style="width:auto;">Sync now</button>
         <button class="btn btn-ghost" id="btnSyncBackup" style="width:auto;">Download pre-sync backup</button>
@@ -5765,24 +5765,31 @@ document.addEventListener('DOMContentLoaded', ()=>{
 // source of truth: everything is saved here first and works with no signal,
 // and the server is a copy that catches up.
 //
+// Merging is per field. A technician and the owner can edit the same customer
+// on the same day, so each field (gate code, service day, notes, equipment…)
+// keeps its own newest edit and both people keep their change. Only when two
+// people change the same field does the newer edit win; the value it replaced
+// is kept on the server (push_customer_fields, snippet 04). A delete only wins
+// if it is newer than every edit, and an edit made after a delete undoes it.
+//
 // Safeguards, each deliberate:
 //  1. A device that has never synced only pulls. Nothing is uploaded until one
 //     full pull has finished, so an empty or reinstalled app can never wipe the
 //     server — it is treated as not knowing anything yet.
 //  2. Nothing is really deleted. A deleted customer is marked on the server and
-//     can be recovered.
+//     keeps its details.
 //  3. More than SYNC_MASS_DELETE customers disappearing at once, in either
 //     direction, stops and asks. Real use almost never looks like that; a bug
-//     always does. Answering no keeps the customers.
-//  4. When two devices edit the same customer, the newer edit wins and the
-//     server keeps the losing version (push_customer in snippet 03).
+//     always does. Answering Keep keeps them.
+//  4. A value that loses to a newer edit is kept on the server.
 //  5. Each customer is sent on its own, so a dropped signal leaves the rest
 //     waiting for next time rather than half-written.
 //  6. Before the first sync on a device, a full backup is kept in the browser's
 //     database, separate from everything sync touches.
 //
-// Sync state lives under its own prefix, not STORAGE_PREFIX, so a downloaded
-// backup never carries it and restoring one never rewinds it.
+// Edits are dated by this device's clock. Sync state lives under its own
+// prefix, not STORAGE_PREFIX, so a downloaded backup never carries it and
+// restoring one never rewinds it.
 const SYNC_PREFIX = 'poollogsync:';
 const SYNC_MASS_DELETE = 5;
 const SYNC_INTERVAL_MS = 60000;
@@ -5790,19 +5797,21 @@ const SYNC_PAGE = 500;
 // Pulls look a little before the last change seen, so a save that committed a
 // moment late is never skipped. Applying the same row twice changes nothing.
 const SYNC_OVERLAP_MS = 5000;
+const SYNC_GONE = '__gone__';
 
 function syncStateKey(companyId){ return SYNC_PREFIX + 'state:' + companyId; }
 
 function loadSyncState(companyId){
   let s = null;
   try{ s = JSON.parse(localStorage.getItem(syncStateKey(companyId)) || 'null'); }catch(e){}
-  if(!s || typeof s !== 'object') s = {};
+  if(!s || typeof s !== 'object' || s.v !== 2) s = {};   // v1 state was whole-record
   return {
+    v: 2,
     pulledOnce: s.pulledOnce === true,   // safeguard 1
     cursor: s.cursor || null,            // newest server updated_at seen
-    known: s.known || {},                // id -> {h: hash sent/received, u: server updated_at, d: deleted}
-    seen: s.seen || {},                  // id -> hash last noticed locally, to date edits
-    edits: s.edits || {},                // id -> ISO time the unsent edit was made
+    known: s.known || {},                // id -> {u: server updated_at, d: deleted, f: {field: hash}}
+    seen: s.seen || {},                  // id -> {field: hash} last noticed here, or SYNC_GONE
+    edits: s.edits || {},                // id -> {field: ISO edit time, _deleted: ISO time}
     lastSyncedAt: s.lastSyncedAt || null,
     backupAt: s.backupAt || null
   };
@@ -5840,37 +5849,48 @@ function syncHash(obj){
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-const SYNC_DELETED = '__deleted__';
+// A customer as {field: hash}. JSON drops undefined, so it counts as absent.
+function syncFieldHashes(c){
+  const f = {};
+  Object.keys(c || {}).forEach(k=>{ if(c[k] !== undefined) f[k] = syncHash(c[k]); });
+  return f;
+}
 
-// Notice what changed on this device since the server last agreed, and when.
-// Edits made here are dated the moment this runs, which saveCustomers triggers
-// straight away; changes made by a field app on this same device are dated
-// when the office site next looks.
+// Notice what changed on this device since the server last agreed, field by
+// field, and when. saveCustomers runs this straight away, so edits made here
+// are dated when they are made; changes made by a field app on this same
+// device are dated when the office site next looks.
 function syncScanLocal(state, list, now){
   const stamp = now || new Date().toISOString();
   const present = new Set();
   (list || []).forEach(c=>{
-    if(!c || !c.id) return;
+    if(!c || c.id === undefined || c.id === null) return;
     const id = String(c.id);
     present.add(id);
-    const h = syncHash(c);
+    const f = syncFieldHashes(c);
     const k = state.known[id];
-    const agrees = k && !k.d && k.h === h;
-    if(agrees){
-      delete state.edits[id];
-    } else if(state.seen[id] !== h || !state.edits[id]){
-      state.edits[id] = stamp;
-    }
-    state.seen[id] = h;
+    const prev = state.seen[id];
+    const e = Object.assign({}, state.edits[id] || {});
+    const keys = new Set(Object.keys(f).concat(k ? Object.keys(k.f || {}) : []));
+    keys.forEach(key=>{
+      if(k && k.f && k.f[key] === f[key]){ delete e[key]; return; }
+      const noticed = prev && prev !== SYNC_GONE && prev[key] === f[key];
+      if(!noticed || !e[key]) e[key] = stamp;
+    });
+    // Present here but deleted on the server: keeping it is an undelete
+    if(k && k.d){ if(prev === SYNC_GONE || !e._deleted) e._deleted = stamp; }
+    else delete e._deleted;
+    state.seen[id] = f;
+    if(Object.keys(e).length) state.edits[id] = e; else delete state.edits[id];
   });
   Object.keys(state.known).forEach(id=>{
-    const k = state.known[id];
     if(present.has(id)) return;
-    if(k.d){ delete state.edits[id]; state.seen[id] = SYNC_DELETED; return; }
-    if(state.seen[id] !== SYNC_DELETED || !state.edits[id]) state.edits[id] = stamp;
-    state.seen[id] = SYNC_DELETED;
+    const k = state.known[id];
+    if(k.d){ delete state.edits[id]; state.seen[id] = SYNC_GONE; return; }
+    const was = state.edits[id] && state.edits[id]._deleted;
+    state.edits[id] = {_deleted: (state.seen[id] === SYNC_GONE && was) ? was : stamp};
+    state.seen[id] = SYNC_GONE;
   });
-  // Anything never sent and no longer here needs nothing
   Object.keys(state.edits).forEach(id=>{
     if(!present.has(id) && !state.known[id]) delete state.edits[id];
   });
@@ -5930,36 +5950,59 @@ async function loadFirstSyncBackup(companyId){
   });
 }
 
-// Apply server rows to the local list. Rows for customers with an unsent edit
-// here are left alone — the push that follows settles those.
+// Build the local copy of one customer from the server's version, keeping any
+// field still edited here and not yet sent.
+function syncMergeLocal(serverData, localRec, pending){
+  const out = Object.assign({}, serverData);
+  Object.keys(pending || {}).forEach(key=>{
+    if(key === '_deleted') return;
+    if(localRec && localRec[key] !== undefined) out[key] = localRec[key];
+    else delete out[key];
+  });
+  return out;
+}
+
+// Apply pulled rows to the local list
 function syncApplyRows(state, list, rows, keepIds, firstPull){
   const byId = new Map(list.map((c, i)=> [String(c.id), i]));
   const removed = new Set();
   rows.forEach(row=>{
     const id = String(row.id);
-    const h = syncHash(row.data);
+    // A device that has never synced does not know whether its copy is current,
+    // so for any customer the server already has, the server wins. The device's
+    // own copy is still in the pre-sync backup.
     if(firstPull) delete state.edits[id];
-    if(state.edits[id]){
-      // Deliberately not recording the server's new updated_at: the push must
-      // still compare against the version this device last agreed with, so the
-      // server sees the conflict and keeps whichever edit loses.
-      return;
-    }
-    if(row.deleted){
-      if(keepIds && keepIds.has(id)){
-        // The person chose to keep it: it goes back up as a fresh edit
-        state.known[id] = {h: null, u: row.updated_at, d: true};
-        return;
+    const pending = state.edits[id];
+    const hashes = syncFieldHashes(row.data);
+    const local = byId.has(id) ? list[byId.get(id)] : null;
+
+    if(pending){
+      // Take the server's other fields now; the push settles the rest. The
+      // server's updated_at is deliberately not recorded yet, so the push still
+      // compares against the version this device last agreed with.
+      const k = state.known[id] || {u: null, d: false, f: {}};
+      Object.keys(hashes).forEach(key=>{ if(!pending[key]) k.f[key] = hashes[key]; });
+      Object.keys(k.f).forEach(key=>{ if(!pending[key] && !(key in hashes)) delete k.f[key]; });
+      state.known[id] = k;
+      if(local){
+        const merged = syncMergeLocal(row.data, local, pending);
+        list[byId.get(id)] = merged;
+        state.seen[id] = syncFieldHashes(merged);
       }
-      if(byId.has(id)) removed.add(id);
-      state.known[id] = {h, u: row.updated_at, d: true};
-      state.seen[id] = SYNC_DELETED;
       return;
     }
-    if(byId.has(id)) list[byId.get(id)] = row.data;
+
+    if(row.deleted){
+      state.known[id] = {u: row.updated_at, d: true, f: hashes};
+      if(keepIds && keepIds.has(id)) return;   // the scan turns it into an undelete
+      if(local) removed.add(id);
+      state.seen[id] = SYNC_GONE;
+      return;
+    }
+    if(local) list[byId.get(id)] = row.data;
     else { list.push(row.data); byId.set(id, list.length - 1); }
-    state.known[id] = {h, u: row.updated_at, d: false};
-    state.seen[id] = h;
+    state.known[id] = {u: row.updated_at, d: false, f: hashes};
+    state.seen[id] = hashes;
   });
   return removed.size ? list.filter(c => !removed.has(String(c.id))) : list;
 }
@@ -5967,6 +6010,11 @@ function syncApplyRows(state, list, rows, keepIds, firstPull){
 function syncStatus(text){
   const el = document.getElementById('syncStatus');
   if(el) el.textContent = text;
+}
+
+function syncShowList(list){
+  customers = list;
+  try{ if(typeof renderList === 'function') renderList(); }catch(e){}
 }
 
 let syncRunning = false;
@@ -5978,7 +6026,7 @@ async function syncCustomers(){
   if(syncRunning){ syncAgain = true; return {ok: false, reason: 'busy'}; }
   syncRunning = true;
   const companyId = siteUser.companyId;
-  const result = {ok: false, pulled: 0, pushed: 0, conflicts: 0, failed: 0};
+  const result = {ok: false, pulled: 0, pushed: 0, keptTheirs: 0, failed: 0};
   try{
     const state = loadSyncState(companyId);
 
@@ -5999,11 +6047,11 @@ async function syncCustomers(){
 
     // ---- Pull ----
     const rows = [];
-    let since = state.cursor
+    const since = state.cursor
       ? new Date(new Date(state.cursor).getTime() - SYNC_OVERLAP_MS).toISOString()
       : null;
     for(let offset = 0; ; offset += SYNC_PAGE){
-      let path = '/rest/v1/customers?select=id,data,deleted,updated_at,edited_at'
+      let path = '/rest/v1/customers?select=id,data,deleted,updated_at'
         + '&order=updated_at.asc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset;
       if(since) path += '&updated_at=gte.' + encodeURIComponent(since);
       const res = await syncCall(path);
@@ -6017,18 +6065,13 @@ async function syncCustomers(){
       rows.push(...res.body);
       if(res.body.length < SYNC_PAGE) break;
     }
-
-    // A device that has never synced does not know whether its copy is current,
-    // so for any customer the server already has, the server's copy wins. The
-    // device's own copy is still in the pre-sync backup.
-    if(!state.pulledOnce){
-      rows.forEach(r=>{ delete state.edits[String(r.id)]; });
-    }
+    const firstPull = !state.pulledOnce;
 
     // Safeguard 3, incoming
     let list = lsGet('customers') || [];
     const localIds = new Set(list.map(c => String(c.id)));
-    const incomingDeletes = rows.filter(r => r.deleted && localIds.has(String(r.id)) && !state.edits[String(r.id)]);
+    const incomingDeletes = rows.filter(r => r.deleted && localIds.has(String(r.id))
+      && (firstPull || !state.edits[String(r.id)]));
     let keepIds = null;
     if(incomingDeletes.length > SYNC_MASS_DELETE){
       const names = incomingDeletes.slice(0, 5).map(r => escapeSyncText((r.data && r.data.name) || 'Unnamed')).join(', ');
@@ -6043,11 +6086,7 @@ async function syncCustomers(){
     }
 
     const before = syncStableString(list);
-    list = syncApplyRows(state, list, rows, keepIds, !state.pulledOnce);
-    if(keepIds){
-      const stamp = new Date().toISOString();
-      keepIds.forEach(id => { state.edits[id] = stamp; });
-    }
+    list = syncApplyRows(state, list, rows, keepIds, firstPull);
     rows.forEach(r=>{ if(!state.cursor || r.updated_at > state.cursor) state.cursor = r.updated_at; });
     result.pulled = rows.length;
     if(syncStableString(list) !== before){
@@ -6056,19 +6095,17 @@ async function syncCustomers(){
         result.reason = 'storage';
         return result;
       }
-      customers = list;
-      try{ if(typeof renderList === 'function') renderList(); }catch(e){}
+      syncShowList(list);
     }
     state.pulledOnce = true;          // safeguard 1: pushing is now allowed
     if(!saveSyncState(companyId, state)){ result.reason = 'state'; return result; }
 
     // ---- Push ----
     syncScanLocal(state, list);
-    let ids = Object.keys(state.edits);
-    const present = new Map(list.map(c => [String(c.id), c]));
+    let present = new Set(list.map(c => String(c.id)));
 
     // Safeguard 3, outgoing
-    const outgoingDeletes = ids.filter(id => !present.has(id) && state.known[id] && !state.known[id].d);
+    const outgoingDeletes = Object.keys(state.edits).filter(id => !present.has(id) && state.edits[id]._deleted);
     if(outgoingDeletes.length > SYNC_MASS_DELETE){
       const remove = await confirmDialog(
         outgoingDeletes.length + ' customers are missing from this device since the last sync. '
@@ -6082,65 +6119,84 @@ async function syncCustomers(){
           result.reason = 'restore-failed';
           return result;
         }
-        list = list.concat(back);
+        list = (lsGet('customers') || []).concat(back);
         if(!lsSet('customers', list)){ result.reason = 'storage'; return result; }
-        customers = list;
-        try{ if(typeof renderList === 'function') renderList(); }catch(e){}
+        syncShowList(list);
         saveSyncState(companyId, state);
-        ids = Object.keys(state.edits);
+        present = new Set(list.map(c => String(c.id)));
       }
     }
 
-    for(const id of ids){
-      const local = present.get(id);
-      const editedAt = state.edits[id];
-      let data = local, deleted = false;
-      if(!local){
-        // A delete still sends the last known details, so the marked row keeps them
-        const got = await syncCall('/rest/v1/customers?select=data&id=eq.' + encodeURIComponent(id));
-        if(!got.ok || !Array.isArray(got.body)){ result.failed++; break; }
-        if(!got.body.length){ delete state.edits[id]; saveSyncState(companyId, state); continue; }
-        data = got.body[0].data;
-        deleted = true;
+    for(const id of Object.keys(state.edits)){
+      const pending = Object.assign({}, state.edits[id]);
+      const localRec = (lsGet('customers') || []).find(c => String(c.id) === id) || null;
+      const changes = {};
+      const sentHash = {};
+      if(!localRec){
+        if(!pending._deleted) continue;
+        changes._deleted = {t: pending._deleted, v: true};
+      } else {
+        Object.keys(pending).forEach(key=>{
+          if(key === '_deleted'){ changes._deleted = {t: pending._deleted, v: false}; return; }
+          if(localRec[key] === undefined) changes[key] = {t: pending[key], gone: true};
+          else changes[key] = {t: pending[key], v: localRec[key]};
+          sentHash[key] = localRec[key] === undefined ? undefined : syncHash(localRec[key]);
+        });
       }
+      if(!Object.keys(changes).length){ delete state.edits[id]; continue; }
+
       const k = state.known[id];
-      const res = await syncCall('/rest/v1/rpc/push_customer', {
+      const res = await syncCall('/rest/v1/rpc/push_customer_fields', {
         method: 'POST',
-        body: JSON.stringify({p_id: id, p_data: data, p_deleted: deleted,
-                              p_edited_at: editedAt, p_base: k ? k.u : null})
+        body: JSON.stringify({p_id: id, p_changes: changes, p_base: k && k.u ? k.u : null})
       });
       if(!res.ok || !res.body || !res.body.result){
         // Safeguard 5: stop here; everything not yet sent waits for next time
         result.failed++;
         break;
       }
-      // Only clear the edit if nothing changed locally while this was in flight
-      const now = (lsGet('customers') || []).find(c => String(c.id) === id);
-      const unchanged = deleted ? !now : (now && syncHash(now) === syncHash(data));
-      if(res.body.result === 'saved'){
-        state.known[id] = {h: syncHash(data), u: res.body.updated_at, d: deleted};
-        if(unchanged) delete state.edits[id];
-        result.pushed++;
-      } else if(res.body.result === 'server_newer'){
-        state.known[id] = {h: syncHash(res.body.data), u: res.body.updated_at, d: !!res.body.deleted};
-        if(unchanged){
-          delete state.edits[id];
-          let cur = lsGet('customers') || [];
-          if(res.body.deleted){
-            cur = cur.filter(c => String(c.id) !== id);
-            state.seen[id] = SYNC_DELETED;
-          } else {
-            const i = cur.findIndex(c => String(c.id) === id);
-            if(i === -1) cur.push(res.body.data); else cur[i] = res.body.data;
-            state.seen[id] = syncHash(res.body.data);
-          }
-          if(lsSet('customers', cur)){
-            customers = cur;
-            try{ if(typeof renderList === 'function') renderList(); }catch(e){}
-          }
-        }
-        result.conflicts++;
+      if(res.body.result === 'missing'){
+        // Deleted here, never reached the server: nothing to do
+        delete state.edits[id];
+        saveSyncState(companyId, state);
+        continue;
       }
+
+      // Clear only what went up unchanged; anything edited while this was in
+      // flight stays waiting.
+      let cur = lsGet('customers') || [];
+      const idx = cur.findIndex(c => String(c.id) === id);
+      const now = idx === -1 ? null : cur[idx];
+      const still = Object.assign({}, state.edits[id] || {});
+      Object.keys(pending).forEach(key=>{
+        if(still[key] !== pending[key]) return;               // re-edited since
+        if(key === '_deleted'){
+          if(!!now === !!localRec) delete still._deleted;
+          return;
+        }
+        const h = now && now[key] !== undefined ? syncHash(now[key]) : undefined;
+        if(now && h === sentHash[key]) delete still[key];
+      });
+
+      state.known[id] = {u: res.body.updated_at, d: !!res.body.deleted, f: syncFieldHashes(res.body.data)};
+      const keepHere = still._deleted ? !!now : !res.body.deleted;
+      let next = null;
+      if(keepHere) next = syncMergeLocal(res.body.data, now, still);
+      if(next){
+        if(idx === -1) cur.push(next); else cur[idx] = next;
+        state.seen[id] = syncFieldHashes(next);
+      } else if(idx !== -1){
+        cur = cur.filter(c => String(c.id) !== id);
+        state.seen[id] = SYNC_GONE;
+      } else {
+        state.seen[id] = SYNC_GONE;
+      }
+      if(Object.keys(still).length) state.edits[id] = still; else delete state.edits[id];
+      if(syncStableString(cur) !== syncStableString(lsGet('customers') || [])){
+        if(lsSet('customers', cur)) syncShowList(cur);
+      }
+      result.pushed++;
+      if(Array.isArray(res.body.kept_theirs) && res.body.kept_theirs.length) result.keptTheirs++;
       saveSyncState(companyId, state);   // per record, so progress survives a drop
     }
 
@@ -6149,7 +6205,7 @@ async function syncCustomers(){
     saveSyncState(companyId, state);
     syncStatus(waiting
       ? 'Last synced ' + new Date(state.lastSyncedAt).toLocaleTimeString() + ' \u2014 ' + waiting
-        + (waiting === 1 ? ' change' : ' changes') + ' still waiting to send.'
+        + (waiting === 1 ? ' customer' : ' customers') + ' still waiting to send.'
       : 'Synced ' + new Date(state.lastSyncedAt).toLocaleTimeString() + '.');
     result.ok = result.failed === 0;
     return result;
@@ -6173,11 +6229,11 @@ async function syncRestoreFromServer(state, ids){
     if(!res.ok || !Array.isArray(res.body)) return null;
     res.body.forEach(row=>{
       const id = String(row.id);
-      const h = syncHash(row.data);
-      state.known[id] = {h, u: row.updated_at, d: !!row.deleted};
-      state.seen[id] = h;
+      const f = syncFieldHashes(row.data);
+      state.known[id] = {u: row.updated_at, d: !!row.deleted, f};
       delete state.edits[id];
-      if(!row.deleted) back.push(row.data);
+      if(row.deleted){ state.seen[id] = SYNC_GONE; }
+      else { state.seen[id] = f; back.push(row.data); }
     });
   }
   return back;
@@ -13091,6 +13147,12 @@ document.getElementById('btnAddCustomer').addEventListener('click', ()=>{
 });
 
 function switchView(view){
+  // Coming to Account from anywhere else always starts on Business. Only
+  // staying on the Account page keeps whichever tab was chosen.
+  const acctView = document.getElementById('view-account');
+  if(view === 'account' && !(acctView && acctView.classList.contains('active'))){
+    accountTab = 'business';
+  }
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
 
   // Customer Customization is its own tab but reuses the Readings and Dosages
