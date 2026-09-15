@@ -5804,9 +5804,20 @@ function syncStateKey(companyId){ return SYNC_PREFIX + 'state:' + companyId; }
 function loadSyncState(companyId){
   let s = null;
   try{ s = JSON.parse(localStorage.getItem(syncStateKey(companyId)) || 'null'); }catch(e){}
-  if(!s || typeof s !== 'object' || s.v !== 2) s = {};   // v1 state was whole-record
+  if(!s || typeof s !== 'object') s = {};
+  // State from the first, whole-record version of sync is not reused: the
+  // device starts again with a full pull. But any customer it still had
+  // waiting to send must not be overwritten by that pull, so those carry over.
+  let carried = {};
+  if(s.v !== 2){
+    if(s.edits && typeof s.edits === 'object'){
+      Object.keys(s.edits).forEach(id=>{ if(typeof s.edits[id] === 'string') carried[id] = s.edits[id]; });
+    }
+    s = {backupAt: s.backupAt || null};
+  }
   return {
     v: 2,
+    carried: Object.assign({}, s.carried || {}, carried),   // id -> edit time from the old version
     pulledOnce: s.pulledOnce === true,   // safeguard 1
     cursor: s.cursor || null,            // newest server updated_at seen
     known: s.known || {},                // id -> {u: server updated_at, d: deleted, f: {field: hash}}
@@ -5971,7 +5982,22 @@ function syncApplyRows(state, list, rows, keepIds, firstPull){
     // A device that has never synced does not know whether its copy is current,
     // so for any customer the server already has, the server wins. The device's
     // own copy is still in the pre-sync backup.
-    if(firstPull) delete state.edits[id];
+    if(firstPull){
+      if(state.carried[id] && byId.has(id)){
+        // Waiting to send under the old version: every field counts as edited then
+        const t = state.carried[id];
+        const e = {};
+        Object.keys(list[byId.get(id)]).forEach(key=>{ if(list[byId.get(id)][key] !== undefined) e[key] = t; });
+        state.edits[id] = e;
+      } else if(state.carried[id] && !row.deleted){
+        // Deleted here under the old version and not yet sent: do not bring it
+        // back. Recorded as known, so it goes up as a delete below.
+        state.known[id] = {u: row.updated_at, d: false, f: syncFieldHashes(row.data)};
+        return;
+      } else {
+        delete state.edits[id];
+      }
+    }
     const pending = state.edits[id];
     const hashes = syncFieldHashes(row.data);
     const local = byId.has(id) ? list[byId.get(id)] : null;
@@ -6097,6 +6123,16 @@ async function syncCustomers(){
       }
       syncShowList(list);
     }
+    // Carried edits for customers deleted here under the old version go up as deletes
+    if(firstPull){
+      Object.keys(state.carried).forEach(id=>{
+        if(!list.some(c => String(c.id) === id) && state.known[id] && !state.known[id].d){
+          state.edits[id] = {_deleted: state.carried[id]};
+          state.seen[id] = SYNC_GONE;
+        }
+      });
+    }
+    state.carried = {};
     state.pulledOnce = true;          // safeguard 1: pushing is now allowed
     if(!saveSyncState(companyId, state)){ result.reason = 'state'; return result; }
 
