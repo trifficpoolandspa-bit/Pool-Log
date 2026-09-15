@@ -1210,7 +1210,25 @@ input::placeholder{color:#A9BCB9;}
         <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">Your account for this site. Your technicians sign in to the field apps with their own usernames, set on the Technicians page, and cannot open this site.</p>
 
         <div id="acctSignInWho" style="font-size:14px;color:var(--ink);line-height:1.7;"></div>
-        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0;">Changing your password is not built into the app yet. Until it is, it is done from your account on the server.</p>
+
+        <div style="margin-top:20px;padding-top:18px;border-top:1px solid var(--line);">
+          <h2 style="margin:0 0 4px;font-size:15px;">Change your password</h2>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;">Whoever set your account up chose your first password. Change it to something only you know.</p>
+
+          <div class="field">
+            <label>New password</label>
+            <input id="acctNewPassword" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+          </div>
+          <div class="field">
+            <label>Type it again</label>
+            <input id="acctNewPassword2" type="password" autocomplete="new-password" placeholder="The same password">
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnChangePassword" style="width:auto;">Change password</button>
+          </div>
+          <p id="acctPasswordNote" style="font-size:12.5px;margin:10px 0 0;display:none;"></p>
+        </div>
       </div>
     </div>
 
@@ -5724,6 +5742,59 @@ document.addEventListener('DOMContentLoaded', ()=>{
   if(pass) pass.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') attemptSiteLogin(); });
   guardSiteSession();
 });
+
+
+// Changing your own password. You are already signed in, so the server knows
+// who is asking — no old password needed, and none is asked for.
+async function changeOwnPassword(){
+  const note = document.getElementById('acctPasswordNote');
+  const btn = document.getElementById('btnChangePassword');
+  const say = (msg, ok)=>{
+    if(!note) return;
+    note.textContent = msg;
+    note.style.color = ok ? 'var(--teal-deep)' : 'var(--rust)';
+    note.style.display = 'block';
+  };
+
+  const a = document.getElementById('acctNewPassword').value;
+  const b = document.getElementById('acctNewPassword2').value;
+
+  if(!a){ say('Enter a new password.', false); return; }
+  // Supabase refuses anything under six; eight is a more useful floor and the
+  // message is clearer coming from here than from the server.
+  if(a.length < 8){ say('Use at least 8 characters.', false); return; }
+  if(a !== b){ say('Those two do not match.', false); return; }
+
+  if(btn){ btn.disabled = true; btn.textContent = 'Changing\u2026'; }
+  const done = ()=>{ if(btn){ btn.disabled = false; btn.textContent = 'Change password'; } };
+
+  let res = await sbFetch('/auth/v1/user', {
+    method: 'PUT',
+    body: JSON.stringify({password: a})
+  });
+
+  // An hour-old session will be refused; refresh and try once more rather than
+  // telling someone their password change failed when it simply timed out.
+  if(res.status === 401 && await sbRefresh()){
+    res = await sbFetch('/auth/v1/user', {
+      method: 'PUT',
+      body: JSON.stringify({password: a})
+    });
+  }
+
+  done();
+
+  if(res.offline){ say('Could not reach the server. Check your connection.', false); return; }
+  if(!res.ok){
+    const msg = (res.body && (res.body.msg || res.body.message || res.body.error_description)) || '';
+    say(msg || 'Could not change your password.', false);
+    return;
+  }
+
+  document.getElementById('acctNewPassword').value = '';
+  document.getElementById('acctNewPassword2').value = '';
+  say('Changed. Use the new one next time you sign in.', true);
+}
 
 // ---------- Who is signed in ----------
 // Read-only now. The account lives on the server, so the app shows it rather
@@ -14261,6 +14332,8 @@ function attachAllPhoneFormatting(){
 document.addEventListener('DOMContentLoaded', attachAllPhoneFormatting);
 attachAllPhoneFormatting();
 
+
+document.getElementById('btnChangePassword').addEventListener('click', changeOwnPassword);
 </script>
 </body>
 </html>
