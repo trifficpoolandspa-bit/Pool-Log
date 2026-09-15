@@ -5649,6 +5649,10 @@ async function siteLogout(){
   await sbSignOut();
   lsSet('ownerSession', false);
   siteUser = null;
+  // Back to the first tab. Otherwise signing in again lands on whichever tab
+  // was open when you signed out — usually Plan, since that is where the
+  // password and sign-out live.
+  accountTab = 'business';
   const u = document.getElementById('siteUsername');
   const p = document.getElementById('sitePassword');
   if(u) u.value = '';
@@ -9997,12 +10001,14 @@ function renderTechProfile(techId){
   const phHead = document.createElement('div');
   phHead.style.cssText = "font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;"
     + 'color:var(--teal-mid);text-transform:uppercase;letter-spacing:0.07em;margin:16px 0 4px;';
-  phHead.textContent = 'Gate photo for this technician';
+  phHead.textContent = 'What this technician must do';
   meta.appendChild(phHead);
 
   // Before and after photo requirements are set per body of water on Readings
   // and Dosages, not per technician — the field apps stopped reading the
   // per-technician ones, so offering them here was a switch that did nothing.
+  checkRow('Require a photo and note to skip a body of water', 'requireSkipProof',
+    'This technician must photograph the reason and write a note before they can skip a pool, spa or fountain.');
   checkRow('Require closed gate photo', 'requireGatePhoto',
     'This technician must photograph the closed or locked gate before submitting.');
 
@@ -14230,6 +14236,14 @@ function addPasswordReveal(input){
     + '<line x1="2" y1="2" x2="22" y2="22"></line></svg>';
 
   btn.innerHTML = eyeOpen;
+  const hide = ()=>{
+    if(input.type !== 'text') return;
+    input.type = 'password';
+    btn.innerHTML = eyeOpen;
+    btn.title = 'Show password';
+    btn.setAttribute('aria-label', 'Show password');
+  };
+
   btn.addEventListener('click', ()=>{
     const showing = input.type === 'text';
     input.type = showing ? 'password' : 'text';
@@ -14239,6 +14253,23 @@ function addPasswordReveal(input){
     btn.setAttribute('aria-label', label);
     input.focus();
   });
+
+  // A revealed password must never stay revealed. Leaving the page, switching
+  // away from the app, or locking the phone all put it back — otherwise it sits
+  // there in plain text for whoever picks the device up next.
+  input.addEventListener('blur', hide);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) hide(); });
+  window.addEventListener('pagehide', hide);
+  window.addEventListener('blur', hide);
+  if(typeof switchView === 'function' && !window.__hideOnViewChange){
+    window.__hideOnViewChange = [];
+    const realSwitch = switchView;
+    switchView = function(){
+      (window.__hideOnViewChange || []).forEach(fn => { try{ fn(); }catch(e){} });
+      return realSwitch.apply(this, arguments);
+    };
+  }
+  if(window.__hideOnViewChange) window.__hideOnViewChange.push(hide);
 
   wrap.appendChild(btn);
 }
