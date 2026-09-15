@@ -278,6 +278,14 @@ function addPasswordReveal(input){
     + '<line x1="2" y1="2" x2="22" y2="22"></line></svg>';
 
   btn.innerHTML = eyeOpen;
+  const hide = ()=>{
+    if(input.type !== 'text') return;
+    input.type = 'password';
+    btn.innerHTML = eyeOpen;
+    btn.title = 'Show password';
+    btn.setAttribute('aria-label', 'Show password');
+  };
+
   btn.addEventListener('click', ()=>{
     const showing = input.type === 'text';
     input.type = showing ? 'password' : 'text';
@@ -287,6 +295,23 @@ function addPasswordReveal(input){
     btn.setAttribute('aria-label', label);
     input.focus();
   });
+
+  // A revealed password must never stay revealed. Leaving the page, switching
+  // away from the app, or locking the phone all put it back — otherwise it sits
+  // there in plain text for whoever picks the device up next.
+  input.addEventListener('blur', hide);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) hide(); });
+  window.addEventListener('pagehide', hide);
+  window.addEventListener('blur', hide);
+  if(typeof switchView === 'function' && !window.__hideOnViewChange){
+    window.__hideOnViewChange = [];
+    const realSwitch = switchView;
+    switchView = function(){
+      (window.__hideOnViewChange || []).forEach(fn => { try{ fn(); }catch(e){} });
+      return realSwitch.apply(this, arguments);
+    };
+  }
+  if(window.__hideOnViewChange) window.__hideOnViewChange.push(hide);
 
   wrap.appendChild(btn);
 }

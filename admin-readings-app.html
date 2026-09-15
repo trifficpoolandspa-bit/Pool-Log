@@ -755,6 +755,9 @@ select#customerSelect{font-weight:600;}
         <label>Gate photo for this technician</label>
         <p style="font-size:11.5px;color:var(--muted);margin:0 0 8px;">Before and after photo requirements are set per body of water on Readings and Dosages, not here. Leaving this off means the technician follows whatever Settings says.</p>
         <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
+          <input type="checkbox" id="tcRequireSkipProof" style="margin:0;"> Require a photo and note to skip a body of water
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:14px;cursor:pointer;">
           <input type="checkbox" id="tcRequireGate" style="margin:0;"> Require gate photo
         </label>
         <p id="tcPhotoRequireNote" style="display:none;font-size:11.5px;color:var(--rust);margin:8px 0 0;"></p>
@@ -2279,8 +2282,32 @@ setTimeout(async ()=>{
 }, 4000);
 
 
-document.querySelectorAll('.tab').forEach(t=>{
-  t.addEventListener('click', ()=>{
+
+// Is there a report with actual work in it, waiting to be finished? Used to
+// decide whether tapping Today should resume it rather than show the route.
+function reportInProgress(){
+  if(!viewingToday()) return false;
+  if(!visitDraft || !visitDraft.customerId) return false;
+  const cust = customers.find(x => x.id === visitDraft.customerId);
+  if(!cust) return false;
+
+  // A body of water already submitted counts
+  if(pendingVisit && pendingVisit.customerId === visitDraft.customerId
+     && Object.keys(pendingVisit.doneSections || {}).length > 0) return true;
+
+  // So does anything typed but not yet submitted
+  const vals = visitDraft.values || {};
+  return Object.keys(vals).some(k => vals[k] !== '' && vals[k] !== undefined);
+}
+
+// Listened for on the document rather than attached to each tab. The nav is
+// re-rendered in places — hiding the Technicians tab, for one — and anything
+// bound to the old elements is lost when they are replaced. That is why
+// tapping Today from another tab silently did nothing.
+document.addEventListener('click', (ev)=>{
+  const t = ev.target && ev.target.closest ? ev.target.closest('.tab') : null;
+  if(!t || !t.dataset || !t.dataset.view) return;
+  (()=>{
     // Ignore a tab tapped right after the step button — the two sit close
     // together and that is a mis-tap, not a decision
     if(Date.now() - stepBarPressedAt < 500) return;
@@ -2289,13 +2316,25 @@ document.querySelectorAll('.tab').forEach(t=>{
     // straight into a customer's report.
     if(t.dataset.view === currentViewName) return;
 
-    // Today always means the route. It used to reopen a visit that had work in
-    // it, which meant tapping Today from another tab dropped you straight back
-    // inside a report you were trying to leave. The draft is still kept, so
-    // tapping that customer picks up exactly where they left off.
+    // Tapping Today with a report already under way goes back into that report
+    // rather than the route. Leaving mid-report to check something else and
+    // then having to find the customer again was the common complaint.
+    //
+    // It only ever happens on a deliberate tap of the Today tab — never on the
+    // device Back button, which is how this used to drop people into a report
+    // they were trying to leave.
+    // Wrapped, because a fault in this check must never stop a tab working.
+    // Being unable to leave a page is far worse than not resuming a report.
+    try{
+      if(t.dataset.view === 'home' && !navigatingBack && reportInProgress()){
+        openVisit(visitDraft.customerId);
+        return;
+      }
+    }catch(e){ /* fall through to the normal tab change */ }
+
     switchView(t.dataset.view);
-  });
-});
+  })();
+}, true);
 
 
 function lsGet(key){
@@ -4433,13 +4472,16 @@ function openPhotoFullSize(dataUrl){
   // No button. The whole overlay closes on a tap, so the only thing needed is
   // to say so clearly — at a size that is actually noticed against a
   // full-screen photo.
+  // Styled exactly like the camera's Cancel and Flash buttons, so the two
+  // full-screen views read as the same app rather than two different ones.
   const bar = document.createElement('div');
-  bar.style.cssText = 'flex:0 0 auto;padding:20px calc(20px + env(safe-area-inset-bottom));'
-    + 'text-align:center;background:#000;';
+  bar.style.cssText = 'flex:0 0 auto;padding:18px 20px calc(18px + env(safe-area-inset-bottom));'
+    + 'display:flex;align-items:center;justify-content:center;background:#000;';
 
   const hint = document.createElement('div');
   hint.textContent = 'Tap the photo to close';
-  hint.style.cssText = 'color:#fff;font-size:17px;font-weight:600;letter-spacing:0.01em;'
+  hint.style.cssText = 'flex:0 0 auto;padding:12px 18px;font-size:15px;border:none;'
+    + 'border-radius:10px;background:rgba(255,255,255,0.15);color:#fff;'
     + "font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;pointer-events:none;";
   bar.appendChild(hint);
 
@@ -4484,7 +4526,13 @@ function makePhotoController(ids){
     previewImg.style.minWidth = '96px';
     previewImg.style.cursor = 'zoom-in';
     previewImg.title = 'Tap to see it full size';
-    previewWrap.style.display = 'block';
+    // Centred, and evenly spaced if more than one ends up side by side. A
+    // thumbnail hard against the left edge looked like a mistake.
+    previewWrap.style.display = 'flex';
+    previewWrap.style.justifyContent = 'center';
+    previewWrap.style.alignItems = 'flex-start';
+    previewWrap.style.flexWrap = 'wrap';
+    previewWrap.style.gap = '10px';
     removeBtn.style.display = 'inline-flex';
     if(ids.onChange) ids.onChange();
   }
@@ -5420,6 +5468,7 @@ function openTechEditor(t){
   document.getElementById('tcEmail').value = t.email || '';
   document.getElementById('tcPhone').value = t.phone || '';
   document.getElementById('tcRequireGate').checked = t.requireGatePhoto === true;
+  document.getElementById('tcRequireSkipProof').checked = t.requireSkipProof === true;
   window.scrollTo({top: 0, behavior: 'smooth'});
 }
 
@@ -5433,6 +5482,7 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
     t.email = document.getElementById('tcEmail').value.trim();
     t.phone = document.getElementById('tcPhone').value.trim();
     t.requireGatePhoto = document.getElementById('tcRequireGate').checked;
+    t.requireSkipProof = document.getElementById('tcRequireSkipProof').checked;
     saveAdminTechnicians();
     showToast('Technician updated');
   }
@@ -6159,7 +6209,6 @@ function renderHomeList(){
     row.className = 'cust-row';
     row.style.flexWrap = 'nowrap';
     row.innerHTML = `<div style="display:flex;align-items:center;min-width:0;flex:1 1 auto;">
-        <div style="flex-shrink:0;width:26px;text-align:center;margin-right:8px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--muted);">${idx + 1}</div>
         <div style="min-width:0;flex:1 1 auto;"><div class="cust-name">${c.name}</div><div class="cust-meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.address || 'No address on file'}</div></div>
       </div>`;
 
@@ -7449,6 +7498,24 @@ async function renderPoolServiceChecks(customer){
   box.style.display = 'block';
 }
 
+// Slides the selected body of water to the left edge of the strip, so the one
+// being worked on is the first thing read and whatever follows it is visible.
+// With four or five bodies the selected tab could otherwise sit off screen.
+function scrollSelectedSectionIntoView(){
+  const container = document.getElementById('visitSectionButtons');
+  if(!container) return;
+  const btn = container.querySelector('[data-selected-tab="1"]');
+  if(!btn) return;
+  // Nothing to scroll — leave it alone rather than nudging a strip that fits
+  if(container.scrollWidth <= container.clientWidth + 1) return;
+  const left = Math.max(0, btn.offsetLeft - container.offsetLeft - 4);
+  try{
+    container.scrollTo({left: left, behavior: 'smooth'});
+  }catch(e){
+    container.scrollLeft = left;   // older browsers
+  }
+}
+
 function renderVisitSectionButtons(){
   const customer = customers.find(c => c.id === currentVisitCustomerId);
   if(!customer) return;
@@ -7479,6 +7546,7 @@ function renderVisitSectionButtons(){
       btn.style.color = '#fff';
       btn.style.borderColor = colour.text;
       btn.style.boxShadow = 'var(--shadow-sm)';
+      btn.dataset.selectedTab = '1';
     } else {
       btn.style.background = done ? colour.bg : 'transparent';
       btn.style.color = colour.text;
@@ -7542,6 +7610,9 @@ function renderVisitSectionButtons(){
   if(pendingVisit.neededSections.length === 0){
     container.innerHTML = '<p style="font-size:12.5px;color:var(--muted);">This customer has no pool, spa, or fountains on file yet — add those from the Customer tab.</p>';
   }
+
+  // After a moment, so the strip has been laid out and its widths are real
+  setTimeout(scrollSelectedSectionIntoView, 0);
 }
 
 function hideAllVisitSections(){
@@ -9094,6 +9165,98 @@ async function openVisit(customerId){
 // should carry on to the rest of the property rather than forcing a reading
 // that is not there. Nothing is recorded for a skipped body — it simply does
 // not appear in the report.
+
+// When a technician is required to justify a skip, this asks for a photo and a
+// note and refuses to go ahead without both. Returns null if they back out, or
+// {photo, note} once it has what it needs.
+function askSkipProof(label){
+  return new Promise(resolve=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-box" style="max-width:420px;">
+        <h3 style="margin:0 0 6px;">Skipping the ${esc(label)}</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.5;">
+          You need a photo of why it is being skipped, and a short note. Both are
+          required before this can be skipped.</p>
+
+        <div class="field">
+          <button class="btn btn-ghost" type="button" id="skipProofPhotoBtn" style="width:100%;">Take photo</button>
+          <input type="file" accept="image/*" capture="environment" id="skipProofFile" style="display:none;">
+          <div id="skipProofPreview" style="display:none;margin-top:10px;text-align:center;">
+            <img id="skipProofImg" style="width:25%;min-width:96px;border-radius:8px;display:inline-block;cursor:zoom-in;" alt="Reason photo" title="Tap to see it full size">
+            <div>
+              <button class="btn btn-ghost" type="button" id="skipProofRemove"
+                style="width:auto;margin-top:8px;padding:6px 12px;font-size:12.5px;">Remove photo</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Why is it being skipped?</label>
+          <textarea id="skipProofNote" rows="3" placeholder="Spa drained for repairs, fountain switched off for winter..." style="min-height:74px;"></textarea>
+        </div>
+
+        <p id="skipProofErr" style="font-size:12.5px;color:var(--rust);margin:0 0 10px;display:none;"></p>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="skipProofSave" style="flex:1;">Skip it</button>
+          <button class="btn btn-ghost" id="skipProofCancel" style="width:auto;">Cancel</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    let photoData = null;
+    const fileEl = overlay.querySelector('#skipProofFile');
+    const errEl = overlay.querySelector('#skipProofErr');
+    const say = (m)=>{ errEl.textContent = m; errEl.style.display = 'block'; };
+
+    overlay.querySelector('#skipProofPhotoBtn').addEventListener('click', ()=> fileEl.click());
+
+    // Same as every other photo in the app: tap to see it full size
+    overlay.querySelector('#skipProofImg').addEventListener('click', ()=>{
+      if(photoData) openPhotoFullSize(photoData);
+    });
+
+    overlay.querySelector('#skipProofRemove').addEventListener('click', ()=>{
+      photoData = null;
+      fileEl.value = '';
+      overlay.querySelector('#skipProofPreview').style.display = 'none';
+      overlay.querySelector('#skipProofPhotoBtn').textContent = 'Take photo';
+      errEl.style.display = 'none';
+    });
+
+    fileEl.addEventListener('change', async ()=>{
+      const f = fileEl.files && fileEl.files[0];
+      if(!f) return;
+      try{
+        photoData = await resizeImageFile(f, 1200, 0.7);
+        overlay.querySelector('#skipProofImg').src = photoData;
+        overlay.querySelector('#skipProofPreview').style.display = 'block';
+        overlay.querySelector('#skipProofPhotoBtn').textContent = 'Retake photo';
+        errEl.style.display = 'none';
+      }catch(e){
+        say('That photo could not be read. Try again.');
+      }
+    });
+
+    const close = (val)=>{
+      if(overlay.parentNode) document.body.removeChild(overlay);
+      resolve(val);
+    };
+
+    overlay.querySelector('#skipProofCancel').addEventListener('click', ()=> close(null));
+
+    overlay.querySelector('#skipProofSave').addEventListener('click', ()=>{
+      const note = overlay.querySelector('#skipProofNote').value.trim();
+      if(!photoData){ say('A photo is required before this can be skipped.'); return; }
+      if(!note){ say('Write a short note saying why.'); return; }
+      close({photo: photoData, note: note});
+    });
+  });
+}
+
 async function skipBodyOfWater(type){
   if(!pendingVisit || !currentVisitCustomerId) return;
 
@@ -9104,11 +9267,19 @@ async function skipBodyOfWater(type){
     ? (sectionLabel(customers.find(c => c.id === currentVisitCustomerId), sectionId) || 'fountain')
     : type;
 
-  const ok = await confirmDialog(
-    'Skip the ' + label + ' on this visit?\n\n'
-    + 'No readings or photos will be recorded for it, and it will not appear on '
-    + 'the service report.', 'Skip it');
-  if(!ok) return;
+  // Some technicians must justify a skip with a photo and a note. Set per
+  // technician on the Technicians page.
+  let proof = null;
+  if(techRequires('requireSkipProof')){
+    proof = await askSkipProof(label);
+    if(!proof) return;                      // backed out
+  } else {
+    const ok = await confirmDialog(
+      'Skip the ' + label + ' on this visit?\n\n'
+      + 'No readings or photos will be recorded for it, and it will not appear on '
+      + 'the service report.', 'Skip it');
+    if(!ok) return;
+  }
 
   // Anything already typed for this body goes, so a half-filled reading cannot
   // be committed later by accident
@@ -9116,6 +9287,20 @@ async function skipBodyOfWater(type){
   if(pkg && pkg.sections && pkg.sections[sectionId]){
     delete pkg.sections[sectionId];
     saveVisitPackage(currentVisitCustomerId, pkg);
+  }
+
+  // Keep the justification against the visit, so a skip is never invisible
+  if(proof){
+    const skips = lsGet('skipProof:' + currentVisitCustomerId) || [];
+    skips.push({
+      section: sectionId,
+      label: label,
+      note: proof.note,
+      photo: proof.photo,
+      technician: currentUser ? currentUser.name : '',
+      at: new Date().toISOString()
+    });
+    lsSet('skipProof:' + currentVisitCustomerId, skips);
   }
 
   // Marked done so the visit moves on; no reading id, so nothing is committed
@@ -10263,6 +10448,14 @@ function addPasswordReveal(input){
     + '<line x1="2" y1="2" x2="22" y2="22"></line></svg>';
 
   btn.innerHTML = eyeOpen;
+  const hide = ()=>{
+    if(input.type !== 'text') return;
+    input.type = 'password';
+    btn.innerHTML = eyeOpen;
+    btn.title = 'Show password';
+    btn.setAttribute('aria-label', 'Show password');
+  };
+
   btn.addEventListener('click', ()=>{
     const showing = input.type === 'text';
     input.type = showing ? 'password' : 'text';
@@ -10272,6 +10465,23 @@ function addPasswordReveal(input){
     btn.setAttribute('aria-label', label);
     input.focus();
   });
+
+  // A revealed password must never stay revealed. Leaving the page, switching
+  // away from the app, or locking the phone all put it back — otherwise it sits
+  // there in plain text for whoever picks the device up next.
+  input.addEventListener('blur', hide);
+  document.addEventListener('visibilitychange', ()=>{ if(document.hidden) hide(); });
+  window.addEventListener('pagehide', hide);
+  window.addEventListener('blur', hide);
+  if(typeof switchView === 'function' && !window.__hideOnViewChange){
+    window.__hideOnViewChange = [];
+    const realSwitch = switchView;
+    switchView = function(){
+      (window.__hideOnViewChange || []).forEach(fn => { try{ fn(); }catch(e){} });
+      return realSwitch.apply(this, arguments);
+    };
+  }
+  if(window.__hideOnViewChange) window.__hideOnViewChange.push(hide);
 
   wrap.appendChild(btn);
 }
