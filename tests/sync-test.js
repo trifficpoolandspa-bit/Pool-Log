@@ -65,9 +65,15 @@ function makeServer(){
     if(srv.offline) throw new TypeError('Failed to fetch');
     if(srv.broken && srv.broken(u)) return [500, {message: 'boom'}];
     if(u.pathname === '/rest/v1/members'){
-      const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+      // As Supabase answers it: every row the reading rules allow, nothing more.
+      // Filtering to the caller here once hid a real fault in the website.
+      const r = await asUser(uid, `select coalesce(json_agg(t order by t.role desc), '[]') j from (
         select m.user_id, m.role, m.name, m.company_id, json_build_object('name', c.name) companies
-        from public.members m join public.companies c on c.id = m.company_id where m.user_id = auth.uid()) t`);
+        from public.members m join public.companies c on c.id = m.company_id) t`);
+      return [200, r.rows[0].j];
+    }
+    if(u.pathname === '/rest/v1/rpc/my_membership'){
+      const r = await asUser(uid, 'select public.my_membership() j');
       return [200, r.rows[0].j];
     }
     if(u.pathname === '/rest/v1/customers'){
@@ -181,6 +187,17 @@ const status = w => w.document.getElementById('syncStatus').textContent;
     process.exit(1);
   }
   try{
+    console.log('\n=== The website knows who is signed in, with technicians in the company ===');
+    {
+      await reset(); const srv = makeServer();
+      const d = await boot(srv, {'poollog:customers': []});
+      check('the signed-in person is the owner, not a technician', d.w.eval('siteUser && siteUser.role') === 'owner',
+            d.w.eval('JSON.stringify(siteUser)'));
+      check('with the owner\'s own name', d.w.eval('siteUser && siteUser.name') === 'John', d.w.eval('JSON.stringify(siteUser)'));
+      check('and the company name', d.w.eval('siteUser && siteUser.companyName') === 'Triffic Pool and Spa', d.w.eval('JSON.stringify(siteUser)'));
+      d.close();
+    }
+
     console.log('\n=== A brand-new device with an empty app only pulls ===');
     {
       await reset(); const srv = makeServer();
