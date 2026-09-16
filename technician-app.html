@@ -3527,6 +3527,7 @@ document.getElementById('btnSaveReading').addEventListener('click', async ()=>{
   poolPhotoController.clear();
   gatePhotoController.clear();
   beforeControllerFor('pool').clear();
+  poolServicePressed = {customerId: null, on: {}};
   ['chkBackwashed','chkSaltCell'].forEach(id=>{
     const el = document.getElementById(id);
     if(el){
@@ -4504,9 +4505,10 @@ function renderServicedList(){
   const servicedCustomers = customers
     .filter(c => c.lastServicedDate === today && c.active !== false)
     .slice()
-    // In the order they were submitted; anything logged before this was tracked
-    // has no timestamp, so it sits first rather than disappearing
-    .sort((a,b)=> (a.lastServicedAt || '').localeCompare(b.lastServicedAt || ''));
+    // Most recently serviced at the top, the longest ago at the bottom. Anything
+    // logged before visit times were tracked has none, so it sits at the very
+    // bottom rather than disappearing.
+    .sort((a,b)=> (b.lastServicedAt || '').localeCompare(a.lastServicedAt || ''));
   if(servicedCustomers.length === 0){
     container.innerHTML = '<div class="empty">No one\'s been serviced yet today.</div>';
     return;
@@ -5115,6 +5117,13 @@ function sectionLabel(customer, sectionId){
 }
 
 
+// Which service buttons are pressed on the visit open now. Kept here, not only
+// on the buttons, because the buttons are rebuilt whenever the report is
+// reopened — leaving for another tab and coming back used to un-press them, so
+// the visit saved as not done, the report left it out and "last done" never
+// moved. Cleared when the pool is saved or the report is cancelled.
+let poolServicePressed = {customerId: null, on: {}};
+
 // Equipment-specific service toggles on the pool's After photos step.
 // Backwash only shows for sand filters; salt cell cleaning only for salt cells.
 async function renderPoolServiceChecks(customer){
@@ -5174,18 +5183,24 @@ async function renderPoolServiceChecks(customer){
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = ch.id;
-    btn.dataset.on = 'false';
+    const wasOn = !!customer && poolServicePressed.customerId === customer.id
+      && poolServicePressed.on[ch.id] === true;
+    btn.dataset.on = wasOn ? 'true' : 'false';
     btn.textContent = ch.label;
     const off = 'background:#fff;color:var(--teal-deep);border:1.5px solid var(--teal-mid);';
     const on  = 'background:var(--teal-deep);color:#fff;border:1.5px solid var(--teal-deep);';
     const base = 'width:100%;padding:10px 12px;border-radius:10px;font-size:13.5px;font-weight:600;'
       + "font-family:'Inter',sans-serif;cursor:pointer;"
       + 'transition:background-color .15s ease,color .15s ease;';
-    btn.style.cssText = base + off;
+    btn.style.cssText = base + (wasOn ? on : off);
     btn.addEventListener('click', ()=>{
       const nowOn = btn.dataset.on !== 'true';
       btn.dataset.on = nowOn ? 'true' : 'false';
       btn.style.cssText = base + (nowOn ? on : off);
+      if(poolServicePressed.customerId !== customer.id){
+        poolServicePressed = {customerId: customer.id, on: {}};
+      }
+      poolServicePressed.on[ch.id] = nowOn;
     });
     cell.appendChild(btn);
 
@@ -7059,6 +7074,7 @@ async function removeVisitSavedReadings(){
 async function discardVisitInProgress(){
   // Nothing held for this customer survives a cancelled report
   if(currentVisitCustomerId) clearVisitPackage(currentVisitCustomerId);
+  poolServicePressed = {customerId: null, on: {}};
   // Anything already written for this visit goes too — cancelling means there
   // should be no report at all, not a partial one.
   await removeVisitSavedReadings();

@@ -476,6 +476,7 @@ input::placeholder{color:#A9BCB9;}
       <div class="btn-row">
         <button class="btn btn-primary" id="btnAddCustomer" style="width:auto;">+ Add a customer</button>
         <button class="btn btn-ghost" id="btnImportCustomers" style="width:auto;">Import customers</button>
+        <button class="btn btn-ghost" id="btnRestoreCustomers" style="width:auto;margin-left:auto;">Restore customers</button>
       </div>
       <input type="file" accept=".csv,text/csv" id="importCsvInput" style="display:none;">
     </div>
@@ -5769,7 +5770,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
 // on the same day, so each field (gate code, service day, notes, equipment…)
 // keeps its own newest edit and both people keep their change. Only when two
 // people change the same field does the newer edit win; the value it replaced
-// is kept on the server (push_customer_fields, snippet 04). A delete only wins
+// is kept on the server (push_customer_fields, snippets 04 and 05). Equipment,
+// dogs and fountains merge one item at a time, so adding a pump on one device
+// and removing a filter on another both survive. A delete only wins
 // if it is newer than every edit, and an edit made after a delete undoes it.
 //
 // Safeguards, each deliberate:
@@ -5860,10 +5863,71 @@ function syncHash(obj){
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-// A customer as {field: hash}. JSON drops undefined, so it counts as absent.
+// Lists merged one item at a time rather than as a whole
+const SYNC_LIST_FIELDS = ['equipment', 'dogs', 'fountains'];
+const SYNC_SEP = '\u0001';          // field + SEP + item id; never typed by anyone
+const SYNC_ORDER = '__order';
+
+// A list can go item by item only if every item has its own id, once
+function syncIsItemList(v){
+  if(!Array.isArray(v)) return false;
+  const ids = new Set();
+  for(const it of v){
+    if(!it || typeof it !== 'object' || Array.isArray(it)) return false;
+    if(typeof it.id !== 'string' && typeof it.id !== 'number') return false;
+    const id = String(it.id);
+    if(id === SYNC_ORDER || ids.has(id)) return false;
+    ids.add(id);
+  }
+  return true;
+}
+
+// A customer as a flat map: ordinary fields as themselves, and each item of a
+// list as its own entry, plus the list's order
+function syncExplode(c){
+  const flat = {};
+  Object.keys(c || {}).forEach(k=>{
+    const v = c[k];
+    if(v === undefined) return;
+    if(SYNC_LIST_FIELDS.indexOf(k) !== -1 && syncIsItemList(v)){
+      flat[k + SYNC_SEP + SYNC_ORDER] = v.map(it => String(it.id));
+      v.forEach(it=>{ flat[k + SYNC_SEP + String(it.id)] = it; });
+    } else {
+      flat[k] = v;
+    }
+  });
+  return flat;
+}
+
+function syncImplode(flat){
+  const out = {};
+  const lists = {};
+  Object.keys(flat).forEach(key=>{
+    const at = key.indexOf(SYNC_SEP);
+    if(at === -1){ out[key] = flat[key]; return; }
+    const field = key.slice(0, at), sub = key.slice(at + 1);
+    const l = lists[field] || (lists[field] = {order: null, items: new Map()});
+    if(sub === SYNC_ORDER) l.order = flat[key];
+    else l.items.set(sub, flat[key]);
+  });
+  Object.keys(lists).forEach(field=>{
+    const l = lists[field];
+    const arr = [];
+    (Array.isArray(l.order) ? l.order : []).forEach(id=>{
+      id = String(id);
+      if(l.items.has(id)){ arr.push(l.items.get(id)); l.items.delete(id); }
+    });
+    l.items.forEach(it => arr.push(it));
+    out[field] = arr;
+  });
+  return out;
+}
+
+// A customer as {field or item: hash}
 function syncFieldHashes(c){
+  const flat = syncExplode(c);
   const f = {};
-  Object.keys(c || {}).forEach(k=>{ if(c[k] !== undefined) f[k] = syncHash(c[k]); });
+  Object.keys(flat).forEach(k=>{ f[k] = syncHash(flat[k]); });
   return f;
 }
 
@@ -5964,13 +6028,24 @@ async function loadFirstSyncBackup(companyId){
 // Build the local copy of one customer from the server's version, keeping any
 // field still edited here and not yet sent.
 function syncMergeLocal(serverData, localRec, pending){
-  const out = Object.assign({}, serverData);
+  const flat = syncExplode(serverData);
+  const mine = syncExplode(localRec || {});
   Object.keys(pending || {}).forEach(key=>{
     if(key === '_deleted') return;
-    if(localRec && localRec[key] !== undefined) out[key] = localRec[key];
-    else delete out[key];
+    if(key in mine) flat[key] = mine[key];
+    else delete flat[key];
   });
-  return out;
+  // A list must not exist both whole and as items: whichever form was edited
+  // here wins, otherwise the item form
+  Object.keys(flat).forEach(key=>{
+    const at = key.indexOf(SYNC_SEP);
+    if(at === -1) return;
+    const field = key.slice(0, at);
+    if(!(field in flat)) return;
+    if(pending && pending[field]) delete flat[key];
+    else delete flat[field];
+  });
+  return syncImplode(flat);
 }
 
 // Apply pulled rows to the local list
@@ -5987,7 +6062,7 @@ function syncApplyRows(state, list, rows, keepIds, firstPull){
         // Waiting to send under the old version: every field counts as edited then
         const t = state.carried[id];
         const e = {};
-        Object.keys(list[byId.get(id)]).forEach(key=>{ if(list[byId.get(id)][key] !== undefined) e[key] = t; });
+        Object.keys(syncExplode(list[byId.get(id)])).forEach(key=>{ e[key] = t; });
         state.edits[id] = e;
       } else if(state.carried[id] && !row.deleted){
         // Deleted here under the old version and not yet sent: do not bring it
@@ -6172,11 +6247,24 @@ async function syncCustomers(){
         if(!pending._deleted) continue;
         changes._deleted = {t: pending._deleted, v: true};
       } else {
+        const mine = syncExplode(localRec);
+        const listed = new Set();
         Object.keys(pending).forEach(key=>{
           if(key === '_deleted'){ changes._deleted = {t: pending._deleted, v: false}; return; }
-          if(localRec[key] === undefined) changes[key] = {t: pending[key], gone: true};
-          else changes[key] = {t: pending[key], v: localRec[key]};
-          sentHash[key] = localRec[key] === undefined ? undefined : syncHash(localRec[key]);
+          sentHash[key] = key in mine ? syncHash(mine[key]) : undefined;
+          const at = key.indexOf(SYNC_SEP);
+          if(at === -1){
+            if(listed.has(key)) return;   // the item-by-item change for this list wins
+            changes[key] = key in mine ? {t: pending[key], v: mine[key]} : {t: pending[key], gone: true};
+            return;
+          }
+          const field = key.slice(0, at), sub = key.slice(at + 1);
+          if(!listed.has(field)){ listed.add(field); changes[field] = {items: {}}; }
+          if(sub === SYNC_ORDER){
+            if(key in mine) changes[field].order = {t: pending[key], v: mine[key]};
+          } else {
+            changes[field].items[sub] = key in mine ? {t: pending[key], v: mine[key]} : {t: pending[key], gone: true};
+          }
         });
       }
       if(!Object.keys(changes).length){ delete state.edits[id]; continue; }
@@ -6210,7 +6298,8 @@ async function syncCustomers(){
           if(!!now === !!localRec) delete still._deleted;
           return;
         }
-        const h = now && now[key] !== undefined ? syncHash(now[key]) : undefined;
+        const nowFlat = now ? syncExplode(now) : null;
+        const h = nowFlat && key in nowFlat ? syncHash(nowFlat[key]) : undefined;
         if(now && h === sentHash[key]) delete still[key];
       });
 
@@ -6305,9 +6394,162 @@ function startCustomerSync(){
   }
 }
 
+
+// ---------- Deleted customers ----------
+// Every customer deleted since sync went live is still on the server, marked
+// deleted with all its details. This lists them and brings one back. Restoring
+// is an ordinary edit ("not deleted", dated now), so it follows the same merge
+// rules and reaches every device at their next sync.
+
+async function syncWaitIdle(){
+  for(let i = 0; i < 600 && syncRunning; i++) await new Promise(r => setTimeout(r, 50));
+  return !syncRunning;
+}
+
+async function fetchDeletedCustomers(){
+  const out = [];
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    const res = await syncCall('/rest/v1/customers?select=id,data,updated_at,field_times'
+      + '&deleted=eq.true&order=updated_at.desc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset);
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline};
+    out.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+  return {ok: true, rows: out};
+}
+
+function deletedAtOf(row){
+  const t = row.field_times && typeof row.field_times._deleted === 'string' ? row.field_times._deleted : row.updated_at;
+  const d = new Date(t);
+  return isNaN(d) ? null : d;
+}
+
+async function restoreDeletedCustomer(row){
+  if(!siteUser || !siteUser.companyId) return {ok: false, message: 'Sign in first.'};
+  await syncWaitIdle();
+  if(syncRunning) return {ok: false, message: 'Sync is busy. Try again in a moment.'};
+  syncRunning = true;   // hold sync off so it cannot overwrite what this records
+  const companyId = siteUser.companyId;
+  try{
+    const state = loadSyncState(companyId);
+    const id = String(row.id);
+    const k = state.known[id];
+    const res = await syncCall('/rest/v1/rpc/push_customer_fields', {
+      method: 'POST',
+      body: JSON.stringify({p_id: id, p_changes: {_deleted: {t: new Date().toISOString(), v: false}},
+                            p_base: k && k.u ? k.u : null})
+    });
+    if(res.offline) return {ok: false, message: 'You are offline. Restoring needs a connection.'};
+    if(!res.ok || !res.body || res.body.result !== 'saved'){
+      return {ok: false, message: 'Could not restore. ' + ((res.body && res.body.message) || '')};
+    }
+    if(res.body.deleted) return {ok: false, message: 'The server kept it deleted.'};
+
+    let list = lsGet('customers') || [];
+    const idx = list.findIndex(c => String(c.id) === id);
+    if(idx === -1) list.push(res.body.data); else list[idx] = res.body.data;
+    if(!lsSet('customers', list)) return {ok: false, message: 'This device is out of storage.'};
+    const f = syncFieldHashes(res.body.data);
+    state.known[id] = {u: res.body.updated_at, d: false, f};
+    state.seen[id] = f;
+    delete state.edits[id];
+    saveSyncState(companyId, state);
+    syncShowList(list);
+    return {ok: true};
+  }catch(e){
+    return {ok: false, message: 'Could not restore.'};
+  }finally{
+    syncRunning = false;
+  }
+}
+
+async function openDeletedCustomers(){
+  if(!siteUser || !siteUser.companyId){ showToast('Sign in first'); return; }
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.id = 'deletedCustomersOverlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <h2 style="margin:0 0 6px;font-size:17px;">Deleted customers</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">Everyone deleted since customer sync was turned on, newest first. Restoring brings them back on every device. Customers deleted before sync are only in your backups.</p>
+      <input id="deletedSearch" placeholder="Search by name or address" style="margin-bottom:10px;">
+      <div id="deletedList" style="overflow-y:auto;flex:1;min-height:80px;">Loading\u2026</div>
+      <div class="btn-row" style="margin-top:12px;">
+        <button class="btn btn-ghost" id="deletedClose">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = ()=>{ if(overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  overlay.querySelector('#deletedClose').addEventListener('click', close);
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) close(); });
+
+  const box = overlay.querySelector('#deletedList');
+  const search = overlay.querySelector('#deletedSearch');
+  const got = await fetchDeletedCustomers();
+  if(!got.ok){
+    box.textContent = got.offline ? 'You are offline. The deleted list needs a connection.'
+                                  : 'Could not load deleted customers. Try again in a moment.';
+    return;
+  }
+  let rows = got.rows;
+
+  const render = ()=>{
+    const term = search.value.trim().toLowerCase();
+    const shown = rows.filter(r=>{
+      if(!term) return true;
+      const d = r.data || {};
+      return [d.name, d.address, d.city].some(v => String(v || '').toLowerCase().indexOf(term) !== -1);
+    });
+    box.innerHTML = '';
+    if(!rows.length){ box.textContent = 'No deleted customers.'; return; }
+    if(!shown.length){ box.textContent = 'No deleted customers match that search.'; return; }
+    shown.forEach(r=>{
+      const d = r.data || {};
+      const when = deletedAtOf(r);
+      const item = document.createElement('div');
+      item.className = 'deleted-customer';
+      item.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);';
+      const info = document.createElement('div');
+      info.style.cssText = 'min-width:0;';
+      const name = document.createElement('div');
+      name.style.cssText = 'font-weight:600;font-size:14px;';
+      name.textContent = d.name || 'Unnamed customer';
+      const sub = document.createElement('div');
+      sub.style.cssText = 'font-size:12px;color:var(--muted);';
+      sub.textContent = [d.address, when ? 'Deleted ' + when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '']
+        .filter(Boolean).join(' \u00b7 ');
+      info.appendChild(name); info.appendChild(sub);
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-primary';
+      btn.style.cssText = 'width:auto;flex-shrink:0;';
+      btn.textContent = 'Restore';
+      btn.addEventListener('click', async ()=>{
+        const yes = await confirmDialog('Restore ' + escapeSyncText(d.name || 'this customer') + '? They will come back on every device.', 'Restore');
+        if(!yes) return;
+        btn.disabled = true; btn.textContent = 'Restoring\u2026';
+        const r2 = await restoreDeletedCustomer(r);
+        if(!r2.ok){
+          btn.disabled = false; btn.textContent = 'Restore';
+          showToast(r2.message);
+          return;
+        }
+        rows = rows.filter(x => x !== r);
+        render();
+        showToast('Restored ' + (d.name || 'customer'));
+      });
+      item.appendChild(info); item.appendChild(btn);
+      box.appendChild(item);
+    });
+  };
+  search.addEventListener('input', render);
+  render();
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
   const now = document.getElementById('btnSyncNow');
   if(now) now.addEventListener('click', ()=> syncCustomers());
+  const restore = document.getElementById('btnRestoreCustomers');
+  if(restore) restore.addEventListener('click', openDeletedCustomers);
   const dl = document.getElementById('btnSyncBackup');
   if(dl) dl.addEventListener('click', async ()=>{
     if(!siteUser || !siteUser.companyId){ showToast('Sign in first'); return; }
