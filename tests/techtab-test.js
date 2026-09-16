@@ -189,6 +189,29 @@ const rowText = (d, name) => { const r = Array.from(d.querySelectorAll('#technic
     check('the list shows who they sign in as', /Signs in as alex/.test(rowText(d, 'Alex Rivera')), rowText(d, 'Alex Rivera'));
     check('the toast says so', /sign in as alex/.test(toasts(w)), toasts(w));
 
+    console.log('\n=== The form has the skip and gate requirements ===');
+    d.getElementById('btnAddTech').click(); await sleep(50);
+    const skipBox = d.getElementById('techRequireSkipProof'), gateBox = d.getElementById('techRequireGatePhoto');
+    check('Add technician has "Require a photo and note to skip a body of water"', !!skipBox && /Require a photo and note to skip a body of water/.test(skipBox.closest('label').textContent));
+    check('and "Require closed gate photo"', !!gateBox && /Require closed gate photo/.test(gateBox.closest('label').textContent));
+    check('both start unticked, as on the profile page', skipBox && gateBox && !skipBox.checked && !gateBox.checked);
+    fill(d, w, {techName: 'Rule Follower', techRequireSkipProof: true, techRequireGatePhoto: true});
+    await saveForm(d);
+    const rf = () => w.eval("technicians.find(t => t.name === 'Rule Follower')");
+    check('ticking them saves both requirements on the technician', rf() && rf().requireSkipProof === true && rf().requireGatePhoto === true, JSON.stringify(rf()));
+    w.eval("openTechDetail(technicians.find(t => t.name === 'Rule Follower'))"); await sleep(100);
+    const profileBox = label => { const row = Array.from(d.querySelectorAll('#techProfileMeta .access-row')).find(r => r.textContent.indexOf(label) !== -1); return row && row.querySelector('input'); };
+    check('the profile page shows them ticked', profileBox('Require a photo and note to skip') && profileBox('Require a photo and note to skip').checked && profileBox('Require closed gate photo').checked);
+    w.eval("switchView('technicians')"); await sleep(250);
+    w.eval("editTechnician(technicians.find(t => t.name === 'Rule Follower'))"); await sleep(50);
+    check('Edit shows them ticked', d.getElementById('techRequireSkipProof').checked && d.getElementById('techRequireGatePhoto').checked);
+    fill(d, w, {techRequireGatePhoto: false});
+    await saveForm(d);
+    check('unticking one in Edit turns just that one off', rf().requireGatePhoto === false && rf().requireSkipProof === true, JSON.stringify(rf()));
+    d.getElementById('btnAddTech').click(); await sleep(50);
+    check('the next new technician starts unticked again', !d.getElementById('techRequireSkipProof').checked && !d.getElementById('techRequireGatePhoto').checked);
+    w.eval('resetTechForm(); hideTechForm();');
+
     console.log('\n=== Mistakes are caught before anything is saved ===');
     const before = w.eval('technicians.length');
     d.getElementById('btnAddTech').click(); await sleep(50);
