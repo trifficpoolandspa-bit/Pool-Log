@@ -640,6 +640,29 @@ input::placeholder{color:#A9BCB9;}
     <div class="card">
       <button class="btn btn-primary" id="btnAddTech" style="width:auto;">+ Add technician</button>
     </div>
+    <div class="card" id="techSignInCard">
+      <h2>Signing in on a phone</h2>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 12px;">The first time a technician uses the app on a phone, they open your setup link or type your company code. After that they sign in with just their username and password.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:13px;color:var(--muted);">Company code</span>
+        <strong id="techCompanyCode" style="font-size:18px;letter-spacing:0.08em;">&mdash;</strong>
+        <button class="btn btn-ghost" id="btnChangeCompanyCode" type="button" style="width:auto;padding:6px 12px;font-size:12.5px;">Change</button>
+      </div>
+      <div id="techCompanyCodeEdit" style="display:none;margin-top:10px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input id="techCompanyCodeInput" maxlength="12" placeholder="TRIFFIC" style="max-width:180px;text-transform:uppercase;">
+          <button class="btn btn-primary" id="btnSaveCompanyCode" type="button" style="width:auto;">Save code</button>
+          <button class="btn btn-ghost" id="btnCancelCompanyCode" type="button" style="width:auto;">Cancel</button>
+        </div>
+        <p style="font-size:11.5px;color:var(--muted);margin:6px 0 0;">4 to 12 letters or numbers. Phones already set up keep working.</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;">
+        <span style="font-size:13px;color:var(--muted);">Setup link</span>
+        <code id="techSetupLink" style="font-size:12px;word-break:break-all;flex:1;min-width:0;">&mdash;</code>
+        <button class="btn btn-ghost" id="btnCopySetupLink" type="button" style="width:auto;padding:6px 12px;font-size:12.5px;">Copy link</button>
+      </div>
+      <p id="techSignInStatus" style="font-size:11.5px;color:var(--muted);margin:10px 0 0;"></p>
+    </div>
     <div class="card primary" id="techFormCard" style="display:none;">
       <h2 id="techFormHeading">Add a technician</h2>
       <div class="field"><label>Name</label><input id="techName" placeholder="Sam Rivera"></div>
@@ -647,6 +670,7 @@ input::placeholder{color:#A9BCB9;}
       <div class="field"><label>Email</label><input id="techEmail" type="email" placeholder="sam@trifficpoolandspa.com"></div>
       <div class="field"><label>Username</label><input id="techUsername" placeholder="sam.rivera"></div>
       <div class="field"><label>Password</label><input id="techPassword" type="password" placeholder="Enter a password"></div>
+      <p id="techAccountHint" style="font-size:11.5px;color:var(--muted);margin:-4px 0 12px;">A username and password create their sign-in for the field apps.</p>
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--ink);">
           <input type="checkbox" id="techIsAdmin" style=""> Admin access
@@ -5636,16 +5660,21 @@ async function sbRefresh(){
 }
 
 // Who is signed in, and which company they belong to
+// Asks for the signed-in person's own membership. Reading the members table
+// and taking the first row used to work only because nobody could read anyone
+// else's row; owners can now see their technicians, so that would have signed
+// an owner in as whichever member came back first.
 async function sbWhoAmI(){
-  let res = await sbFetch('/rest/v1/members?select=user_id,role,name,company_id,companies(name)');
+  const ask = () => sbFetch('/rest/v1/rpc/my_membership', {method: 'POST', body: '{}'});
+  let res = await ask();
   if(res.status === 401){
     // Token expired — refresh once and try again
-    if(await sbRefresh()){
-      res = await sbFetch('/rest/v1/members?select=user_id,role,name,company_id,companies(name)');
-    }
+    if(await sbRefresh()) res = await ask();
   }
-  if(!res.ok || !Array.isArray(res.body) || !res.body.length) return null;
-  return res.body[0];
+  const m = res.ok ? res.body : null;
+  if(!m || typeof m !== 'object' || !m.company_id || m.removed) return null;
+  return {role: m.role, name: m.name, company_id: m.company_id,
+          companies: {name: m.company_name}, companyCode: m.company_code || null};
 }
 
 async function sbSignOut(){
@@ -5718,7 +5747,8 @@ async function attemptSiteLogin(){
     email: email,
     role: me.role,
     companyId: me.company_id,
-    companyName: me.companies ? me.companies.name : ''
+    companyName: me.companies ? me.companies.name : '',
+    companyCode: me.companyCode || null
   };
   lsSet('ownerSession', true);
   document.getElementById('sitePassword').value = '';
@@ -5744,7 +5774,8 @@ async function guardSiteSession(){
     name: me.name || '',
     role: me.role,
     companyId: me.company_id,
-    companyName: me.companies ? me.companies.name : ''
+    companyName: me.companies ? me.companies.name : '',
+    companyCode: me.companyCode || null
   };
   lsSet('ownerSession', true);
   hideSiteLogin();
@@ -6394,6 +6425,184 @@ function startCustomerSync(){
   }
 }
 
+
+// ---------- Technician sign-ins ----------
+// Each technician can have a sign-in for the field apps: a username, unique
+// within the company, and a password. Supabase accounts need an email, so each
+// one gets a made-up address on a reserved domain that can never receive mail;
+// nobody sees or types it. The rules — who may create, rename, reset or remove —
+// are enforced by the database (snippet 06); this only asks.
+const TECH_ACCOUNT_DOMAIN = 'accounts.poollog.invalid';
+let techAccounts = null;   // technician id -> {username, is_admin}; null until loaded
+
+function techErrorMessage(res, fallback){
+  if(res && res.offline) return 'You are offline. Sign-in changes need a connection \u2014 nothing was saved.';
+  const b = res && res.body;
+  const msg = b && (b.message || b.msg || b.error_description || b.error);
+  return msg ? String(msg) : fallback;
+}
+
+async function techRpc(name, params){
+  let res = await sbFetch('/rest/v1/rpc/' + name, {method: 'POST', body: JSON.stringify(params || {})});
+  if(res.status === 401 && await sbRefresh()){
+    res = await sbFetch('/rest/v1/rpc/' + name, {method: 'POST', body: JSON.stringify(params || {})});
+  }
+  return res;
+}
+
+async function loadTechAccounts(){
+  let res = await sbFetch('/rest/v1/members?select=technician_id,username,is_admin'
+    + '&technician_id=not.is.null&removed_at=is.null');
+  if(res.status === 401 && await sbRefresh()){
+    res = await sbFetch('/rest/v1/members?select=technician_id,username,is_admin'
+      + '&technician_id=not.is.null&removed_at=is.null');
+  }
+  if(!res.ok || !Array.isArray(res.body)){
+    techAccounts = null;
+    const st = document.getElementById('techSignInStatus');
+    if(st) st.textContent = res.offline ? 'Offline \u2014 sign-in details will show when you are back online.' : '';
+    return false;
+  }
+  const map = {};
+  res.body.forEach(m => { map[m.technician_id] = {username: m.username, is_admin: !!m.is_admin}; });
+  techAccounts = map;
+  const st = document.getElementById('techSignInStatus');
+  if(st) st.textContent = '';
+  try{ renderTechnicianList(); }catch(e){}
+  return true;
+}
+
+// Create, change or leave alone the sign-in for one technician
+async function saveTechnicianSignIn(o){
+  const username = String(o.username || '').trim();
+  const password = String(o.password || '');
+  if(techAccounts === null) await loadTechAccounts();
+  if(techAccounts === null){
+    // Without knowing whether they already have a sign-in, only a change that
+    // touches nothing about it can go ahead
+    if(!password) return {ok: true};
+    return {ok: false, message: 'You are offline. Sign-in changes need a connection \u2014 nothing was saved.'};
+  }
+  const acct = techAccounts[o.techId];
+
+  if(!acct){
+    if(!password) return {ok: true};   // a profile without a sign-in, as before
+    if(!username) return {ok: false, message: 'Enter a username to go with the password.'};
+    if(!/^[A-Za-z0-9][A-Za-z0-9._-]{2,39}$/.test(username)){
+      return {ok: false, message: 'Usernames are 3 to 40 letters, numbers, dots, dashes or underscores.'};
+    }
+    if(password.length < 8) return {ok: false, message: 'Passwords need at least 8 characters.'};
+    const avail = await techRpc('username_available', {p_username: username});
+    if(!avail.ok) return {ok: false, message: techErrorMessage(avail, 'Could not check that username.')};
+    if(avail.body === false) return {ok: false, message: 'That username is already taken in your company.'};
+
+    const rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID().replace(/-/g, '')
+      : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    const hidden = 'tech-' + rand.slice(0, 24) + '@' + TECH_ACCOUNT_DOMAIN;
+    // Its own request, not sbFetch: this must not carry the owner's session in
+    // or replace it with the new account's
+    let signup;
+    try{
+      const r = await fetch(SUPABASE_URL + '/auth/v1/signup', {
+        method: 'POST',
+        headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
+        body: JSON.stringify({email: hidden, password: password})
+      });
+      let body = null; try{ body = await r.json(); }catch(e){}
+      signup = {ok: r.ok, status: r.status, body};
+    }catch(e){
+      signup = {ok: false, offline: true};
+    }
+    const newId = signup.ok && signup.body && ((signup.body.user && signup.body.user.id) || signup.body.id);
+    if(!newId) return {ok: false, message: techErrorMessage(signup, 'Could not create their sign-in.')};
+
+    const att = await techRpc('attach_technician', {p_user_id: newId, p_username: username,
+      p_technician_id: o.techId, p_name: o.name, p_is_admin: !!o.isAdmin});
+    if(!att.ok) return {ok: false, message: techErrorMessage(att, 'Could not finish creating their sign-in.')};
+    techAccounts[o.techId] = {username: att.body.username, is_admin: !!att.body.is_admin};
+    return {ok: true, created: true, username: att.body.username};
+  }
+
+  if(!username) return {ok: false, message: 'A technician with a sign-in needs a username.'};
+  if(password && password.length < 8) return {ok: false, message: 'Passwords need at least 8 characters.'};
+  const changed = username.toLowerCase() !== String(acct.username).toLowerCase()
+    || !!o.isAdmin !== !!acct.is_admin;
+  if(changed || o.name){
+    const up = await techRpc('update_technician_account', {p_technician_id: o.techId,
+      p_username: username, p_name: o.name, p_is_admin: !!o.isAdmin});
+    if(!up.ok) return {ok: false, message: techErrorMessage(up, 'Could not update their sign-in.')};
+    techAccounts[o.techId] = {username: up.body.username, is_admin: !!up.body.is_admin};
+  }
+  if(password){
+    const pw = await techRpc('set_technician_password', {p_technician_id: o.techId, p_password: password});
+    if(!pw.ok) return {ok: false, message: techErrorMessage(pw, 'Could not set the new password.')};
+    return {ok: true, passwordSet: true, username: techAccounts[o.techId].username};
+  }
+  return {ok: true, username: techAccounts[o.techId].username};
+}
+
+async function removeTechnicianSignIn(techId){
+  const res = await techRpc('remove_technician_account', {p_technician_id: techId});
+  if(!res.ok) return {ok: false, message: res.offline
+    ? 'You are offline. Removing a technician needs a connection so their sign-in can be stopped.'
+    : techErrorMessage(res, 'Could not stop their sign-in.')};
+  if(techAccounts) delete techAccounts[techId];
+  return {ok: true};
+}
+
+function companySetupLink(code){
+  return new URL('index.html?company=' + encodeURIComponent(code), location.href).href;
+}
+
+function renderCompanySignIn(){
+  const code = siteUser && siteUser.companyCode;
+  const codeEl = document.getElementById('techCompanyCode');
+  const linkEl = document.getElementById('techSetupLink');
+  if(codeEl) codeEl.textContent = code || '\u2014';
+  if(linkEl) linkEl.textContent = code ? companySetupLink(code) : 'Available once you are online';
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const change = document.getElementById('btnChangeCompanyCode');
+  const edit = document.getElementById('techCompanyCodeEdit');
+  const input = document.getElementById('techCompanyCodeInput');
+  if(change) change.addEventListener('click', ()=>{
+    edit.style.display = 'block';
+    input.value = (siteUser && siteUser.companyCode) || '';
+    input.focus();
+  });
+  const cancel = document.getElementById('btnCancelCompanyCode');
+  if(cancel) cancel.addEventListener('click', ()=>{ edit.style.display = 'none'; });
+  const save = document.getElementById('btnSaveCompanyCode');
+  if(save) save.addEventListener('click', async ()=>{
+    const code = input.value.trim().toUpperCase();
+    if(!/^[A-Z0-9]{4,12}$/.test(code)){ showToast('Company codes are 4 to 12 letters or numbers'); return; }
+    if(siteUser && code === siteUser.companyCode){ edit.style.display = 'none'; return; }
+    const ok = await confirmDialog('Change your company code to ' + code + '? New phones will need the new code or link. Phones already set up keep working.', 'Change');
+    if(!ok) return;
+    const res = await techRpc('set_company_code', {p_code: code});
+    if(!res.ok){ showToast(techErrorMessage(res, 'Could not change the code')); return; }
+    if(siteUser) siteUser.companyCode = res.body;
+    edit.style.display = 'none';
+    renderCompanySignIn();
+    showToast('Company code is now ' + res.body);
+  });
+  const copy = document.getElementById('btnCopySetupLink');
+  if(copy) copy.addEventListener('click', async ()=>{
+    const code = siteUser && siteUser.companyCode;
+    if(!code){ showToast('Connect to the internet to get your setup link'); return; }
+    const link = companySetupLink(code);
+    try{
+      await navigator.clipboard.writeText(link);
+      showToast('Setup link copied');
+    }catch(e){
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('techSetupLink'));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      showToast('Select and copy the link shown');
+    }
+  });
+});
 
 // ---------- Deleted customers ----------
 // Every customer deleted since sync went live is still on the server, marked
@@ -10457,6 +10666,9 @@ function resetTechForm(){
   document.getElementById('techEquipPhotoAccess').checked = false;
   document.getElementById('techFormHeading').textContent = 'Add a technician';
   document.getElementById('btnSaveTech').textContent = 'Save technician';
+  document.getElementById('btnSaveTech').disabled = false;
+  document.getElementById('techPassword').placeholder = 'Enter a password';
+  document.getElementById('techAccountHint').textContent = 'A username and password create their sign-in for the field apps.';
 }
 
 function editTechnician(t){
@@ -10464,8 +10676,14 @@ function editTechnician(t){
   document.getElementById('techName').value = t.name || '';
   document.getElementById('techPhone').value = t.phone || '';
   document.getElementById('techEmail').value = t.email || '';
-  document.getElementById('techUsername').value = t.username || '';
-  document.getElementById('techPassword').value = t.password || '';
+  const acct = techAccounts ? techAccounts[t.id] : null;
+  document.getElementById('techUsername').value = (acct && acct.username) || t.username || '';
+  // Passwords are never shown back. Blank keeps the current one.
+  document.getElementById('techPassword').value = '';
+  document.getElementById('techPassword').placeholder = acct ? 'Leave blank to keep their password' : 'Enter a password';
+  document.getElementById('techAccountHint').textContent = acct
+    ? 'They sign in as ' + acct.username + '. Typing a new password signs them out of every phone.'
+    : 'No sign-in yet. A username and password create one.';
   document.getElementById('techIsAdmin').checked = !!t.isAdmin;
   document.getElementById('techEquipPhotoAccess').checked = !!t.canPhotoEquipment;
   document.getElementById('techFormHeading').textContent = 'Edit technician';
@@ -10478,8 +10696,16 @@ async function deleteTechnician(t){
   const warning = assignedCount
     ? ` ${assignedCount} customer${assignedCount === 1 ? ' is' : 's are'} currently assigned to them — they'll become unassigned.`
     : '';
-  const confirmed = await confirmDialog(`Delete ${t.name}?${warning}`);
+  const acct = techAccounts ? techAccounts[t.id] : null;
+  const signIn = acct
+    ? ' Their sign-in stops at once. A phone still signed in can upload visits it was holding for 7 days, and nothing else.'
+    : '';
+  const confirmed = await confirmDialog(`Delete ${escapeSyncText(t.name)}?${warning}${signIn}`);
   if(!confirmed) return;
+  if(acct || techAccounts === null){
+    const gone = await removeTechnicianSignIn(t.id);
+    if(!gone.ok){ showToast(gone.message); return; }
+  }
   technicians = technicians.filter(x => x.id !== t.id);
   customers.forEach(c=>{ if(c.technicianId === t.id) c.technicianId = ''; });
   saveTechnicians();
@@ -10508,7 +10734,9 @@ function renderTechnicianList(){
       const metaParts = [];
       if(t.phone) metaParts.push(t.phone);
       if(t.email) metaParts.push(t.email);
-      if(t.username) metaParts.push('@' + t.username);
+      const acct = techAccounts ? techAccounts[t.id] : null;
+      if(acct) metaParts.push('Signs in as ' + acct.username + (acct.is_admin ? ' · Admin' : ''));
+      else if(techAccounts) metaParts.push('No sign-in yet');
       metaParts.push(assignedCount + (assignedCount === 1 ? ' customer assigned' : ' customers assigned'));
       row.innerHTML = `<div class="cust-left"><span class="tech-handle" title="Drag to reorder" style="color:var(--muted);font-size:19px;flex-shrink:0;padding:0 8px 0 2px;">&#8801;</span><div class="cust-avatar">${initialOf(t.name)}</div><div class="cust-info"><div class="cust-name">${t.name}</div><div class="cust-meta">${metaParts.join(' · ')}</div></div></div>`;
       const grip = row.querySelector('.tech-handle');
@@ -11148,7 +11376,9 @@ document.getElementById('btnCancelTech').addEventListener('click', ()=>{
   hideTechForm();
 });
 
-document.getElementById('btnSaveTech').addEventListener('click', ()=>{
+document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
+  const saveBtn = document.getElementById('btnSaveTech');
+  if(saveBtn.disabled) return;
   const name = document.getElementById('techName').value.trim();
   const phone = document.getElementById('techPhone').value.trim();
   const email = document.getElementById('techEmail').value.trim();
@@ -11158,6 +11388,21 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
   const canPhotoEquipment = document.getElementById('techEquipPhotoAccess').checked;
   if(!name){ showToast('Enter a technician name'); return; }
 
+  // The sign-in is settled on the server first. If that fails nothing is
+  // saved, so the profile and the account never disagree.
+  const techId = editingTechId || ('tech_' + Date.now());
+  saveBtn.disabled = true;
+  const prevLabel = saveBtn.textContent;
+  saveBtn.textContent = 'Saving\u2026';
+  let account;
+  try{
+    account = await saveTechnicianSignIn({techId, name, username, password, isAdmin});
+  }finally{
+    saveBtn.disabled = false;
+    saveBtn.textContent = prevLabel;
+  }
+  if(!account.ok){ showToast(account.message); return; }
+
   if(editingTechId){
     const existing = technicians.find(t => t.id === editingTechId);
     if(existing){
@@ -11165,7 +11410,7 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
       existing.phone = phone;
       existing.email = email;
       existing.username = username;
-      existing.password = password;
+      if(password) existing.password = password;
       existing.isAdmin = isAdmin;
       existing.canPhotoEquipment = canPhotoEquipment;
     }
@@ -11175,11 +11420,12 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
     renderList();
     resetTechForm();
     hideTechForm();
-    showToast('Technician updated');
+    showToast(account.created ? 'Sign-in created — they can sign in as ' + account.username
+            : account.passwordSet ? 'Technician updated — new password set' : 'Technician updated');
     return;
   }
 
-  const id = 'tech_' + Date.now();
+  const id = techId;
   // An after photo is the proof the work was done, so every new technician
   // starts with it required. It can be turned off per technician afterwards.
   technicians.push({id, name, phone, email, username, password, isAdmin,
@@ -11189,7 +11435,7 @@ document.getElementById('btnSaveTech').addEventListener('click', ()=>{
   populateTechnicianSelect();
   resetTechForm();
   hideTechForm();
-  showToast('Technician added');
+  showToast(account.created ? 'Technician added — they can sign in as ' + account.username : 'Technician added');
 });
 
 // Chemical lists are read live from the Readings and Dosages config, so whatever
@@ -13471,6 +13717,8 @@ function switchView(view){
   if(view === 'technicians'){
     resetTechForm();
     hideTechForm();
+    renderCompanySignIn();
+    loadTechAccounts();
   }
   if(view === 'map'){
     selectedMapDay = DAYS_OF_WEEK[new Date().getDay()];
