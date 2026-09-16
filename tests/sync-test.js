@@ -1,5 +1,5 @@
 // Customer sync on the office site, driven through the real page against a
-// real Postgres running the real snippets 03 and 04. Only the HTTP layer is
+// real Postgres running the real snippets 03 to 06. Only the HTTP layer is
 // imitated, the way Supabase's Data API answers.
 //
 // Needs Postgres. In a fresh container:  bash sync-test-setup.sh
@@ -29,7 +29,9 @@ async function reset(){
   await pool.query("delete from public.members; delete from public.companies; delete from auth.users;");
   await pool.query(`insert into auth.users values ($1),($2),($3)`, [OWNER, TECH, OUTSIDER]);
   await pool.query(`insert into public.companies(id,name) values ($1,'Triffic Pool and Spa'),($2,'Someone Else')`, [COMPANY, OTHER_CO]);
-  await pool.query(`insert into public.members(user_id,company_id,role,name) values ($1,$2,'owner','John'),($3,$2,'technician','Alex'),($4,$5,'owner','Other')`,
+  // Alex is an admin technician here, so he can edit the same customers as the
+  // owner; what plain technicians may do is covered by accounts-test.js
+  await pool.query(`insert into public.members(user_id,company_id,role,name,username,technician_id,is_admin) values ($1,$2,'owner','John',null,null,false),($3,$2,'technician','Alex','alex','t-alex',true),($4,$5,'owner','Other',null,null,false)`,
     [OWNER, COMPANY, TECH, OUTSIDER, OTHER_CO]);
 }
 
@@ -72,6 +74,9 @@ function makeServer(){
       const where = []; const params = [];
       const since = u.searchParams.get('updated_at');
       if(since){ params.push(since.replace(/^gte\./, '')); where.push('updated_at >= $' + params.length); }
+      const del = u.searchParams.get('deleted');
+      if(del === 'eq.true') where.push('deleted = true');
+      if(del === 'eq.false') where.push('deleted = false');
       const idf = u.searchParams.get('id');
       if(idf && idf.startsWith('eq.')){ params.push(idf.slice(3)); where.push('id = $' + params.length); }
       if(idf && idf.startsWith('in.(')){
@@ -141,8 +146,9 @@ async function boot(srv, seed, opts){
   const w = dom.window;
   w.__answer = o.answer || null;
   const iv = setInterval(()=>{
-    const ov = w.document.querySelector('.confirm-overlay');
-    if(ov){
+    // Only yes/no questions; the Deleted customers list is also an overlay
+    const ov = Array.from(w.document.querySelectorAll('.confirm-overlay')).filter(o => o.querySelector('#confirmOk')).pop();
+    if(ov && w.__answer){
       dialogs.push(ov.textContent);
       const btn = ov.querySelector(w.__answer === 'ok' ? '#confirmOk' : '#confirmCancel');
       if(btn) btn.click();
@@ -372,6 +378,109 @@ const status = w => w.document.getElementById('syncStatus').textContent;
       owner.close(); tech.close();
     }
 
+    console.log('\n=== Equipment, dogs and fountains merge one item at a time ===');
+    {
+      await reset(); const srv = makeServer();
+      const start = cust('eq', 'Echo', {
+        equipment: [{id: 'e1', type: 'Filter', photos: []}, {id: 'e2', type: 'Pump', photos: []}],
+        dogs: [{id: 'd1', name: 'Rex'}],
+        fountains: []});
+      const owner = await boot(srv, {'poollog:customers': [start]});
+      const tech = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+      check('the technician has the customer with both pieces of equipment', find(tech.w, 'eq') && find(tech.w, 'eq').equipment.length === 2);
+
+      srv.offline = true;
+      await edit(tech.w, "customers[0].equipment.push({id:'e3', type:'Heater', photos:[]})");
+      await edit(owner.w, "customers[0].equipment = customers[0].equipment.filter(x => x.id !== 'e1')");
+      await edit(tech.w, "customers[0].dogs.push({id:'d2', name:'Max'})");
+      await edit(owner.w, "customers[0].dogs.push({id:'d3', name:'Bella'})");
+      await edit(owner.w, "customers[0].fountains.push({id:'f1', name:'Front'})");
+      await sleep(2300); await idle(owner.w); await idle(tech.w);
+      srv.offline = false;
+      await sync(tech.w); await sync(owner.w); await sync(tech.w);
+      let r = await row('eq');
+      const types = r.data.equipment.map(x => x.type).join(',');
+      check('the technician\'s new heater is kept', types.indexOf('Heater') !== -1, types);
+      check('and the owner\'s removed filter stays removed', types.indexOf('Filter') === -1, types);
+      check('the pump nobody touched is still there', types.indexOf('Pump') !== -1, types);
+      const dogs = r.data.dogs.map(x => x.name).sort().join(',');
+      check('a dog added on each device: all three dogs kept', dogs === 'Bella,Max,Rex', dogs);
+      check('a new fountain arrives', r.data.fountains.length === 1 && r.data.fountains[0].name === 'Front');
+      check('none of this counted as a conflict', (await versions()).length === 0, JSON.stringify(await versions()));
+      const ownerTypes = find(owner.w, 'eq').equipment.map(x => x.type).sort().join(',');
+      const techTypes = find(tech.w, 'eq').equipment.map(x => x.type).sort().join(',');
+      check('the owner\'s device matches', ownerTypes === 'Heater,Pump', ownerTypes);
+      check('the technician\'s device matches', techTypes === 'Heater,Pump', techTypes);
+      check('both devices have all three dogs',
+            find(owner.w, 'eq').dogs.length === 3 && find(tech.w, 'eq').dogs.length === 3);
+      check('the list on the owner\'s screen is current too', owner.w.eval("customers[0].dogs.length") === 3);
+
+      // The same item, newer edit arriving second
+      srv.offline = true;
+      await edit(tech.w, "customers[0].equipment.find(x => x.id === 'e2').model = 'TECH-OLDER'");
+      await sleep(40);
+      await edit(owner.w, "customers[0].equipment.find(x => x.id === 'e2').model = 'OWNER-NEWER'");
+      await sleep(2300); await idle(owner.w); await idle(tech.w);
+      srv.offline = false;
+      await sync(tech.w); await sync(owner.w); await sync(tech.w);
+      r = await row('eq');
+      check('the same item: newer edit wins', r.data.equipment.find(x => x.id === 'e2').model === 'OWNER-NEWER');
+      check('the other item in that list is untouched', r.data.equipment.some(x => x.id === 'e3' && x.type === 'Heater'));
+      check('the replaced item is kept', (await versions()).some(v => JSON.stringify(v.data).indexOf('TECH-OLDER') !== -1),
+            JSON.stringify(await versions()));
+      check('the technician\'s device takes the newer item', find(tech.w, 'eq').equipment.find(x => x.id === 'e2').model === 'OWNER-NEWER');
+
+      // An older removal does not beat a newer edit of that item
+      srv.offline = true;
+      await edit(owner.w, "customers[0].equipment = customers[0].equipment.filter(x => x.id !== 'e3')");
+      await sleep(40);
+      await edit(tech.w, "customers[0].equipment.find(x => x.id === 'e3').model = 'KEEP'");
+      await sleep(2300); await idle(owner.w); await idle(tech.w);
+      srv.offline = false;
+      await sync(tech.w); await sync(owner.w);
+      r = await row('eq');
+      check('an older removal does not remove a newer edit of that item', r.data.equipment.some(x => x.id === 'e3' && x.model === 'KEEP'),
+            JSON.stringify(r.data.equipment));
+      check('the item comes back on the owner\'s device', find(owner.w, 'eq').equipment.some(x => x.id === 'e3'));
+
+      // Order is kept
+      await edit(owner.w, "customers[0].dogs.reverse()");
+      await sleep(2300); await idle(owner.w);
+      await sync(tech.w);
+      check('a reordered list keeps its order on the other device',
+            find(tech.w, 'eq').dogs.map(x => x.id).join() === find(owner.w, 'eq').dogs.map(x => x.id).join(),
+            find(tech.w, 'eq').dogs.map(x => x.id).join() + ' vs ' + find(owner.w, 'eq').dogs.map(x => x.id).join());
+      const pushesBefore = srv.rpcCount;
+      await sync(owner.w); await sync(tech.w);
+      check('nothing keeps being re-sent afterwards', srv.rpcCount === pushesBefore, srv.rpcCount - pushesBefore);
+      owner.close(); tech.close();
+    }
+
+    console.log('\n=== Customers uploaded by the first sync version ===');
+    {
+      await reset(); const srv = makeServer();
+      // As the first version stored them: no per-field times at all
+      await pool.query('insert into public.customers(company_id,id,data,edited_at,updated_at) values ($1,$2,$3,$4,$4)',
+        [COMPANY, 'leg', cust('leg', 'Legacy', {gateCode: 'G1', day: 'Monday', equipment: [{id: 'x1', type: 'Filter'}]}), '2026-09-15T08:00:00+00:00']);
+      const owner = await boot(srv, {'poollog:customers': []});
+      const tech = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+      srv.offline = true;
+      await edit(tech.w, "customers[0].day = 'Friday'");        // made first
+      await sleep(40);
+      await edit(owner.w, "customers[0].gateCode = 'G2'");      // made second, sent first
+      await edit(owner.w, "customers[0].equipment.push({id:'x2', type:'Pump'})");
+      await sleep(2300); await idle(owner.w); await idle(tech.w);
+      srv.offline = false;
+      await sync(owner.w);
+      await sync(tech.w);
+      const r = await row('leg');
+      check('an earlier edit to a different field still goes through', r.data.day === 'Friday', JSON.stringify(r.data));
+      check('alongside the later one', r.data.gateCode === 'G2');
+      check('and the equipment added', r.data.equipment.length === 2, JSON.stringify(r.data.equipment));
+      check('with nothing wrongly counted as lost', (await versions()).length === 0, JSON.stringify(await versions()));
+      owner.close(); tech.close();
+    }
+
     console.log('\n=== An edit made while a push is in flight is not lost ===');
     {
       await reset(); const srv = makeServer();
@@ -565,6 +674,86 @@ const status = w => w.document.getElementById('syncStatus').textContent;
       check('all 1,203 arrive across pages', local(d.w).length === 1203, local(d.w).length);
       check('without pushing any back', srv.rpcCount === 0, srv.rpcCount);
       d.close();
+    }
+
+    console.log('\n=== Deleted customers can be found and restored ===');
+    {
+      await reset(); const srv = makeServer();
+      const d = await boot(srv, {'poollog:customers': [cust('r1', 'Romeo', {address: '1 Palm Way', gateCode: 'R-GATE'}), cust('r2', 'Sierra', {address: '2 Palm Way'}), cust('r3', 'Tango')]});
+      const other = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+      d.w.__answer = 'ok';
+      d.w.eval("deleteCustomer(customers.find(c => c.id === 'r1'))"); await sleep(60);
+      d.w.eval("deleteCustomer(customers.find(c => c.id === 'r2'))"); await sleep(60);
+      await sleep(2300); await idle(d.w);
+      await sync(other.w);
+      check('both deletions reached the other device', !find(other.w, 'r1') && !find(other.w, 'r2'));
+
+      const doc = d.w.document;
+      const restoreBtn = doc.getElementById('btnRestoreCustomers');
+      check('there is a Restore customers button', !!restoreBtn && restoreBtn.textContent.trim() === 'Restore customers',
+            restoreBtn ? restoreBtn.textContent : 'missing');
+      const restoreRow = restoreBtn && restoreBtn.parentNode;
+      check('it sits in the top row with Add a customer and Import customers',
+            !!restoreRow && restoreRow.parentNode.id === 'addCustomerCard'
+            && !!restoreRow.querySelector('#btnAddCustomer') && !!restoreRow.querySelector('#btnImportCustomers'), restoreRow ? restoreRow.outerHTML.slice(0, 120) : '');
+      check('it comes after them', !!restoreRow && restoreRow.lastElementChild === restoreBtn
+            && (restoreBtn.compareDocumentPosition(doc.getElementById('btnImportCustomers')) & 2) === 2);
+      check('pushed to the far right', !!restoreBtn && restoreBtn.style.marginLeft === 'auto', restoreBtn ? restoreBtn.style.cssText : '');
+      check('the old button at the bottom of the list is gone',
+            !doc.getElementById('btnDeletedCustomers')
+            && !Array.from(doc.querySelectorAll('#allCustomersCard button')).some(b => /Deleted customers|Restore customers/.test(b.textContent)));
+      doc.getElementById('btnRestoreCustomers').click();
+      await sleep(200);
+      const ov = doc.getElementById('deletedCustomersOverlay');
+      check('it opens a list', !!ov);
+      const names = () => Array.from(ov.querySelectorAll('.deleted-customer')).map(x => x.textContent);
+      check('both deleted customers are listed', names().length === 2 && names().some(t => /Romeo/.test(t)) && names().some(t => /Sierra/.test(t)), names().join(' | '));
+      check('customers not deleted are not', !names().some(t => /Tango/.test(t)));
+      check('each shows when it was deleted', names().every(t => /Deleted /.test(t)), names().join(' | '));
+      check('and its address', names().some(t => /1 Palm Way/.test(t)));
+      const search = ov.querySelector('#deletedSearch');
+      search.value = 'sierra'; search.dispatchEvent(new d.w.Event('input'));
+      check('search narrows the list', names().length === 1 && /Sierra/.test(names()[0]), names().join(' | '));
+      search.value = ''; search.dispatchEvent(new d.w.Event('input'));
+
+      const romeo = Array.from(ov.querySelectorAll('.deleted-customer')).find(x => /Romeo/.test(x.textContent));
+      romeo.querySelector('button').click();
+      await sleep(400);
+      check('a question is asked first', d.dialogs.some(t => /Restore Romeo/.test(t)), d.dialogs.join(' | '));
+      check('Romeo is back on this device', !!find(d.w, 'r1'));
+      check('with every detail', find(d.w, 'r1') && find(d.w, 'r1').gateCode === 'R-GATE' && find(d.w, 'r1').address === '1 Palm Way');
+      check('and on the screen list', d.w.eval("customers.some(c => c.id === 'r1')"));
+      check('the server no longer marks him deleted', (await row('r1')).deleted === false);
+      check('he leaves the deleted list', names().length === 1 && /Sierra/.test(names()[0]), names().join(' | '));
+      check('Sierra is still deleted', (await row('r2')).deleted === true && !find(d.w, 'r2'));
+      const pushes = srv.rpcCount;
+      await sync(d.w);
+      check('the next sync does not undo the restore', !!find(d.w, 'r1') && (await row('r1')).deleted === false);
+      check('and has nothing left to send', srv.rpcCount === pushes, srv.rpcCount - pushes);
+      await sync(other.w);
+      check('the other device gets Romeo back', find(other.w, 'r1') && find(other.w, 'r1').gateCode === 'R-GATE');
+
+      ov.querySelector('#deletedClose').click();
+      check('Close shuts the list', !doc.getElementById('deletedCustomersOverlay'));
+
+      srv.offline = true;
+      doc.getElementById('btnRestoreCustomers').click();
+      await sleep(200);
+      check('offline, it says a connection is needed', /offline/i.test(doc.getElementById('deletedCustomersOverlay').textContent));
+      doc.getElementById('deletedCustomersOverlay').querySelector('#deletedClose').click();
+      srv.offline = false;
+
+      // A restore does not overwrite an edit made meanwhile to other fields
+      await serverSet(TECH, 'r2', {notes: {t: new Date().toISOString(), v: 'note added while deleted'}});
+      doc.getElementById('btnRestoreCustomers').click();
+      await sleep(200);
+      const ov2 = doc.getElementById('deletedCustomersOverlay');
+      const sierra = Array.from(ov2.querySelectorAll('.deleted-customer')).find(x => /Sierra/.test(x.textContent));
+      check('a customer edited after deletion is back on its own (the edit restored it)', !sierra);
+      ov2.querySelector('#deletedClose').click();
+      await sync(d.w);
+      check('and syncs down with the new note', find(d.w, 'r2') && find(d.w, 'r2').notes === 'note added while deleted');
+      d.close(); other.close();
     }
 
     console.log('\n=== The Settings card is wired ===');

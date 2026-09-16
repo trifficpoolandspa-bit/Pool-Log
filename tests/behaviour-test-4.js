@@ -1060,6 +1060,125 @@ console.log('\n=== Phone numbers format themselves ===');
   }catch(e){ check('  phone formatting', false, e.message); }
 }
 
+console.log('\n=== Serviced today lists the most recent visit first ===');
+['technician-app.html', 'admin-readings-app.html'].forEach(file=>{
+  const {dom} = load(file, {seed: {customers: [
+    {id:'early',  name:'Early Pool',  active:true},
+    {id:'late',   name:'Late Pool',   active:true},
+    {id:'nostamp',name:'Untimed Pool',active:true},
+    {id:'middle', name:'Middle Pool', active:true},
+    {id:'old',    name:'Yesterday Pool', active:true},
+    {id:'off',    name:'Inactive Pool', active:false}
+  ]}});
+  deferred.push(()=>{
+    const w = dom.window, d = w.document;
+    w.eval(`
+      (function(){
+        const today = todayDateStr();
+        // Hours before now, so the order never depends on what time the test runs
+        const ago = h => new Date(Date.now() - h * 3600000).toISOString();
+        const set = (id, date, stamp)=>{ const c = customers.find(x => x.id === id); c.lastServicedDate = date; if(stamp) c.lastServicedAt = stamp; };
+        set('early',  today, ago(5));
+        set('late',   today, ago(1));
+        set('middle', today, ago(3));
+        set('nostamp', today, null);
+        set('old', '2000-01-01', ago(2));
+        set('off', today, ago(0.5));
+        renderServicedList();
+      })();
+    `);
+    const names = Array.from(d.querySelectorAll('#servicedList .cust-name'))
+      .map(n => n.firstChild.textContent.trim());
+    check(file + ' the most recently serviced pool is at the top', names[0] === 'Late Pool', names.join(' | '));
+    check(file + ' newest to oldest down the list',
+          names.slice(0, 3).join('|') === 'Late Pool|Middle Pool|Early Pool', names.join(' | '));
+    check(file + ' a visit logged without a time sits at the bottom', names[names.length - 1] === 'Untimed Pool', names.join(' | '));
+    check(file + ' only today\'s active visits are listed', names.length === 4, names.join(' | '));
+
+    // A visit finished just now goes straight to the top
+    w.eval(`(function(){ const c = customers.find(x => x.id === 'old'); c.lastServicedDate = todayDateStr(); c.lastServicedAt = new Date().toISOString(); renderServicedList(); })();`);
+    const after = Array.from(d.querySelectorAll('#servicedList .cust-name')).map(n => n.firstChild.textContent.trim());
+    check(file + ' a pool serviced just now goes straight to the top', after[0] === 'Yesterday Pool', after.join(' | '));
+  });
+});
+
+console.log('\n=== Admin app: a past day hides the customers finished that day ===');
+{
+  const {dom} = load('admin-readings-app.html', {seed: {customers: [
+    {id:'done',     name:'Done That Day',      day:'Monday', active:true},
+    {id:'missed',   name:'Never Serviced',     day:'Monday', active:true},
+    {id:'again',    name:'Serviced Again Since', day:'Monday', active:true},
+    {id:'skipped',  name:'Skipped That Day',   day:'Monday', active:true},
+    {id:'reserv',   name:'Reserviced',         day:'Monday', active:true},
+    {id:'evening',  name:'Evening Visit',      day:'Monday', active:true},
+    {id:'tuesday',  name:'Other Day',          day:'Tuesday', active:true}
+  ]}});
+  deferred.push(()=>{
+    const w = dom.window, d = w.document;
+    const shown = () => Array.from(d.querySelectorAll('#homeCustomerList .cust-name')).map(n => n.textContent.trim());
+    const setup = (offset) => w.eval(`
+      (function(){
+        selectedHomeDay = 'Monday'; weekOffset = ${offset};
+        const iso = visitDateStr();
+        const day = dateForWeekday('Monday');
+        const at = (h, m)=>{ const t = new Date(day); t.setHours(h, m, 0, 0); return t.toISOString(); };
+        const later = new Date(day); later.setDate(later.getDate() + 7);
+        const laterIso = new Date(later.getTime() - later.getTimezoneOffset()*60000).toISOString().slice(0,10);
+        const c = id => customers.find(x => x.id === id);
+        customers.forEach(x => { delete x.lastServicedDate; });
+        ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('poollog:' + k));
+        readingsCache = {};
+        c('done').lastServicedDate = iso;
+        lsSet('readings:done', [{id:'r1', date: at(9, 0), chlorine:'3'}]);
+        c('again').lastServicedDate = laterIso;
+        lsSet('readings:again', [{id:'r2', date: at(10, 0)}, {id:'r3', date: laterIso + 'T16:00:00.000Z'}]);
+        c('skipped').lastServicedDate = laterIso;
+        lsSet('skippedVisits:skipped', [{id:'s1', date: iso, timestamp: at(11, 0)}]);
+        c('reserv').lastServicedDate = null;
+        lsSet('readings:reserv', [{id:'r4', date: at(12, 0)}]);
+        // 7:30 pm local: in Arizona that is already the next day in UTC
+        c('evening').lastServicedDate = laterIso;
+        lsSet('readings:evening', [{id:'r5', date: at(19, 30)}]);
+        saveCustomers && lsSet('customers', customers);
+        renderHomeList();
+      })();`);
+
+    // Last week's Monday
+    setup(-1);
+    let names = shown();
+    check('last week: a customer finished that day is not listed', names.indexOf('Done That Day') === -1, names.join(' | '));
+    check('last week: one serviced that day and again since is not listed', names.indexOf('Serviced Again Since') === -1, names.join(' | '));
+    check('last week: one skipped that day is not listed', names.indexOf('Skipped That Day') === -1, names.join(' | '));
+    check('last week: an evening visit counts for its own day', names.indexOf('Evening Visit') === -1, names.join(' | '));
+    check('last week: a customer never serviced is still listed', names.indexOf('Never Serviced') !== -1, names.join(' | '));
+    check('last week: a customer sent back with Reservice is listed again', names.indexOf('Reserviced') !== -1, names.join(' | '));
+    check('last week: another day\'s customers are not mixed in', names.indexOf('Other Day') === -1, names.join(' | '));
+    const stops = d.getElementById('homeStopCount').textContent;
+    check('last week: the stop count matches, 2 left of 6', stops === '2 of 6', stops);
+
+    // Today's tab still works as before
+    w.eval(`(function(){
+      selectedHomeDay = DAYS_OF_WEEK[new Date().getDay()]; weekOffset = 0;
+      customers.forEach(x => { x.day = selectedHomeDay; delete x.lastServicedDate; });
+      customers.find(x => x.id === 'done').lastServicedDate = todayDateStr();
+      ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('poollog:' + k));
+      readingsCache = {};
+      lsSet('customers', customers);
+      renderHomeList();
+    })();`);
+    names = shown();
+    check('today: a customer finished today drops off', names.indexOf('Done That Day') === -1, names.join(' | '));
+    check('today: everyone else is listed', names.length === 6, names.join(' | '));
+    check('today: the count still includes the finished one', d.getElementById('homeStopCount').textContent === '6 of 7',
+          d.getElementById('homeStopCount').textContent);
+
+    // Next week nobody is hidden
+    w.eval(`weekOffset = 1; renderHomeList();`);
+    names = shown();
+    check('next week: everyone is listed', names.length === 7, names.join(' | '));
+  });
+}
+
 setTimeout(()=>{
   deferred.forEach(fn => {
     try{ fn(); }catch(e){ check('deferred check', false, e.message); }

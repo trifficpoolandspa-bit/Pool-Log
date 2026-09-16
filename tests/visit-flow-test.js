@@ -128,6 +128,85 @@ async function walkVisit(w, d, maxPresses){
     }
   }
 
+  // ---- Salt cell cleaned / Filter backwashed survive leaving the report ----
+  for(const file of ['technician-app.html','admin-readings-app.html']){
+    console.log('\n=== ' + file + ': salt cell and backwash are recorded, reported and dated ===');
+    const dom = boot(file, seedFor({
+      customers: [
+        {id:'a', name:'Salty Pool', day: today, active:true, technicianId:'t1', hasPool:true, hasSpa:true,
+         equipment:[{id:'e1', type:'Chlorination', chlorinationChoice:'Salt Cell'},
+                    {id:'e2', type:'Filter', filterTypeChoice:'Sand'}]},
+        {id:'b', name:'Other Salty', day: today, active:true, technicianId:'t1', hasPool:true,
+         equipment:[{id:'e3', type:'Chlorination', chlorinationChoice:'Salt Cell'}]}
+      ]
+    }));
+    await wait(1400);
+    const w = dom.window, d = w.document;
+    const set = (id,v)=>{ const e = d.getElementById(id); if(!e) return false;
+      e.value = v; e.dispatchEvent(new w.Event('input',{bubbles:true})); return true; };
+    const on = id => { const b = d.getElementById(id); return !!b && b.dataset.on === 'true'; };
+    try{
+      w.eval("currentUser={id:'t1',name:'Alex'}; confirmDialog=()=>Promise.resolve(true); "
+           + "alertDialog=()=>Promise.resolve(); renderHomeList(); openVisit('a');");
+      await wait(500);
+      check('  the Salt cell cleaned button is there', !!d.getElementById('chkSaltCell'));
+      const cell = d.getElementById('chkSaltCell').parentNode;
+      check('  the last-done note sits below the button',
+            cell.style.flexDirection === 'column' && cell.firstChild === d.getElementById('chkSaltCell')
+            && cell.lastChild.tagName === 'SPAN', cell.style.cssText);
+      check('  with nothing logged yet it says so', /Not logged yet/.test(cell.lastChild.textContent), cell.lastChild.textContent);
+
+      set('pool_chem_chlorine', '3');
+      d.getElementById('chkSaltCell').click();
+      d.getElementById('chkBackwashed').click();
+      check('  pressing them turns them on', on('chkSaltCell') && on('chkBackwashed'));
+
+      // Leave the report for another tab, then come back through Today
+      await wait(600);
+      const other = Array.from(d.querySelectorAll('.tab[data-view]')).find(t => t.dataset.view !== 'home');
+      other.click(); await wait(600);
+      check('  the report was left', w.eval('currentViewName') !== 'visit', String(w.eval('currentViewName')));
+      d.querySelector('.tab[data-view="home"]').click(); await wait(900);
+      check('  Today goes back into the report', w.eval('currentViewName') === 'visit');
+      check('  the typed reading survived', d.getElementById('pool_chem_chlorine').value === '3');
+      check('  Salt cell cleaned is still pressed after coming back', on('chkSaltCell'));
+      check('  Filter backwashed is still pressed after coming back', on('chkBackwashed'));
+
+      await walkVisit(w, d);                 // the pool
+      set('spa_chem_chlorine', '4');
+      await walkVisit(w, d);                 // the spa, which ends the visit
+      check('  the visit finished', w.eval('currentViewName') === 'home', String(w.eval('currentViewName')));
+
+      const saved = JSON.parse(w.localStorage.getItem('poollog:readings:a') || '[]');
+      check('  the pool reading records the salt cell as cleaned', saved[0] && saved[0].saltCellCleaned === true, JSON.stringify(saved[0]));
+      check('  and the filter as backwashed', saved[0] && saved[0].filterBackwashed === true);
+
+      w.eval("renderDateReport('a', '" + iso + "');");
+      await wait(700);
+      check('  the report shows Salt cell cleaned', /Salt cell cleaned/.test(w.eval('currentReportText') || ''), w.eval('currentReportText'));
+      check('  the emailed report shows it too', /Salt cell cleaned/.test(w.eval('currentReportHtml') || ''));
+      check('  and Filter backwashed', /Filter backwashed/.test(w.eval('currentReportText') || '') && /Filter backwashed/.test(w.eval('currentReportHtml') || ''));
+
+      // The next customer starts with nothing pressed
+      w.eval("openVisit('b');"); await wait(600);
+      check('  the next customer\'s Salt cell button is not pressed', d.getElementById('chkSaltCell') && !on('chkSaltCell'));
+      w.eval("discardVisitInProgress();"); await wait(300);
+
+      // Sent back with Reservice: starts unpressed, and shows when it was last done
+      w.eval("reserviceCustomer(customers.find(c => c.id === 'a'));"); await wait(400);
+      w.eval("openVisit('a');"); await wait(700);
+      check('  reopened, the buttons start unpressed', d.getElementById('chkSaltCell') && !on('chkSaltCell') && !on('chkBackwashed'));
+      const note = d.getElementById('chkSaltCell').parentNode.lastChild.textContent;
+      check('  and below the button it says when it was last done', /Last done today/.test(note), note);
+
+      // Pressed then the report cancelled: nothing carries over
+      d.getElementById('chkSaltCell').click();
+      w.eval("discardVisitInProgress();"); await wait(300);
+      w.eval("openVisit('a');"); await wait(700);
+      check('  a cancelled report does not leave it pressed', !on('chkSaltCell'));
+    }catch(e){ check('  salt cell visit', false, e.stack); }
+  }
+
   // ---- The button says what it actually does ----
   for(const file of ['technician-app.html','admin-readings-app.html']){
     console.log('\n=== ' + file + ': the finish button names the next body ===');
