@@ -683,6 +683,18 @@ input::placeholder{color:#A9BCB9;}
         </label>
         <p style="font-size:11.5px;color:var(--muted);margin:6px 0 0;">Lets this technician photograph their customers' equipment. Photos save to the customer's profile.</p>
       </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--ink);">
+          <input type="checkbox" id="techRequireSkipProof" style=""> Require a photo and note to skip a body of water
+        </label>
+        <p style="font-size:11.5px;color:var(--muted);margin:6px 0 0;">This technician must photograph the reason and write a note before they can skip a pool, spa or fountain.</p>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--ink);">
+          <input type="checkbox" id="techRequireGatePhoto" style=""> Require closed gate photo
+        </label>
+        <p style="font-size:11.5px;color:var(--muted);margin:6px 0 0;">This technician must photograph the closed or locked gate before submitting.</p>
+      </div>
       <div class="btn-row">
         <button class="btn btn-primary" id="btnSaveTech" style="width:auto;">Save technician</button>
         <button class="btn btn-ghost" id="btnCancelTech">Cancel</button>
@@ -10664,6 +10676,8 @@ function resetTechForm(){
   document.getElementById('techPassword').value = '';
   document.getElementById('techIsAdmin').checked = false;
   document.getElementById('techEquipPhotoAccess').checked = false;
+  document.getElementById('techRequireSkipProof').checked = false;
+  document.getElementById('techRequireGatePhoto').checked = false;
   document.getElementById('techFormHeading').textContent = 'Add a technician';
   document.getElementById('btnSaveTech').textContent = 'Save technician';
   document.getElementById('btnSaveTech').disabled = false;
@@ -10686,6 +10700,8 @@ function editTechnician(t){
     : 'No sign-in yet. A username and password create one.';
   document.getElementById('techIsAdmin').checked = !!t.isAdmin;
   document.getElementById('techEquipPhotoAccess').checked = !!t.canPhotoEquipment;
+  document.getElementById('techRequireSkipProof').checked = t.requireSkipProof === true;
+  document.getElementById('techRequireGatePhoto').checked = t.requireGatePhoto === true;
   document.getElementById('techFormHeading').textContent = 'Edit technician';
   document.getElementById('btnSaveTech').textContent = 'Save changes';
   showTechForm();
@@ -11386,6 +11402,8 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
   const password = document.getElementById('techPassword').value;
   const isAdmin = document.getElementById('techIsAdmin').checked;
   const canPhotoEquipment = document.getElementById('techEquipPhotoAccess').checked;
+  const requireSkipProof = document.getElementById('techRequireSkipProof').checked;
+  const requireGatePhoto = document.getElementById('techRequireGatePhoto').checked;
   if(!name){ showToast('Enter a technician name'); return; }
 
   // The sign-in is settled on the server first. If that fails nothing is
@@ -11413,6 +11431,8 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
       if(password) existing.password = password;
       existing.isAdmin = isAdmin;
       existing.canPhotoEquipment = canPhotoEquipment;
+      existing.requireSkipProof = requireSkipProof;
+      existing.requireGatePhoto = requireGatePhoto;
     }
     saveTechnicians();
     renderTechnicianList();
@@ -11429,7 +11449,7 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
   // An after photo is the proof the work was done, so every new technician
   // starts with it required. It can be turned off per technician afterwards.
   technicians.push({id, name, phone, email, username, password, isAdmin,
-                    canPhotoEquipment, requireAfterPhoto: true});
+                    canPhotoEquipment, requireSkipProof, requireGatePhoto, requireAfterPhoto: true});
   saveTechnicians();
   renderTechnicianList();
   populateTechnicianSelect();
