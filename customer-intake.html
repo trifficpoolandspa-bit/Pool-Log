@@ -6490,9 +6490,13 @@ async function saveTechnicianSignIn(o){
   const password = String(o.password || '');
   if(techAccounts === null) await loadTechAccounts();
   if(techAccounts === null){
-    // Without knowing whether they already have a sign-in, only a change that
-    // touches nothing about it can go ahead
-    if(!password) return {ok: true};
+    // Without knowing whether they have a sign-in, only a save that changes
+    // nothing about it may go ahead: same username, same admin access, no password
+    const prev = o.prev || {};
+    const same = !password
+      && username.toLowerCase() === String(prev.username || '').trim().toLowerCase()
+      && !!o.isAdmin === !!prev.isAdmin;
+    if(same) return {ok: true};
     return {ok: false, message: 'You are offline. Sign-in changes need a connection \u2014 nothing was saved.'};
   }
   const acct = techAccounts[o.techId];
@@ -10994,6 +10998,54 @@ function saveTechField(){
   renderTechnicianList();
 }
 
+// Username and password on the profile page change the real sign-in, exactly
+// like the Edit form: the server first, and nothing saved here if it refuses.
+function techSignInEditor(tech, field){
+  return (row, done)=>{
+    const input = document.createElement('input');
+    input.className = 'profile-inline-input';
+    if(field === 'password'){
+      input.type = 'password';
+      input.value = '';                       // never shown back
+      input.placeholder = 'New password';
+    } else {
+      input.value = tech.username || '';
+    }
+    row.appendChild(input);
+    input.focus();
+    if(field !== 'password') input.select();
+    let committed = false;
+    const commit = async ()=>{
+      if(committed) return;
+      committed = true;
+      const value = field === 'password' ? input.value : input.value.trim();
+      if(field === 'password' ? !value : value === (tech.username || '')){ done(); return; }
+      input.disabled = true;
+      const r = await saveTechnicianSignIn({
+        techId: tech.id, name: tech.name,
+        username: field === 'username' ? value : (tech.username || ''),
+        password: field === 'password' ? value : '',
+        isAdmin: !!tech.isAdmin,
+        prev: {username: tech.username, isAdmin: tech.isAdmin}
+      });
+      if(!r.ok){ showToast(r.message); done(); return; }
+      if(field === 'username') tech.username = r.username || value;
+      else tech.password = value;   // kept for the field apps' current sign-in until part 2 ships
+      if(r.created && r.username) tech.username = r.username;
+      saveTechField();
+      showToast(r.created ? 'Sign-in created \u2014 they can sign in as ' + r.username
+              : r.passwordSet ? 'New password set \u2014 they are signed out of every phone'
+              : field === 'username' ? 'Username changed' : 'Saved');
+      done();
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){ e.preventDefault(); input.blur(); }
+      if(e.key === 'Escape'){ input.value = field === 'password' ? '' : (tech.username || ''); input.blur(); }
+    });
+  };
+}
+
 function techInlineText(tech, field, type){
   return (row, done)=>{
     const input = document.createElement('input');
@@ -11007,8 +11059,15 @@ function techInlineText(tech, field, type){
     const commit = ()=>{
       if(committed) return;
       committed = true;
+      const before = tech[field];
       tech[field] = input.value.trim();
       saveTechField();
+      // A new name reaches their sign-in too, so the phone shows it
+      if(field === 'name' && before !== tech[field] && techAccounts && techAccounts[tech.id]){
+        saveTechnicianSignIn({techId: tech.id, name: tech[field], username: tech.username || techAccounts[tech.id].username,
+                              password: '', isAdmin: !!tech.isAdmin, prev: {username: tech.username, isAdmin: tech.isAdmin}})
+          .then(r => { if(!r.ok) showToast(r.message); });
+      }
       done();
     };
     input.addEventListener('blur', commit);
@@ -11053,8 +11112,9 @@ function renderTechProfile(techId){
   row({label:'Name', value: tech.name, placeholder:'Add a name', editor: techInlineText(tech,'name')});
   row({label:'Email', value: tech.email, placeholder:'Add an email', editor: techInlineText(tech,'email','email')});
   row({label:'Phone', value: tech.phone, placeholder:'Add a phone number', editor: techInlineText(tech,'phone','tel')});
-  row({label:'Username', value: tech.username, placeholder:'Add a username', editor: techInlineText(tech,'username')});
-  row({label:'Password', value: tech.password ? '••••••••' : '', placeholder:'Set a password', editor: techInlineText(tech,'password')});
+  const acct = techAccounts ? techAccounts[tech.id] : null;
+  row({label:'Username', value: (acct && acct.username) || tech.username, placeholder:'Add a username', editor: techSignInEditor(tech,'username')});
+  row({label:'Password', value: acct ? '••••••••' : '', placeholder: acct ? '' : 'Set a password to create their sign-in', editor: techSignInEditor(tech,'password')});
   checkRow('Admin access', 'isAdmin',
     'Clicking this will give the technician access to the admin app, allowing them to see all customers and make changes to app and customer info.');
   checkRow('Equipment photo access', 'canPhotoEquipment',
@@ -11092,7 +11152,17 @@ function renderTechProfile(techId){
     cb.style.cssText = 'margin:0;';
     // Some requirements start on for a new technician
     cb.checked = defaultOn ? tech[field] !== false : tech[field] === true;
-    cb.addEventListener('change', ()=>{
+    cb.addEventListener('change', async ()=>{
+      if(field === 'isAdmin'){
+        // Admin access is part of the sign-in: the server first
+        const want = cb.checked;
+        cb.disabled = true;
+        const r = await saveTechnicianSignIn({techId: tech.id, name: tech.name,
+          username: (techAccounts && techAccounts[tech.id] && techAccounts[tech.id].username) || tech.username || '',
+          password: '', isAdmin: want, prev: {username: tech.username, isAdmin: tech.isAdmin}});
+        cb.disabled = false;
+        if(!r.ok){ cb.checked = !want; showToast(r.message); return; }
+      }
       tech[field] = cb.checked;
       saveTechField();
     });
@@ -11367,6 +11437,8 @@ function openTechDetail(t){
   });
   applyTechTab();
   renderTechProfile(t.id);
+  // Show their real sign-in once it is known
+  loadTechAccounts().then(ok => { if(ok && currentTechDetailId === t.id) renderTechProfile(t.id); });
   renderTechAssignedList(t.id);
   renderTechAssignList(t.id);
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
@@ -11414,7 +11486,9 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
   saveBtn.textContent = 'Saving\u2026';
   let account;
   try{
-    account = await saveTechnicianSignIn({techId, name, username, password, isAdmin});
+    const before = editingTechId ? technicians.find(t => t.id === editingTechId) : null;
+    account = await saveTechnicianSignIn({techId, name, username, password, isAdmin,
+      prev: before ? {username: before.username, isAdmin: before.isAdmin} : {}});
   }finally{
     saveBtn.disabled = false;
     saveBtn.textContent = prevLabel;
