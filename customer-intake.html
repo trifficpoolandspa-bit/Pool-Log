@@ -5890,6 +5890,8 @@ function loadSyncState(companyId){
     // Technician profiles, company details, setup and settings keep their own
     // record of the same three things
     records: (s.records && typeof s.records === 'object') ? s.records : {cursor: null, known: {}, seen: {}, edits: {}},
+    // Readings and skips recorded in the field
+    visits: (s.visits && typeof s.visits === 'object') ? s.visits : {cursor: null},
     lastSyncedAt: s.lastSyncedAt || null,
     backupAt: s.backupAt || null
   };
@@ -6391,6 +6393,10 @@ async function syncCustomers(){
 
     // Everything else the phones need: technician profiles, company details,
     // setup and the company-wide settings
+    const visits = await syncPullVisits(state, companyId);
+    result.visits = visits.applied || 0;
+    if(!visits.ok && !visits.offline) result.failed++;
+
     const records = await syncRecords(state, companyId);
     result.recordsPulled = records.pulled;
     result.recordsPushed = records.pushed;
@@ -6897,6 +6903,59 @@ function syncNoteRecordChange(){
   }catch(e){}
   clearTimeout(syncTimer);
   syncTimer = setTimeout(()=> syncCustomers(), 2000);
+}
+
+// ---- Visits from the phones ----
+// Readings and skips recorded in the field arrive here so the service history
+// on the website shows them. Photos stay on the phone for now, so a visit that
+// came from a phone has none; a visit recorded here keeps the photos it has.
+function syncApplyVisit(row){
+  const key = row.kind === 'skip' ? 'skippedVisits:' + row.customer_id
+    : (row.body === 'pool' ? 'readings:' + row.customer_id
+       : row.body === 'spa' ? 'spaReadings:' + row.customer_id
+       : 'fountainReadings:' + row.customer_id + ':' + String(row.body).slice('fountain:'.length));
+  const list = lsGet(key) || [];
+  const i = list.findIndex(x => x && String(x.id) === String(row.id));
+  if(row.deleted){
+    if(i === -1) return true;
+    list.splice(i, 1);
+    return lsSet(key, list);
+  }
+  const incoming = Object.assign({}, row.data, {id: row.id});
+  if(i === -1){
+    list.unshift(incoming);
+  } else {
+    // Photos held here are not on the server, so they are kept
+    const kept = {};
+    ['photo', 'beforePhoto', 'gatePhoto', 'afterPhoto', 'customPhotos'].forEach(f=>{
+      if(list[i][f] !== undefined) kept[f] = list[i][f];
+    });
+    list[i] = Object.assign(incoming, kept);
+  }
+  list.sort((a, b)=> String(b.date || '').localeCompare(String(a.date || '')));
+  return lsSet(key, list);
+}
+
+async function syncPullVisits(state, companyId){
+  const v = state.visits || (state.visits = {cursor: null});
+  const since = v.cursor ? new Date(new Date(v.cursor).getTime() - SYNC_OVERLAP_MS).toISOString() : null;
+  const rows = [];
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    let path = '/rest/v1/visits?select=customer_id,kind,body,id,data,deleted,updated_at'
+      + '&order=updated_at.asc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset;
+    if(since) path += '&updated_at=gte.' + encodeURIComponent(since);
+    const res = await syncCall(path);
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline};
+    rows.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+  let applied = 0;
+  rows.forEach(row=>{
+    if(syncApplyVisit(row)) applied++;
+    if(!v.cursor || row.updated_at > v.cursor) v.cursor = row.updated_at;
+  });
+  saveSyncState(companyId, state);
+  return {ok: true, applied: applied};
 }
 
 // ---------- Deleted customers ----------
