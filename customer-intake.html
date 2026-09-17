@@ -1893,9 +1893,26 @@ function makeRoomForSave(){
   return freed;
 }
 
+// Saves of anything the phones need are noticed here, whichever screen made
+// them, so nothing has to remember to tell sync about a change.
+const SYNCED_RECORD_KEYS = ['technicians', 'settings', 'chemConfig', 'customChemConfig',
+  'customBodyOrder', 'routeOrders', 'reportEmailStyle', 'companyName', 'ownerName',
+  'licenseNumber', 'serviceArea', 'accountEmail', 'accountPhone', 'businessAddress',
+  'businessCity', 'businessState', 'businessZip', 'businessWebsite'];
+
+function syncNoteSave(key){
+  if(SYNCED_RECORD_KEYS.indexOf(key) === -1) return;
+  // Early in start-up the sign-in is not loaded yet; the first sync picks
+  // everything up anyway
+  if(typeof syncNoteRecordChange !== 'function') return;
+  syncNoteRecordChange();
+}
+
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    // Never let telling sync about a change get in the way of the save itself
+    try{ syncNoteSave(key); }catch(e){}
     return true;
   }catch(e){
     const full = e && (e.name === 'QuotaExceededError'
@@ -1912,6 +1929,7 @@ function lsSet(key, value){
           try{
             localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
             lsSet._retrying = false;
+            try{ syncNoteSave(key); }catch(e){}
             if(typeof showToast === 'function'){
               showToast('Freed space by clearing photos from older visits');
             }
@@ -5869,6 +5887,9 @@ function loadSyncState(companyId){
     known: s.known || {},                // id -> {u: server updated_at, d: deleted, f: {field: hash}}
     seen: s.seen || {},                  // id -> {field: hash} last noticed here, or SYNC_GONE
     edits: s.edits || {},                // id -> {field: ISO edit time, _deleted: ISO time}
+    // Technician profiles, company details, setup and settings keep their own
+    // record of the same three things
+    records: (s.records && typeof s.records === 'object') ? s.records : {cursor: null, known: {}, seen: {}, edits: {}},
     lastSyncedAt: s.lastSyncedAt || null,
     backupAt: s.backupAt || null
   };
@@ -6368,6 +6389,13 @@ async function syncCustomers(){
       saveSyncState(companyId, state);   // per record, so progress survives a drop
     }
 
+    // Everything else the phones need: technician profiles, company details,
+    // setup and the company-wide settings
+    const records = await syncRecords(state, companyId);
+    result.recordsPulled = records.pulled;
+    result.recordsPushed = records.pushed;
+    if(records.failed) result.failed += records.failed;
+
     const waiting = Object.keys(state.edits).length;
     state.lastSyncedAt = new Date().toISOString();
     saveSyncState(companyId, state);
@@ -6413,7 +6441,7 @@ function escapeSyncText(s){
 
 // Called by saveCustomers: date the edit now, send it shortly
 function syncNoteLocalChange(){
-  if(!siteUser || !siteUser.companyId) return;
+  if(typeof siteUser === 'undefined' || !siteUser || !siteUser.companyId) return;
   try{
     const state = loadSyncState(siteUser.companyId);
     syncScanLocal(state, lsGet('customers') || []);
@@ -6619,6 +6647,257 @@ document.addEventListener('DOMContentLoaded', ()=>{
     }
   });
 });
+
+
+// ---------- Company records sync ----------
+// Everything a phone needs from the company besides customers: technician
+// profiles, company details, setup, and the company-wide settings. Same rules
+// as customer sync — saved here first, sent when there is a connection, merged
+// field by field, and nothing is ever really deleted (snippet 07).
+//
+// Settings are split deliberately: how the business operates is company-wide,
+// while anything about a phone itself — its camera, its storage, who is signed
+// in on it, which tabs that person wants — stays on that phone.
+const SYNC_SETUP_KEYS = ['chemConfig', 'customChemConfig', 'customBodyOrder', 'routeOrders', 'reportEmailStyle'];
+const SYNC_COMPANY_SETTINGS = ['showBeforePhotos', 'showAfterPhotos', 'showGatePhoto',
+  'requireSkipPhoto', 'requireSkipReason', 'allowRouteReorder', 'showDosageSuggestions',
+  'showWaterBalance', 'autoNotifyAll', 'autoNotifyAllLead', 'showPoolSizeInProfile',
+  'applyPoolDosagesToAll', 'applyPoolChemicalsToAll'];
+// Kept on the phone it belongs to: storePhotos is that device's storage,
+// voiceModeEnabled / pushToTalkEnabled / micSide are how that person uses it,
+// showTechniciansTab is which tabs they want to see.
+
+function syncRecordKey(kind, id){ return kind + '\u0002' + id; }
+
+// Everything on this device that belongs on the server, as {kind\u0002id: data}
+function syncLocalRecords(){
+  const out = {};
+  (lsGet('technicians') || []).forEach(t=>{
+    if(!t || !t.id) return;
+    const copy = Object.assign({}, t);
+    delete copy.password;          // a password never leaves the website
+    out[syncRecordKey('technician', String(t.id))] = copy;
+  });
+  const details = {};
+  ACCOUNT_FIELDS.forEach(([, key])=>{ const v = lsGet(key); if(v !== null && v !== undefined) details[key] = v; });
+  if(Object.keys(details).length) out[syncRecordKey('company', 'details')] = details;
+  SYNC_SETUP_KEYS.forEach(key=>{
+    const v = lsGet(key);
+    if(v !== null && v !== undefined) out[syncRecordKey('setup', key)] = {value: v};
+  });
+  const settings = lsGet('settings') || {};
+  const company = {};
+  SYNC_COMPANY_SETTINGS.forEach(key=>{ if(settings[key] !== undefined) company[key] = settings[key]; });
+  if(Object.keys(company).length) out[syncRecordKey('setting', 'company')] = company;
+  return out;
+}
+
+// Put a record from the server back where this device keeps it
+function syncApplyRecord(kind, id, data, deleted){
+  if(kind === 'technician'){
+    const list = lsGet('technicians') || [];
+    const i = list.findIndex(t => t && String(t.id) === String(id));
+    if(deleted){
+      if(i === -1) return true;
+      list.splice(i, 1);
+    } else if(i === -1){
+      list.push(Object.assign({}, data));
+    } else {
+      // The password stays on the device that set it; everything else follows the server
+      const password = list[i].password;
+      list[i] = Object.assign({}, data);
+      if(password !== undefined) list[i].password = password;
+    }
+    if(!lsSet('technicians', list)) return false;
+    technicians = list;
+    try{ if(typeof renderTechnicianList === 'function') renderTechnicianList(); }catch(e){}
+    try{ if(typeof populateTechnicianSelect === 'function') populateTechnicianSelect(); }catch(e){}
+    return true;
+  }
+  if(kind === 'company'){
+    if(deleted) return true;
+    let ok = true;
+    ACCOUNT_FIELDS.forEach(([, key])=>{ if(key in data && !lsSet(key, data[key])) ok = false; });
+    try{ if(typeof renderAccount === 'function' && document.getElementById('view-account').classList.contains('active')) renderAccount(); }catch(e){}
+    return ok;
+  }
+  if(kind === 'setup'){
+    if(deleted || !('value' in data)) return true;
+    return lsSet(id, data.value);
+  }
+  if(kind === 'setting'){
+    if(deleted) return true;
+    const settings = lsGet('settings') || {};
+    SYNC_COMPANY_SETTINGS.forEach(key=>{ if(key in data) settings[key] = data[key]; });
+    if(!lsSet('settings', settings)) return false;
+    if(typeof appSettings === 'object' && appSettings) Object.assign(appSettings, settings);
+    return true;
+  }
+  return true;
+}
+
+function syncRecordState(state){
+  if(!state.records || typeof state.records !== 'object'){
+    state.records = {cursor: null, known: {}, seen: {}, edits: {}};
+  }
+  return state.records;
+}
+
+// Notice what changed here since the server last agreed, field by field
+function syncScanRecords(state, now){
+  const r = syncRecordState(state);
+  const stamp = now || new Date().toISOString();
+  const local = syncLocalRecords();
+  Object.keys(local).forEach(key=>{
+    const f = syncFieldHashes(local[key]);
+    const k = r.known[key];
+    const prev = r.seen[key];
+    const e = Object.assign({}, r.edits[key] || {});
+    const fields = new Set(Object.keys(f).concat(k ? Object.keys(k.f || {}) : []));
+    fields.forEach(field=>{
+      if(k && k.f && k.f[field] === f[field]){ delete e[field]; return; }
+      const noticed = prev && prev !== SYNC_GONE && prev[field] === f[field];
+      if(!noticed || !e[field]) e[field] = stamp;
+    });
+    if(k && k.d){ if(prev === SYNC_GONE || !e._deleted) e._deleted = stamp; }
+    else delete e._deleted;
+    r.seen[key] = f;
+    if(Object.keys(e).length) r.edits[key] = e; else delete r.edits[key];
+  });
+  Object.keys(r.known).forEach(key=>{
+    if(local[key]) return;
+    const k = r.known[key];
+    // Only technician profiles can disappear from this device; the rest always exist
+    if(k.d || key.indexOf('technician\u0002') !== 0){ delete r.edits[key]; r.seen[key] = SYNC_GONE; return; }
+    const was = r.edits[key] && r.edits[key]._deleted;
+    r.edits[key] = {_deleted: (r.seen[key] === SYNC_GONE && was) ? was : stamp};
+    r.seen[key] = SYNC_GONE;
+  });
+  Object.keys(r.edits).forEach(key=>{ if(!local[key] && !r.known[key]) delete r.edits[key]; });
+}
+
+async function syncRecords(state, companyId){
+  const r = syncRecordState(state);
+  const result = {pulled: 0, pushed: 0, failed: 0};
+  syncScanRecords(state);
+
+  // ---- Pull ----
+  const rows = [];
+  const since = r.cursor ? new Date(new Date(r.cursor).getTime() - SYNC_OVERLAP_MS).toISOString() : null;
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    let path = '/rest/v1/company_records?select=kind,id,data,deleted,updated_at'
+      + '&order=updated_at.asc,kind.asc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset;
+    if(since) path += '&updated_at=gte.' + encodeURIComponent(since);
+    const res = await syncCall(path);
+    if(!res.ok || !Array.isArray(res.body)){ result.failed++; return result; }
+    rows.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+
+  const firstPull = !r.cursor && !Object.keys(r.known).length;
+  rows.forEach(row=>{
+    const key = syncRecordKey(row.kind, row.id);
+    if(firstPull) delete r.edits[key];
+    const pending = r.edits[key];
+    const hashes = syncFieldHashes(row.data);
+    if(pending){
+      // Take the fields nobody here is holding, values and all, and leave the
+      // held ones to the push. Recording the server's value without taking it
+      // would make the next scan push the old one back over their change.
+      const mineNow = syncLocalRecords()[key];
+      if(!mineNow && pending._deleted){
+        // Deleted here and not sent yet: do not put it back
+        const k0 = r.known[key] || {u: null, d: false, f: {}};
+        r.known[key] = k0;
+        return;
+      }
+      const merged = syncMergeLocal(row.data, mineNow, pending);
+      if(!syncApplyRecord(row.kind, row.id, merged, false)){ result.failed++; return; }
+      const k = r.known[key] || {u: null, d: false, f: {}};
+      Object.keys(hashes).forEach(field=>{ if(!pending[field]) k.f[field] = hashes[field]; });
+      // The server's updated_at is deliberately not recorded yet, so the push
+      // still compares against what this device last agreed with
+      r.known[key] = k;
+      r.seen[key] = syncFieldHashes(syncLocalRecords()[key] || merged);
+      return;
+    }
+    if(!syncApplyRecord(row.kind, row.id, row.data, row.deleted)) { result.failed++; return; }
+    r.known[key] = {u: row.updated_at, d: !!row.deleted, f: hashes};
+    r.seen[key] = row.deleted ? SYNC_GONE : hashes;
+    if(!r.cursor || row.updated_at > r.cursor) r.cursor = row.updated_at;
+    result.pulled++;
+  });
+  rows.forEach(row=>{ if(!r.cursor || row.updated_at > r.cursor) r.cursor = row.updated_at; });
+  saveSyncState(companyId, state);
+
+  // ---- Push ----
+  syncScanRecords(state);
+  const local = syncLocalRecords();
+  for(const key of Object.keys(r.edits)){
+    const at = key.indexOf('\u0002');
+    const kind = key.slice(0, at), id = key.slice(at + 1);
+    const pending = Object.assign({}, r.edits[key]);
+    const mine = local[key] ? syncExplode(local[key]) : null;
+    const changes = {};
+    const sentHash = {};
+    if(!mine){
+      if(!pending._deleted) continue;
+      changes._deleted = {t: pending._deleted, v: true};
+    } else {
+      Object.keys(pending).forEach(field=>{
+        if(field === '_deleted'){ changes._deleted = {t: pending._deleted, v: false}; return; }
+        sentHash[field] = field in mine ? syncHash(mine[field]) : undefined;
+        changes[field] = field in mine ? {t: pending[field], v: mine[field]} : {t: pending[field], gone: true};
+      });
+    }
+    if(!Object.keys(changes).length){ delete r.edits[key]; continue; }
+
+    const k = r.known[key];
+    const res = await syncCall('/rest/v1/rpc/push_record_fields', {
+      method: 'POST',
+      body: JSON.stringify({p_kind: kind, p_id: id, p_changes: changes, p_base: k && k.u ? k.u : null})
+    });
+    if(!res.ok || !res.body || !res.body.result){ result.failed++; break; }   // per record, as with customers
+    if(res.body.result === 'missing'){ delete r.edits[key]; saveSyncState(companyId, state); continue; }
+
+    // Anything edited here while this was in flight stays waiting
+    const after = syncLocalRecords()[key];
+    const nowFlat = after ? syncExplode(after) : null;
+    const still = Object.assign({}, r.edits[key] || {});
+    Object.keys(pending).forEach(field=>{
+      if(still[field] !== pending[field]) return;
+      if(field === '_deleted'){ if(!!after === !!local[key]) delete still._deleted; return; }
+      const h = nowFlat && field in nowFlat ? syncHash(nowFlat[field]) : undefined;
+      if(after && h === sentHash[field]) delete still[field];
+    });
+    r.known[key] = {u: res.body.updated_at, d: !!res.body.deleted, f: syncFieldHashes(res.body.data)};
+    if(!Object.keys(still).length){
+      delete r.edits[key];
+      // Take the merged version, keeping anything still waiting to go up
+      if(!res.body.deleted) syncApplyRecord(kind, id, syncMergeLocal(res.body.data, after, {}), false);
+      else syncApplyRecord(kind, id, res.body.data, true);
+      r.seen[key] = res.body.deleted ? SYNC_GONE : syncFieldHashes(res.body.data);
+    } else {
+      r.edits[key] = still;
+    }
+    result.pushed++;
+    saveSyncState(companyId, state);
+  }
+  saveSyncState(companyId, state);
+  return result;
+}
+
+// Called when the website changes anything that belongs on the server
+function syncNoteRecordChange(){
+  if(typeof siteUser === 'undefined' || !siteUser || !siteUser.companyId) return;
+  try{
+    const state = loadSyncState(siteUser.companyId);
+    syncScanRecords(state);
+    saveSyncState(siteUser.companyId, state);
+  }catch(e){}
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=> syncCustomers(), 2000);
+}
 
 // ---------- Deleted customers ----------
 // Every customer deleted since sync went live is still on the server, marked
