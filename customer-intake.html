@@ -1895,7 +1895,8 @@ function makeRoomForSave(){
 
 // Saves of anything the phones need are noticed here, whichever screen made
 // them, so nothing has to remember to tell sync about a change.
-const SYNCED_RECORD_KEYS = ['technicians', 'settings', 'chemConfig', 'customChemConfig',
+const SYNCED_RECORD_KEYS = ['technicians', 'settings', 'tasks', 'rescheduledVisits',
+  'scheduledFilterCleans', 'scheduledWorkOrders', 'chemConfig', 'customChemConfig',
   'customBodyOrder', 'routeOrders', 'reportEmailStyle', 'companyName', 'ownerName',
   'licenseNumber', 'serviceArea', 'accountEmail', 'accountPhone', 'businessAddress',
   'businessCity', 'businessState', 'businessZip', 'businessWebsite'];
@@ -6675,6 +6676,15 @@ const SYNC_COMPANY_SETTINGS = ['showBeforePhotos', 'showAfterPhotos', 'showGateP
 
 function syncRecordKey(kind, id){ return kind + '\u0002' + id; }
 
+// Lists of work kept one item per record, so a technician ticking a task off
+// and the office changing another do not collide
+const SYNC_RECORD_LISTS = [
+  ['tasks', 'task'],
+  ['scheduledFilterCleans', 'filter_clean'],
+  ['scheduledWorkOrders', 'work_order'],
+  ['rescheduledVisits', 'reschedule']
+];
+
 // Everything on this device that belongs on the server, as {kind\u0002id: data}
 function syncLocalRecords(){
   const out = {};
@@ -6695,6 +6705,11 @@ function syncLocalRecords(){
   const company = {};
   SYNC_COMPANY_SETTINGS.forEach(key=>{ if(settings[key] !== undefined) company[key] = settings[key]; });
   if(Object.keys(company).length) out[syncRecordKey('setting', 'company')] = company;
+  SYNC_RECORD_LISTS.forEach(([key, kind])=>{
+    (lsGet(key) || []).forEach(item=>{
+      if(item && item.id) out[syncRecordKey(kind, String(item.id))] = Object.assign({}, item);
+    });
+  });
   return out;
 }
 
@@ -6730,6 +6745,21 @@ function syncApplyRecord(kind, id, data, deleted){
   if(kind === 'setup'){
     if(deleted || !('value' in data)) return true;
     return lsSet(id, data.value);
+  }
+  const listFor = SYNC_RECORD_LISTS.find(([, k]) => k === kind);
+  if(listFor){
+    const key = listFor[0];
+    const list = lsGet(key) || [];
+    const i = list.findIndex(x => x && String(x.id) === String(id));
+    if(deleted){ if(i === -1) return true; list.splice(i, 1); }
+    else if(i === -1) list.push(Object.assign({}, data));
+    else list[i] = Object.assign({}, data);
+    if(!lsSet(key, list)) return false;
+    if(kind === 'task'){
+      try{ if(typeof tasks !== 'undefined') tasks = lsGet('tasks') || []; }catch(e){}
+      try{ if(typeof renderTaskList === 'function') renderTaskList(); }catch(e){}
+    }
+    return true;
   }
   if(kind === 'setting'){
     if(deleted) return true;
@@ -6773,8 +6803,11 @@ function syncScanRecords(state, now){
   Object.keys(r.known).forEach(key=>{
     if(local[key]) return;
     const k = r.known[key];
-    // Only technician profiles can disappear from this device; the rest always exist
-    if(k.d || key.indexOf('technician\u0002') !== 0){ delete r.edits[key]; r.seen[key] = SYNC_GONE; return; }
+    // Profiles and work records can disappear from this device; company
+    // details, setup and settings always exist
+    const removable = ['technician', 'task', 'filter_clean', 'work_order', 'reschedule']
+      .some(kind => key.indexOf(kind + '\u0002') === 0);
+    if(k.d || !removable){ delete r.edits[key]; r.seen[key] = SYNC_GONE; return; }
     const was = r.edits[key] && r.edits[key]._deleted;
     r.edits[key] = {_deleted: (r.seen[key] === SYNC_GONE && was) ? was : stamp};
     r.seen[key] = SYNC_GONE;
