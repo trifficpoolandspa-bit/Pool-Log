@@ -2204,6 +2204,83 @@ async function serverFieldSignIn(){
       a.close();
     }
 
+    console.log('\n=== technician-app.html: an admin\'s own route ===');
+    {
+      // An admin holds every customer in the company, so the route is decided
+      // by who each customer belongs to rather than by what arrives
+      await makeTech(OWNER, 'boss', 'bosspass123', 't_boss', 'John Tyler', true);
+      const t = new Date().toISOString();
+      for(const [id, name] of [['b1', 'Boss Pool One'], ['b2', 'Boss Pool Two']]){
+        await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+          [id, JSON.stringify({id: {t, v: id}, name: {t, v: name}, day: {t, v: today}, active: {t, v: true},
+                               hasPool: {t, v: true}, technicianId: {t, v: 't_boss'}, gateCode: {t, v: '1111'}})]);
+      }
+      const boss = await boot(srv, 'technician-app.html', {storage: {
+        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+      await signIn(boss, 'boss', 'bosspass123');
+      for(let i = 0; i < 900 && boss.w.eval('syncRunning'); i++) await sleep(10);
+      await sleep(200);
+      check('both of the admin\'s customers are on the route', routeNames(boss.d).sort().join() === 'Boss Pool One,Boss Pool Two', routeNames(boss.d).join(' | '));
+
+      // The office changes something ordinary
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['b1', JSON.stringify({gateCode: {t: new Date().toISOString(), v: '9999'}})]);
+      await boss.w.eval('fieldSync()');
+      for(let i = 0; i < 600 && boss.w.eval('syncRunning'); i++) await sleep(10);
+      check('a gate code change reaches the admin\'s phone',
+            (JSON.parse(boss.storage()['poollog:customers']).find(x => x.id === 'b1') || {}).gateCode === '9999');
+
+      // The office takes one off their route (nobody else gets it)
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['b1', JSON.stringify({technicianId: {t: new Date().toISOString(), v: ''}})]);
+      await boss.w.eval('fieldSync()');
+      for(let i = 0; i < 600 && boss.w.eval('syncRunning'); i++) await sleep(10);
+      await sleep(100);
+      const held = JSON.parse(boss.storage()['poollog:customers']).find(x => x.id === 'b1');
+      check('the phone knows the customer belongs to nobody', held && !held.technicianId, JSON.stringify(held));
+      check('and they come off the admin\'s route', routeNames(boss.d).sort().join() === 'Boss Pool Two', routeNames(boss.d).join(' | '));
+      boss.close();
+    }
+
+    console.log('\n=== technician-app.html: a change the office will not accept ===');
+    {
+      await makeTech(OWNER, 'rex', 'rexpass1234', 't_rex', 'Rex Field', false);
+      const t = new Date().toISOString();
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['x1', JSON.stringify({id: {t, v: 'x1'}, name: {t, v: 'Refused Pool'}, day: {t, v: today}, active: {t, v: true},
+                               hasPool: {t, v: true}, technicianId: {t, v: 't_rex'}, gateCode: {t, v: '1111'}})]);
+      const rex = await boot(srv, 'technician-app.html', {storage: {
+        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+      await signIn(rex, 'rex', 'rexpass1234');
+      for(let i = 0; i < 900 && rex.w.eval('syncRunning'); i++) await sleep(10);
+      check('the customer is on their route', routeNames(rex.d).join() === 'Refused Pool', routeNames(rex.d).join(' | '));
+
+      // A technician cannot reassign a customer, so the office turns this away
+      rex.w.eval("customers.find(c => c.id === 'x1').technicianId = 't_sam'; lsSet('customers', customers);");
+      await sleep(2400);
+      for(let i = 0; i < 600 && rex.w.eval('syncRunning'); i++) await sleep(10);
+      check('the office still has them where it put them',
+            (await pool.query("select data->>'technicianId' tid from public.customers where id='x1'")).rows[0].tid === 't_rex');
+      await rex.w.eval('fieldSync()');
+      for(let i = 0; i < 600 && rex.w.eval('syncRunning'); i++) await sleep(10);
+      await sleep(100);
+      const back = JSON.parse(rex.storage()['poollog:customers']).find(x => x.id === 'x1');
+      check('and the phone goes back to the office\'s version', back && back.technicianId === 't_rex', JSON.stringify(back));
+      rex.w.eval('fieldRenderSyncCard()');
+      check('the sync card says a change was not accepted',
+            /did not accept a change to Refused Pool/.test(rex.d.getElementById('fieldSyncStatus').textContent),
+            rex.d.getElementById('fieldSyncStatus').textContent);
+
+      // And the office can still take them off the route afterwards
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['x1', JSON.stringify({technicianId: {t: new Date().toISOString(), v: ''}})]);
+      await rex.w.eval('fieldSync()');
+      for(let i = 0; i < 600 && rex.w.eval('syncRunning'); i++) await sleep(10);
+      await sleep(100);
+      check('taking the customer off the route still works afterwards', routeNames(rex.d).join() === '', routeNames(rex.d).join(' | '));
+      rex.close();
+    }
+
     console.log('\n=== technician-app.html: a removed technician\'s phone is cleared ===');
     {
       await makeTech(OWNER, 'wes', 'wespass123', 't_wes', 'Wes Field', false);
