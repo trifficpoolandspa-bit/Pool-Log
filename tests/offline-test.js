@@ -1030,7 +1030,54 @@ async function serverCompanyRecords(){
       r = await as(ALEX, 'select count(*)::int n from public.record_versions');
       check('but not for technicians', val(r) === 0, JSON.stringify(r));
 
-      console.log('\n=== Removing a technician profile ===');
+      console.log('\n=== tasks, jobs and day moves ===');
+  {
+    const T2 = n => new Date(Date.now() - (10 - n) * 60000).toISOString();
+    // Alex holds c_alex; Sam is an admin
+    const t = T2(1);
+    for(const [cid, tech] of [['c_alex', 't_alex'], ['c_sam', 't_sam']]){
+      await as(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        [cid, JSON.stringify({id: {t, v: cid}, technicianId: {t, v: tech}})]);
+    }
+    await push(OWNER, 'task', 'task_1', {id: {t, v: 'task_1'}, title: {t, v: 'Drop off tabs'}, technicianId: {t, v: 't_alex'}, done: {t, v: false}});
+    await push(OWNER, 'task', 'task_2', {id: {t, v: 'task_2'}, title: {t, v: 'Sam job'}, technicianId: {t, v: 't_sam'}, done: {t, v: false}});
+    await push(OWNER, 'filter_clean', 'fc_1', {id: {t, v: 'fc_1'}, customerId: {t, v: 'c_alex'}, technicianId: {t, v: 't_alex'}});
+    await push(OWNER, 'work_order', 'wo_1', {id: {t, v: 'wo_1'}, customerId: {t, v: 'c_sam'}, technicianId: {t, v: 't_sam'}});
+    await push(OWNER, 'reschedule', 'res_1', {id: {t, v: 'res_1'}, customerId: {t, v: 'c_alex'}, fromDate: {t, v: '2026-09-17'}, toDate: {t, v: '2026-09-18'}});
+
+    const mine = await visible(ALEX);
+    check('a technician sees their own task', mine.indexOf('task:task_1') !== -1, mine);
+    check('and their own filter clean', mine.indexOf('filter_clean:fc_1') !== -1, mine);
+    check('and a move for their own customer', mine.indexOf('reschedule:res_1') !== -1, mine);
+    check('but not another technician\'s task', mine.indexOf('task:task_2') === -1, mine);
+    check('nor their work order', mine.indexOf('work_order:wo_1') === -1, mine);
+    check('an admin sees all of them', (await visible(SAM)).indexOf('work_order:wo_1') !== -1);
+
+    let r = await push(ALEX, 'task', 'task_1', {done: {t: T2(2), v: true}, doneAt: {t: T2(2), v: T2(2)}});
+    check('a technician can tick their own task off', r.ok && (await rec('task', 'task_1')).data.done === true, r.error);
+    r = await push(ALEX, 'task', 'task_1', {title: {t: T2(3), v: 'Renamed by tech'}});
+    check('but cannot change anything else about it', !r.ok && /only tick a task off/.test(r.error), r.error);
+    r = await push(ALEX, 'task', 'task_2', {done: {t: T2(3), v: true}});
+    check('nor tick off someone else\'s', !r.ok && /not yours/.test(r.error), r.error);
+    r = await push(ALEX, 'task', 'task_new', {id: {t: T2(3), v: 'task_new'}, technicianId: {t: T2(3), v: 't_alex'}});
+    check('nor invent a task', !r.ok && /Only the office can add a task/.test(r.error), r.error);
+    r = await push(ALEX, 'filter_clean', 'fc_1', {done: {t: T2(3), v: true}});
+    check('a filter clean stays the office\'s', !r.ok && /Only the office/.test(r.error), r.error);
+
+    r = await push(ALEX, 'reschedule', 'res_new', {id: {t: T2(4), v: 'res_new'}, customerId: {t: T2(4), v: 'c_alex'},
+                                                  fromDate: {t: T2(4), v: '2026-09-24'}, toDate: {t: T2(4), v: '2026-09-25'}});
+    check('a technician can move one of their own visits', r.ok && !!(await rec('reschedule', 'res_new')), r.error);
+    r = await push(ALEX, 'reschedule', 'res_other', {id: {t: T2(5), v: 'res_other'}, customerId: {t: T2(5), v: 'c_sam'},
+                                                     fromDate: {t: T2(5), v: '2026-09-24'}, toDate: {t: T2(5), v: '2026-09-25'}});
+    check('but not someone else\'s customer', !r.ok && /not yours to move/.test(r.error), r.error);
+    r = await push(SAM, 'task', 'task_1', {title: {t: T2(6), v: 'Renamed by admin'}});
+    check('an admin can change anything', r.ok && (await rec('task', 'task_1')).data.title === 'Renamed by admin', r.error);
+    r = await push(OWNER, 'task', 'task_1', {_deleted: {t: T2(7), v: true}});
+    check('the office deletes a task, keeping its details',
+          r.ok && (await rec('task', 'task_1')).deleted === true && (await rec('task', 'task_1')).data.title === 'Renamed by admin', r.error);
+  }
+
+  console.log('\n=== Removing a technician profile ===');
       r = await push(OWNER, 'technician', 't_sam', {_deleted: {t: T(8), v: true}});
       check('the office deletes a technician profile', r.ok && (await rec('technician', 't_sam')).deleted === true, r.error);
       check('it is only marked deleted, with its details kept', (await rec('technician', 't_sam')).data.name === 'Sam');
@@ -1241,6 +1288,43 @@ async function websiteCompanyRecords(){
     check('  and the one made elsewhere survives', merged.data.accountPhone === '(623) 555-1111', JSON.stringify(merged.data));
     check('  both are on this device now',
           local(w, 'licenseNumber') === 'ROC-999999' && local(w, 'accountPhone') === '(623) 555-1111');
+
+    console.log('\n=== tasks, jobs and day moves on the website ===');
+    w.eval(`
+      lsSet('tasks', [{id:'task_w1', title:'Drop off tabs', technicianId:'t1', done:false}]);
+      lsSet('scheduledFilterCleans', [{id:'fc_w1', customerId:'c1', technicianId:'t1', date:'2026-09-20'}]);
+      lsSet('scheduledWorkOrders', [{id:'wo_w1', customerId:'c1', technicianId:'t1'}]);
+      lsSet('rescheduledVisits', [{id:'res_w1', customerId:'c1', fromDate:'2026-09-17', toDate:'2026-09-18'}]);
+    `);
+    await sleep(2300); await idle(w);
+    check('  a task reaches the server', (await record('task', 'task_w1') || {}).data?.title === 'Drop off tabs');
+    check('  a scheduled filter clean too', !!(await record('filter_clean', 'fc_w1')));
+    check('  a work order job too', !!(await record('work_order', 'wo_w1')));
+    check('  and a one-day move', (await record('reschedule', 'res_w1') || {}).data?.toDate === '2026-09-18');
+
+    // A technician ticks the task off out in the field
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['task', 'task_w1', JSON.stringify({done: {t: new Date().toISOString(), v: true},
+                                          doneAt: {t: new Date().toISOString(), v: new Date().toISOString()}})]);
+    await syncNow(w);
+    const doneTask = (local(w, 'tasks') || []).find(x => x.id === 'task_w1');
+    check('  a task ticked off in the field shows here as done', doneTask && doneTask.done === true, JSON.stringify(doneTask));
+    check('  keeping its title', doneTask && doneTask.title === 'Drop off tabs');
+
+    // A move made in the field arrives
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['reschedule', 'res_field', JSON.stringify({id: {t: new Date().toISOString(), v: 'res_field'},
+        customerId: {t: new Date().toISOString(), v: 'c1'}, fromDate: {t: new Date().toISOString(), v: '2026-09-24'},
+        toDate: {t: new Date().toISOString(), v: '2026-09-25'}})]);
+    await syncNow(w);
+    check('  a visit moved in the field shows here', (local(w, 'rescheduledVisits') || []).some(x => x.id === 'res_field'));
+
+    // Deleting at the desk
+    w.eval("lsSet('tasks', (lsGet('tasks') || []).filter(x => x.id !== 'task_w1'))");
+    await sleep(2300); await idle(w);
+    const removedTask = await record('task', 'task_w1');
+    check('  a task deleted here is marked deleted on the server, details kept',
+          removedTask && removedTask.deleted === true && removedTask.data.title === 'Drop off tabs', JSON.stringify(removedTask));
 
     console.log('\n=== visits recorded in the field show on the website ===');
     await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
