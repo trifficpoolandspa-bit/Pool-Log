@@ -280,6 +280,100 @@ const rowText = (d, name) => { const r = Array.from(d.querySelectorAll('#technic
     check('renaming to a username in use is refused', /already taken/.test(toasts(w)) && (await members()).find(m => m.technician_id === alex().id).username === 'alex.rivera', toasts(w));
     w.eval('resetTechForm(); hideTechForm();');
 
+    console.log('\n=== The Edit form offline ===');
+    srv.offline = true;
+    w.eval("editTechnician(technicians.find(t => t.name === 'Alex Rivera'))"); await sleep(50);
+    w.eval('techAccounts = null');
+    fill(d, w, {techUsername: 'offline.rename'});
+    await saveForm(d);
+    check('offline, changing a username in Edit is refused', /offline/i.test(toasts(w)) && alex().username !== 'offline.rename', toasts(w));
+    w.eval("editTechnician(technicians.find(t => t.name === 'Alex Rivera'))"); await sleep(50);
+    w.eval('techAccounts = null');
+    fill(d, w, {techPhone: '(623) 555-0111'});
+    await saveForm(d);
+    check('but offline, changing only their phone number still saves', alex().phone === '(623) 555-0111', toasts(w));
+    srv.offline = false;
+    w.eval('resetTechForm(); hideTechForm();');
+    await w.eval('loadTechAccounts()');
+
+    console.log('\n=== The profile page changes the real sign-in ===');
+    const openProfile = async name => { w.eval(`openTechDetail(technicians.find(t => t.name === ${JSON.stringify(name)}))`); await sleep(400); };
+    const profileRow = label => Array.from(d.querySelectorAll('#techProfileMeta .profile-meta-row')).find(r => r.querySelector('.profile-meta-label') && r.querySelector('.profile-meta-label').textContent === label);
+    const editRow = async (label, value) => {
+      profileRow(label).click(); await sleep(30);
+      const input = profileRow(label).querySelector('input');
+      input.value = value;
+      input.dispatchEvent(new w.Event('blur')); await sleep(450);
+    };
+    const adminBox = () => { const r = Array.from(d.querySelectorAll('#techProfileMeta .access-row')).find(x => /Admin access/.test(x.textContent)); return r && r.querySelector('input'); };
+    const acctOf = async techId => (await members()).find(m => m.technician_id === techId);
+
+    await openProfile('Alex Rivera');
+    check('the profile shows the username they really sign in with', /alex.rivera/.test(profileRow('Username').textContent), profileRow('Username').textContent);
+    check('and that a password is set, without showing it', /••••••••/.test(profileRow('Password').textContent));
+    profileRow('Password').click(); await sleep(30);
+    check('editing the password starts empty, never showing the old one', profileRow('Password').querySelector('input').value === '' && profileRow('Password').querySelector('input').type === 'password');
+    profileRow('Password').querySelector('input').dispatchEvent(new w.Event('blur')); await sleep(200);
+    const hashBefore = (await acctOf(alex().id)).encrypted_password;
+    check('leaving it empty changes nothing', (await acctOf(alex().id)).encrypted_password === hashBefore);
+
+    await openProfile('Alex Rivera');
+    await editRow('Username', 'alex.profile');
+    check('changing the username on the profile changes their sign-in', (await acctOf(alex().id)).username === 'alex.profile', (await acctOf(alex().id)).username);
+    check('and the profile', alex().username === 'alex.profile');
+    await openProfile('Alex Rivera');
+    await editRow('Username', 'sam');
+    check('a username already in use is refused on the profile too', /already taken/.test(toasts(w)) && (await acctOf(alex().id)).username === 'alex.profile' && alex().username === 'alex.profile', toasts(w));
+
+    await pool.query('insert into auth.sessions(user_id) select user_id from public.members where username = $1', ['alex.profile']);
+    await openProfile('Alex Rivera');
+    await editRow('Password', 'profilepass1');
+    const pw3 = (await pool.query(`select encrypted_password = extensions.crypt('profilepass1', encrypted_password) ok from auth.users where email = $1`, [(await acctOf(alex().id)).email])).rows[0].ok;
+    check('setting a password on the profile sets their real password', pw3 === true);
+    const sess3 = (await pool.query('select count(*)::int n from auth.sessions s join public.members m on m.user_id = s.user_id where m.username = $1', ['alex.profile'])).rows[0].n;
+    check('and signs them out of every phone', sess3 === 0, sess3);
+    await openProfile('Alex Rivera');
+    await editRow('Password', 'short');
+    check('a short password is refused on the profile', /8 characters/.test(toasts(w)), toasts(w));
+
+    await openProfile('Alex Rivera');
+    adminBox().click(); await sleep(450);
+    check('unticking Admin access on the profile turns it off on their sign-in', (await acctOf(alex().id)).is_admin === false && alex().isAdmin === false, JSON.stringify(await acctOf(alex().id)));
+    srv.offline = true;
+    await openProfile('Alex Rivera');
+    adminBox().click(); await sleep(450);
+    check('offline, Admin access cannot be changed and the box goes back', adminBox().checked === false && alex().isAdmin === false && /offline/i.test(toasts(w)), toasts(w));
+    srv.offline = false;
+    await openProfile('Alex Rivera');
+    adminBox().click(); await sleep(450);
+    check('back online it works', (await acctOf(alex().id)).is_admin === true && alex().isAdmin === true);
+
+    srv.offline = true;
+    await openProfile('Alex Rivera');
+    w.eval('techAccounts = null');
+    await editRow('Username', 'offline.profile');
+    check('offline, the username on the profile is refused too', /offline/i.test(toasts(w)) && alex().username === 'alex.profile', toasts(w));
+    srv.offline = false;
+    await w.eval('loadTechAccounts()');
+
+    await openProfile('Alex Rivera');
+    await editRow('Name', 'Alex R. Rivera');
+    await sleep(300);
+    const nm = (await pool.query('select name from public.members where username = $1', ['alex.profile'])).rows[0].name;
+    check('a new name on the profile reaches their sign-in, so the phone shows it', nm === 'Alex R. Rivera', nm);
+    w.eval("technicians.find(t => t.name === 'Alex R. Rivera').name = 'Alex Rivera'");
+
+    w.eval("technicians.push({id:'tech_pat', name:'Profile Pat', username:'pat'}); saveTechnicians();");
+    await openProfile('Profile Pat');
+    check('a technician with no sign-in is offered one', /Set a password to create their sign-in/.test(profileRow('Password').textContent), profileRow('Password').textContent);
+    await editRow('Password', 'patpassword');
+    check('setting a password on the profile creates their sign-in', (await members()).some(m => m.technician_id === 'tech_pat' && m.username === 'pat'), toasts(w));
+    w.eval("technicians.push({id:'tech_nouser', name:'No Username'}); saveTechnicians();");
+    await openProfile('No Username');
+    await editRow('Password', 'somepassword');
+    check('without a username it asks for one first', /Enter a username/.test(toasts(w)) && !(await members()).some(m => m.technician_id === 'tech_nouser'), toasts(w));
+    w.eval("switchView('technicians')"); await sleep(250);
+
     console.log('\n=== A technician who existed before sign-ins ===');
     w.eval("editTechnician(technicians.find(t => t.name === 'Old Local'))"); await sleep(50);
     check('the form says they have no sign-in yet', /No sign-in yet/.test(d.getElementById('techAccountHint').textContent));
@@ -292,12 +386,13 @@ const rowText = (d, name) => { const r = Array.from(d.querySelectorAll('#technic
     check('typing a password creates their sign-in with their username', (await members()).some(m => m.technician_id === 'tech_old' && m.username === 'oldlocal'), JSON.stringify((await members()).map(m => m.username)));
 
     console.log('\n=== Deleting a technician ===');
+    const alexId = alex().id;
     w.eval("deleteTechnician(technicians.find(t => t.name === 'Alex Rivera'))"); await sleep(500);
     check('the question explains the 7 days', dialogs.some(t => /upload visits it was holding for 7 days/.test(t)), dialogs.join(' | '));
-    const removed = (await pool.query(`select removed_at from public.members where username = 'alex.rivera'`)).rows[0];
+    const removed = (await pool.query(`select removed_at from public.members where technician_id = $1`, [alexId])).rows[0];
     check('their sign-in is stopped on the server', removed && !!removed.removed_at);
     check('and they are gone from the list', !rowText(d, 'Alex Rivera') && !w.eval("technicians.some(t => t.name === 'Alex Rivera')"));
-    check('their username is free again', (await asUser(OWNER, 'select public.username_available($1) a', ['alex.rivera'])).rows[0].a === true);
+    check('their username is free again', (await asUser(OWNER, 'select public.username_available($1) a', ['alex.profile'])).rows[0].a === true);
 
     srv.offline = true;
     w.eval("deleteTechnician(technicians.find(t => t.name === 'Sam Admin'))"); await sleep(500);
