@@ -3060,6 +3060,7 @@ function loadFieldSyncState(){
     pulledOnce: base.pulledOnce === true,
     backupAt: base.backupAt || null,
     lastSyncedAt: base.lastSyncedAt || null,
+    unknownHere: base.unknownHere || {},
     lastRefusedAt: base.lastRefusedAt || null,
     lastRefusedName: base.lastRefusedName || null,
     lastRefusedWhy: base.lastRefusedWhy || null,
@@ -3388,7 +3389,15 @@ async function syncPushCustomers(state){
       // something the office has already decided otherwise
       const theirs = await fieldAuthed('/rest/v1/customers?select=id,data,deleted,updated_at&id=eq.'
         + encodeURIComponent(id));
-      if(theirs.ok && Array.isArray(theirs.body) && theirs.body.length){
+      if(theirs.ok && Array.isArray(theirs.body) && !theirs.body.length){
+        // The office has no such customer and will not take this one. It stays
+        // on this phone — deleting someone's customers because the office has
+        // not got them would be far worse — but it is counted and shown, since
+        // a customer the office cannot see is a problem somebody must sort out.
+        state.unknownHere = state.unknownHere || {};
+        state.unknownHere[id] = (rec && rec.name) || id;
+      } else if(theirs.ok && Array.isArray(theirs.body) && theirs.body.length){
+        if(state.unknownHere) delete state.unknownHere[id];
         const row = theirs.body[0];
         const cur = lsGet('customers') || [];
         const at = cur.findIndex(x => String(x.id) === id);
@@ -3724,13 +3733,19 @@ function fieldSyncSummary(){
   }
   if(!when) return pending ? pending + (pending === 1 ? ' change' : ' changes') + ' to send.'
     : 'Waiting for the first sync\u2026';
+  const unknown = Object.values(state.unknownHere || {});
+  const unknownNote = unknown.length
+    ? ' ' + unknown.length + (unknown.length === 1 ? ' customer on this phone is' : ' customers on this phone are')
+      + ' not known to the office (' + unknown.slice(0, 3).join(', ') + (unknown.length > 3 ? ', …' : '')
+      + '), so nothing done to them there can reach this phone.'
+    : '';
   const refused = state.lastRefusedAt
     ? ' The office did not accept a change to ' + (state.lastRefusedName || 'a customer')
       + ' (' + (state.lastRefusedWhy || 'refused') + '), so its version is being used.'
     : '';
   return (pending
     ? 'Last synced ' + when + ' — ' + pending + (pending === 1 ? ' change' : ' changes') + ' still to send.'
-    : 'Up to date with the office. Last synced ' + when + '.') + refused;
+    : 'Up to date with the office. Last synced ' + when + '.') + refused + unknownNote;
 }
 
 function fieldRenderSyncCard(){
