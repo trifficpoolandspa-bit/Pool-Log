@@ -779,6 +779,15 @@ select#customerSelect{font-weight:600;}
 
 
 
+
+    <div class="card" id="syncCard">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="margin:0;">Office sync</h2>
+        <button class="btn btn-ghost" id="btnSyncNow" style="width:auto;margin-left:auto;flex:0 0 auto;">Sync now</button>
+      </div>
+      <p id="fieldSyncStatus" style="font-size:12.5px;color:var(--muted);margin:10px 0 0;">Checking&hellip;</p>
+      <p style="font-size:11.5px;color:var(--muted);margin:8px 0 0;">Everything is saved on this phone first and works with no signal. It goes to the office whenever there is a connection.</p>
+    </div>
     <div class="card">
       <!-- One line: heading, who it is, then Sign out pushed to the far right.
            The name used to sit under the heading, which left the button
@@ -2660,6 +2669,7 @@ function loadFieldSyncState(){
   return {
     pulledOnce: base.pulledOnce === true,
     backupAt: base.backupAt || null,
+    lastSyncedAt: base.lastSyncedAt || null,
     customers: base.customers || {cursor: null, known: {}, seen: {}, edits: {}},
     records: base.records || {cursor: null, known: {}, seen: {}},
     work: base.work || {known: {}, seen: {}, edits: {}, refused: {}},
@@ -3271,7 +3281,37 @@ function fieldStartWipe(reason, companyId){
 // sign-in screen, which is where whoever holds it will be looking
 function fieldSyncStatus(text){
   if(!text) return;
-  try{ fieldShowError(text); }catch(e){}
+  const el = document.getElementById('fieldSyncStatus');
+  if(el) el.textContent = text;
+  // While a phone is waiting to clear itself, whoever holds it is looking at
+  // the sign-in screen
+  if(deviceGet('wipe')){ try{ fieldShowError(text); }catch(e){} }
+}
+
+// What the Settings tab shows: when it last reached the office, and what is
+// still waiting
+function fieldSyncSummary(){
+  if(!fieldCurrentUser()) return 'Not signed in.';
+  const state = loadFieldSyncState();
+  let pending = 0;
+  try{ pending = fieldPendingCount(state); }catch(e){}
+  const last = state.lastSyncedAt ? new Date(state.lastSyncedAt) : null;
+  const when = last && !isNaN(last)
+    ? last.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : null;
+  if(typeof navigator !== 'undefined' && navigator.onLine === false){
+    return 'Offline' + (pending ? ' — ' + pending + (pending === 1 ? ' change' : ' changes')
+      + ' waiting to send.' : ' — everything here has been sent.');
+  }
+  if(!when) return pending ? pending + (pending === 1 ? ' change' : ' changes') + ' to send.'
+    : 'Waiting for the first sync\u2026';
+  return pending
+    ? 'Last synced ' + when + ' — ' + pending + (pending === 1 ? ' change' : ' changes') + ' still to send.'
+    : 'Up to date with the office. Last synced ' + when + '.';
+}
+
+function fieldRenderSyncCard(){
+  const el = document.getElementById('fieldSyncStatus');
+  if(el) el.textContent = fieldSyncSummary();
 }
 
 function fieldWipeMessage(pending, reason){
@@ -3382,6 +3422,7 @@ async function fieldSync(){
     if(visits.more) setTimeout(()=> fieldSync(), 1500);   // more to send, a batch at a time
 
     state.lastSyncedAt = new Date().toISOString();
+    setTimeout(fieldRenderSyncCard, 0);
     saveFieldSyncState(state);
     result.ok = true;
     return result;
@@ -3408,6 +3449,19 @@ function fieldNoteLocalChange(){
 
 function startFieldSync(){
   fieldSync();
+  fieldRenderSyncCard();
+  if(!startFieldSync.wired){
+    startFieldSync.wired = true;
+    setInterval(fieldRenderSyncCard, 20000);
+    const btn = document.getElementById('btnSyncNow');
+    if(btn) btn.addEventListener('click', async ()=>{
+      btn.disabled = true;
+      fieldSyncStatus('Syncing\u2026');
+      await fieldSync();
+      fieldRenderSyncCard();
+      btn.disabled = false;
+    });
+  }
   if(!startFieldSync.started){
     startFieldSync.started = true;
     setInterval(()=>{ if(!document.hidden) fieldSync(); }, SYNC_INTERVAL_MS);
