@@ -2372,6 +2372,29 @@ async function serverFieldSignIn(){
       check('a customer change from the office arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n2') || {}).notes === 'Office note');
       check('a profile change from the office arrives', JSON.parse(phone.storage()['poollog:technicians'])[0].requireGatePhoto === false);
 
+      console.log('\n=== technician-app.html: the Office sync card ===');
+      {
+        const card = phone.d.getElementById('fieldSyncStatus');
+        check('Settings has an Office sync card', !!card && !!phone.d.getElementById('syncCard'));
+        check('with a Sync now button', !!phone.d.getElementById('btnSyncNow'));
+        phone.w.eval('fieldRenderSyncCard()');
+        check('it says when it last reached the office', /Last synced|Up to date/.test(card.textContent), card.textContent);
+
+        // Something waiting to send is counted
+        srv.offline = true;
+        phone.w.eval("customers.find(c => c.id === 'n1').gateCode = 'WAITING'; lsSet('customers', customers);");
+        await sleep(2400);
+        for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        phone.w.eval('fieldRenderSyncCard()');
+        check('it says how much is still to send', /1 change still to send|1 change to send|waiting to send/.test(card.textContent), card.textContent);
+        srv.offline = false;
+        phone.d.getElementById('btnSyncNow').click();
+        for(let i = 0; i < 600 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        await sleep(200);
+        check('Sync now sends it', (await pool.query("select data->>'gateCode' g from public.customers where id='n1'")).rows[0].g === 'WAITING');
+        check('and the card says it is up to date', /Up to date/.test(card.textContent), card.textContent);
+      }
+
       console.log('\n=== technician-app.html: tasks and day moves ===');
       {
         const t = new Date().toISOString();
@@ -2516,7 +2539,7 @@ async function serverFieldSignIn(){
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
       check('an edit made offline stays on the phone', JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n1').gateCode === 'OFFLINE-EDIT');
       const serverBefore = (await pool.query("select data from public.customers where id = 'n1'")).rows[0].data;
-      check('and has not reached the server', serverBefore.gateCode === 'FROM-PHONE');
+      check('and has not reached the server', serverBefore.gateCode !== 'OFFLINE-EDIT', serverBefore.gateCode);
       srv.offline = false;
       await phone.w.eval('fieldSync()');
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
