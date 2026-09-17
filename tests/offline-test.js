@@ -108,6 +108,7 @@ function boot(file){
   await serverCustomerSync();
   await serverCompanyRecords();
   await websiteCompanyRecords();
+  await serverVisits();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
@@ -1240,6 +1241,96 @@ async function websiteCompanyRecords(){
     site.close();
   }catch(e){
     check('  website company records', false, e.stack);
+  }
+  await pool.end();
+}
+
+
+// ======== visits: readings and skips on the server (snippet 08) ========
+async function serverVisits(){
+  const { Pool } = require('pg');
+  const pool = new Pool({host: '127.0.0.1', user: 'postgres', password: 'pw', database: 'pl', max: 3});
+  const CO = 'aaaaaaaa-0000-0000-0000-000000000001', OTHER_CO = 'bbbbbbbb-0000-0000-0000-000000000002';
+  const OWNER = '11111111-1111-1111-1111-111111111111', OUTSIDER = '22222222-2222-2222-2222-222222222222';
+  const ALEX = '33333333-3333-3333-3333-333333333333', SAM = '44444444-4444-4444-4444-444444444444';
+  async function as(uid, sql, params){
+    const c = await pool.connect();
+    try{
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query("select set_config('request.uid', $1, true)", [uid]);
+      const r = await c.query(sql, params);
+      await c.query('commit');
+      return {ok: true, rows: r.rows};
+    }catch(e){ await c.query('rollback').catch(()=>{}); return {ok: false, error: e.message}; }
+    finally{ c.release(); }
+  }
+  const val = r => r.ok && r.rows[0] ? Object.values(r.rows[0])[0] : undefined;
+  const visit = (uid, customer, kind, body, id, data) => as(uid,
+    'select public.push_visit($1,$2,$3,$4,$5::jsonb,now(),current_date) j', [customer, kind, body, id, JSON.stringify(data)]);
+  const seen = async uid => Number(val(await as(uid, 'select count(*)::int n from public.visits')));
+
+  console.log('\n=== visits are append-only, and only the office may change one ===');
+  try{
+    await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions, public.visits');
+    await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
+    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.poollog.invalid'),($4,'tech-s@accounts.poollog.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
+    await pool.query(`insert into public.companies(id,name,code) values ($1,'Triffic','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
+    await pool.query(`insert into public.members(user_id,company_id,role,name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
+    await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [ALEX, 'alex', 't_alex', 'Alex', false]);
+    await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [SAM, 'sam', 't_sam', 'Sam', true]);
+    const t = new Date().toISOString();
+    for(const [id, tech] of [['c1', 't_alex'], ['c2', 't_sam']]){
+      await as(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        [id, JSON.stringify({id: {t, v: id}, technicianId: {t, v: tech}})]);
+    }
+
+    let r = await visit(ALEX, 'c1', 'reading', 'pool', 'read_1', {chlorine: '3.0', notes: 'ok'});
+    check('  a technician adds a reading for their own customer', r.ok && val(r).result === 'saved', r.error);
+    r = await visit(ALEX, 'c1', 'reading', 'pool', 'read_1', {chlorine: '9.9'});
+    check('  the same reading sent twice lands once', r.ok && val(r).result === 'already there', r.error);
+    check('  and is not overwritten by the second try',
+          val(await as(OWNER, "select data->>'chlorine' c from public.visits where id = 'read_1' and body = 'pool'")) === '3.0');
+    await visit(ALEX, 'c1', 'reading', 'spa', 'read_1', {chlorine: '4.0'});
+    await visit(ALEX, 'c1', 'reading', 'fountain:f1', 'read_1', {chlorine: '2.0'});
+    r = await visit(ALEX, 'c1', 'skip', 'pool', 'skip_1', {reason: 'locked gate'});
+    check('  a pool, a spa, a fountain and a skip are each their own visit', r.ok && await seen(OWNER) === 4, await seen(OWNER));
+    check('  the technician sees their own customer\'s visits', await seen(ALEX) === 4);
+    check('  an admin sees them too', await seen(SAM) === 4);
+
+    r = await as(ALEX, "select public.amend_visit('c1','reading','pool','read_1','{\"chlorine\":\"9.9\"}'::jsonb,null)");
+    check('  a technician cannot correct a visit', !r.ok && /Only the office/.test(r.error), r.error);
+    r = await as(ALEX, "update public.visits set data = '{}'::jsonb");
+    check('  or change the table directly', !r.ok && /permission denied/.test(r.error), r.error);
+    r = await as(OWNER, "select public.amend_visit('c1','reading','pool','read_1','{\"chlorine\":\"3.1\"}'::jsonb,null) j");
+    check('  the office can correct one', r.ok && val(r).result === 'saved'
+          && val(await as(OWNER, "select data->>'chlorine' c from public.visits where id='read_1' and body='pool'")) === '3.1', r.error);
+    r = await as(OWNER, "select public.amend_visit('c1','reading','pool','read_1',null,true) j");
+    check('  and remove one, which only marks it', r.ok
+          && val(await as(OWNER, "select deleted from public.visits where id='read_1' and body='pool'")) === true, r.error);
+    check('  with its details kept',
+          val(await as(OWNER, "select data->>'chlorine' c from public.visits where id='read_1' and body='pool'")) === '3.1');
+
+    check('  another company sees none of them', await seen(OUTSIDER) === 0);
+    r = await visit(OUTSIDER, 'c1', 'reading', 'pool', 'read_x', {});
+    check('  and cannot add one', !r.ok, r.error);
+    r = await visit(ALEX, 'nope', 'reading', 'pool', 'r2', {});
+    check('  a visit for a customer the server does not have is refused', !r.ok && /not on the server/.test(r.error), r.error);
+
+    r = await visit(ALEX, 'c2', 'reading', 'pool', 'read_late', {chlorine: '3.0'});
+    check('  a visit for a customer since handed to someone else still uploads', r.ok && val(r).result === 'saved', r.error);
+    check('  stamped with who recorded it',
+          val(await as(OWNER, "select technician_id from public.visits where id='read_late'")) === 't_alex');
+
+    await as(OWNER, 'select public.remove_technician_account($1)', ['t_alex']);
+    r = await visit(ALEX, 'c1', 'reading', 'pool', 'read_after', {chlorine: '3.0'});
+    check('  a removed technician can still upload what their phone held', r.ok && val(r).result === 'saved', r.error);
+    check('  while seeing nothing', await seen(ALEX) === 0);
+    await pool.query(`update public.members set removed_at = now() - interval '8 days' where technician_id = 't_alex'`);
+    r = await visit(ALEX, 'c1', 'reading', 'pool', 'read_way_after', {});
+    check('  after the 7 days, no more uploads', !r.ok, r.error);
+  }catch(e){
+    check('  visits', false, e.stack);
   }
   await pool.end();
 }
