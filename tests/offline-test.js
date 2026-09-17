@@ -217,6 +217,14 @@ async function serverCustomerSync(){
           since ? [since.replace(/^gte\./, '')] : []);
         return [200, r.rows[0].j];
       }
+      if(u.pathname === '/rest/v1/visits'){
+        const since = u.searchParams.get('updated_at');
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select customer_id, kind, body, id, data, deleted, updated_at from public.visits
+          ${since ? 'where updated_at >= $1' : ''} order by updated_at, id) t`,
+          since ? [since.replace(/^gte\./, '')] : []);
+        return [200, r.rows[0].j];
+      }
       if(u.pathname === '/rest/v1/rpc/push_record_fields'){
         const b = JSON.parse(o.body);
         try{
@@ -1094,6 +1102,11 @@ async function websiteCompanyRecords(){
           select technician_id, username, is_admin from public.members where technician_id is not null and removed_at is null) t`);
         return [200, r.rows[0].j];
       }
+      if(u.pathname === '/rest/v1/visits'){
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select customer_id, kind, body, id, data, deleted, updated_at from public.visits order by updated_at, id) t`);
+        return [200, r.rows[0].j];
+      }
       const m = u.pathname.match(/^\/rest\/v1\/rpc\/(\w+)$/);
       if(m && RPC[m[1]]){
         const args = JSON.parse(o.body || '{}');
@@ -1228,6 +1241,37 @@ async function websiteCompanyRecords(){
     check('  and the one made elsewhere survives', merged.data.accountPhone === '(623) 555-1111', JSON.stringify(merged.data));
     check('  both are on this device now',
           local(w, 'licenseNumber') === 'ROC-999999' && local(w, 'accountPhone') === '(623) 555-1111');
+
+    console.log('\n=== visits recorded in the field show on the website ===');
+    await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+      ['v1', JSON.stringify({id: {t: new Date().toISOString(), v: 'v1'}, name: {t: new Date().toISOString(), v: 'Visited Pool'}})]);
+    await pool.query(`insert into public.visits (company_id, customer_id, kind, body, id, data, occurred_at, service_date, technician_id)
+      values ($1,'v1','reading','pool','r_field','{"chlorine":"3.0","notes":"from the field","photosOnPhone":true}', now(), current_date, 't_alex'),
+             ($1,'v1','reading','spa','r_spa','{"chlorine":"4.0"}', now(), current_date, 't_alex'),
+             ($1,'v1','skip','pool','s_1','{"reason":"dog in yard"}', now(), current_date, 't_alex')`, [CO]);
+    await syncNow(w);
+    const poolHistory = local(w, 'readings:v1') || [];
+    check('  a reading from a phone appears in the history here', poolHistory.some(x => x.id === 'r_field' && x.chlorine === '3.0'), JSON.stringify(poolHistory));
+    check('  with its notes', poolHistory.some(x => x.notes === 'from the field'));
+    check('  and a note that the photos are on the phone', poolHistory.some(x => x.photosOnPhone === true));
+    check('  the spa reading lands under the spa', (local(w, 'spaReadings:v1') || []).some(x => x.id === 'r_spa'));
+    check('  a skipped visit lands with the skips', (local(w, 'skippedVisits:v1') || []).some(x => x.id === 's_1' && x.reason === 'dog in yard'));
+
+    // A visit recorded here keeps its photos when the server copy comes back
+    w.eval("lsSet('readings:v1', (lsGet('readings:v1') || []).concat([{id:'r_here', date: new Date().toISOString(), chlorine:'2.0', photo:'data:image/jpeg;base64,ZZZZ'}]))");
+    await pool.query(`insert into public.visits (company_id, customer_id, kind, body, id, data, occurred_at, service_date)
+      values ($1,'v1','reading','pool','r_here','{"chlorine":"2.5"}', now(), current_date)`, [CO]);
+    await syncNow(w);
+    const mine = (local(w, 'readings:v1') || []).find(x => x.id === 'r_here');
+    check('  a correction from the server updates the reading here', mine && mine.chlorine === '2.5', JSON.stringify(mine));
+    check('  without losing the photo kept on this device', mine && mine.photo === 'data:image/jpeg;base64,ZZZZ');
+
+    await pool.query(`update public.visits set deleted = true, updated_at = now() where id = 'r_spa'`);
+    await syncNow(w);
+    check('  a visit removed at the office leaves the history', !(local(w, 'spaReadings:v1') || []).some(x => x.id === 'r_spa'));
+    const beforeCount = (local(w, 'readings:v1') || []).length;
+    await syncNow(w);
+    check('  syncing again does not duplicate anything', (local(w, 'readings:v1') || []).length === beforeCount, String(beforeCount));
 
     console.log('\n=== offline ===');
     srv.offline = true;
