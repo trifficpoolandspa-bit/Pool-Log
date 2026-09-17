@@ -2119,6 +2119,26 @@ async function serverFieldSignIn(){
       check('and signs out as soon as it has signal', loginVisible(p.d) && /removed/.test(errorText(p.d)), errorText(p.d));
       p.close();
 
+      console.log('\n=== technician-app.html: a customer the office has never seen ===');
+      {
+        // Seeded on this phone, never accepted by the office: it stays, and the
+        // sync card says so, because nothing done at the desk can reach it
+        await makeTech(OWNER, 'orla', 'orlapass123', 't_alex', 'Orla Field', false);
+        const seeded = await boot(srv, 'technician-app.html', {storage: seedStorage({
+          'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
+        await signIn(seeded, 'orla', 'orlapass123');
+        for(let i = 0; i < 900 && seeded.w.eval('syncRunning'); i++) await sleep(10);
+        await sleep(200);
+        check('the phone keeps a customer the office does not have',
+              JSON.parse(seeded.storage()['poollog:customers'] || '[]').some(x => x.id === 'c1'),
+              seeded.storage()['poollog:customers']);
+        seeded.w.eval('fieldRenderSyncCard()');
+        const text = seeded.d.getElementById('fieldSyncStatus').textContent;
+        check('and the sync card says the office does not know about it',
+              /not known to the office/.test(text), text);
+        seeded.close();
+      }
+
       console.log('\n=== technician-app.html: signing in again with no signal ===');
     {
       // Ray works this phone; Sam has never signed in on it
