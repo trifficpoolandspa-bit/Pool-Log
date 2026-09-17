@@ -152,21 +152,463 @@ function lsSet(key, value){
 }
 
 
-// ---------- Beta tester accounts ----------
-// No server yet, so accounts travel with the build. Created only on a device
-// that has none; a device with its own list is left alone. Remove before any
-// real launch.
-const BETA_ACCOUNTS = [
-  {id: 'beta_owner', name: 'Owner', username: 'poollog', password: 'letmein', requireAfterPhoto: true}
-];
+// ---------- Signing in (field apps) ----------
+// Technicians sign in with a username and password against the server. A phone
+// learns its company once — from the owner's setup link or the company code —
+// and remembers the company itself, so a later code change never locks it out.
+//
+// The first sign-in for a technician on a phone needs signal. After that the
+// phone can sign them in with no signal at all: it keeps a scrambled copy of
+// their password (PBKDF2, never the password itself) and checks against that.
+// Whenever there is signal the account is checked again, and a reset, removed
+// or demoted account is signed out and its scrambled copy thrown away.
+//
+// The phone's company and sign-in live under their own prefix, apart from the
+// company's data, so they are never copied into a backup.
+// Shared word for word by index.html, technician-app.html and admin-readings-app.html.
+const FIELD_SUPABASE_URL = 'https://myxxahrlmzvrbcmopwyo.supabase.co';
+const FIELD_SUPABASE_KEY = 'sb_publishable_32m_kcK3pQpClCGAvAAogg_Ut9RBFS1';
+const DEVICE_PREFIX = 'poollogdevice:';
 
-(function seedBetaAccounts(){
+function deviceGet(key){
+  try{ return JSON.parse(localStorage.getItem(DEVICE_PREFIX + key)); }catch(e){ return null; }
+}
+function deviceSet(key, value){
   try{
-    const existing = lsGet('technicians');
-    if(Array.isArray(existing) && existing.length) return;
-    lsSet('technicians', BETA_ACCOUNTS.map(a => Object.assign({}, a)));
+    if(value === null || value === undefined) localStorage.removeItem(DEVICE_PREFIX + key);
+    else localStorage.setItem(DEVICE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){ return false; }
+}
+
+async function fieldFetch(path, opts, withSession){
+  const o = opts || {};
+  const headers = {'apikey': FIELD_SUPABASE_KEY, 'Content-Type': 'application/json'};
+  const s = deviceGet('session');
+  if(withSession !== false && s && s.access_token) headers['Authorization'] = 'Bearer ' + s.access_token;
+  let res;
+  try{
+    res = await fetch(FIELD_SUPABASE_URL + path, Object.assign({}, o, {headers}));
+  }catch(e){
+    return {ok: false, status: 0, body: null, offline: true};
+  }
+  let body = null;
+  try{ body = await res.json(); }catch(e){}
+  return {ok: res.ok, status: res.status, body};
+}
+
+// ---- Signing in with no signal ----
+// Kept per technician, so a shared phone works for whoever has signed in on it
+// before. Nothing here lets anyone reach the server; it only unlocks this phone.
+const FIELD_PBKDF2_ROUNDS = 150000;
+const FIELD_SAVED_LOGINS = 8;
+
+function fieldCrypto(){
+  return (typeof crypto !== 'undefined' && crypto.subtle) ? crypto : null;
+}
+
+function fieldBytesToHex(buf){
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function fieldScramble(password, saltHex){
+  const c = fieldCrypto();
+  if(!c) return null;
+  const enc = new TextEncoder();
+  const salt = new Uint8Array((saltHex.match(/../g) || []).map(h => parseInt(h, 16)));
+  const key = await c.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await c.subtle.deriveBits(
+    {name: 'PBKDF2', salt: salt, iterations: FIELD_PBKDF2_ROUNDS, hash: 'SHA-256'}, key, 256);
+  return fieldBytesToHex(bits);
+}
+
+function fieldSavedLogins(){
+  const list = deviceGet('logins');
+  return Array.isArray(list) ? list : [];
+}
+
+// Remember this technician on this phone, so they can sign in again with no signal
+async function fieldRememberLogin(company, username, password, membership, refreshToken){
+  const c = fieldCrypto();
+  if(!c) return;
+  const salt = fieldBytesToHex(c.getRandomValues(new Uint8Array(16)));
+  const scrambled = await fieldScramble(password, salt);
+  if(!scrambled) return;
+  const keep = fieldSavedLogins().filter(l => !(l.companyId === company.id
+    && String(l.username).toLowerCase() === String(username).trim().toLowerCase()));
+  keep.unshift({companyId: company.id, username: String(username).trim(), salt: salt,
+                scrambled: scrambled, rounds: FIELD_PBKDF2_ROUNDS, membership: membership,
+                refresh: refreshToken || null, savedAt: new Date().toISOString()});
+  deviceSet('logins', keep.slice(0, FIELD_SAVED_LOGINS));
+}
+
+// Signing in offline reuses the way back to the server this phone was given
+// last time it signed in with signal. It is swapped for a fresh one every time
+// the phone reconnects, and thrown away the moment the server says no.
+function fieldRememberRefresh(refreshToken){
+  const m = deviceGet('membership');
+  const company = deviceGet('company');
+  if(!m || !company || !refreshToken) return;
+  const list = fieldSavedLogins();
+  let touched = false;
+  list.forEach(l=>{
+    if(l.companyId === company.id && String(l.username).toLowerCase() === String(m.username || '').toLowerCase()){
+      l.refresh = refreshToken;
+      touched = true;
+    }
+  });
+  if(touched) deviceSet('logins', list);
+}
+
+function fieldForgetLogin(companyId, username){
+  deviceSet('logins', fieldSavedLogins().filter(l => !(l.companyId === companyId
+    && String(l.username).toLowerCase() === String(username || '').trim().toLowerCase())));
+}
+
+// Same-length comparison, so how much matches cannot be measured
+function fieldSameSecret(a, b){
+  if(typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for(let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function fieldSignInOffline(company, username, password, needAdmin){
+  const saved = fieldSavedLogins().find(l => l.companyId === company.id
+    && String(l.username).toLowerCase() === String(username).trim().toLowerCase());
+  if(!saved) return {ok: false, message: 'You need a connection the first time you sign in on this phone.'};
+  const scrambled = await fieldScramble(password, saved.salt);
+  if(!scrambled || !fieldSameSecret(scrambled, saved.scrambled)) return {ok: false, message: FIELD_NO_MATCH};
+  const m = saved.membership;
+  if(needAdmin && !(m && m.full_access)){
+    return {ok: false, message: 'This app is for admins. Use the PoolLog technician app instead.'};
+  }
+  // No access token until there is signal: the first call once the phone is
+  // back online swaps this for a fresh session, or signs them out if the
+  // account has been reset or removed
+  deviceSet('membership', m);
+  deviceSet('session', {access_token: null, refresh_token: saved.refresh || null, offline: true});
+  return {ok: true, membership: m, offline: true};
+}
+
+function fieldStoreSession(body){
+  if(!body || !body.access_token) return false;
+  deviceSet('session', {
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+    user_id: body.user && body.user.id
+  });
+  fieldRememberRefresh(body.refresh_token);
+  return true;
+}
+
+// true when refreshed, 'offline' without signal, 'revoked' when the server
+// refuses — the password was reset or the account is gone
+async function fieldRefresh(){
+  const s = deviceGet('session');
+  if(!s || !s.refresh_token) return 'revoked';
+  const res = await fieldFetch('/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST', body: JSON.stringify({refresh_token: s.refresh_token})
+  }, false);
+  if(res.offline) return 'offline';
+  if(res.ok && fieldStoreSession(res.body)) return true;
+  return 'revoked';
+}
+
+async function fieldAuthed(path, opts){
+  const s = deviceGet('session');
+  if(s && !s.access_token && s.refresh_token){
+    const first = await fieldRefresh();
+    if(first === 'offline') return {ok: false, status: 0, body: null, offline: true};
+    if(first !== true) return {ok: false, status: 401, body: null, revoked: true};
+  }
+  let res = await fieldFetch(path, opts);
+  if(res.status === 401){
+    const r = await fieldRefresh();
+    if(r === true) res = await fieldFetch(path, opts);
+    else if(r === 'offline') res = {ok: false, status: 0, body: null, offline: true};
+    else res.revoked = true;
+  }
+  return res;
+}
+
+async function fieldLookupCompany(code){
+  const res = await fieldFetch('/rest/v1/rpc/company_for_code', {
+    method: 'POST', body: JSON.stringify({p_code: String(code || '').trim()})
+  }, false);
+  if(res.offline) return {ok: false, message: 'You need a connection to set up this phone.'};
+  if(!res.ok || !res.body || !res.body.id) return {ok: false, message: "That company code wasn't found. Check it with your office."};
+  return {ok: true, company: {id: res.body.id, name: res.body.name}};
+}
+
+const FIELD_NO_MATCH = "That username and password don't match.";
+
+async function fieldSignIn(username, password, needAdmin){
+  const company = deviceGet('company');
+  if(!company || !company.id) return {ok: false, message: 'Set up this phone with your company code first.'};
+  const u = String(username || '').trim();
+  if(!u || !password) return {ok: false, message: 'Enter your username and password.'};
+
+  const addr = await fieldFetch('/rest/v1/rpc/sign_in_address', {
+    method: 'POST', body: JSON.stringify({p_company_id: company.id, p_username: u})
+  }, false);
+  if(addr.offline) return fieldSignInOffline(company, u, password, needAdmin);
+  if(!addr.ok || typeof addr.body !== 'string' || !addr.body) return {ok: false, message: FIELD_NO_MATCH};
+
+  const tok = await fieldFetch('/auth/v1/token?grant_type=password', {
+    method: 'POST', body: JSON.stringify({email: addr.body, password: password})
+  }, false);
+  if(tok.offline) return fieldSignInOffline(company, u, password, needAdmin);
+  if(!tok.ok || !fieldStoreSession(tok.body)) return {ok: false, message: FIELD_NO_MATCH};
+
+  const mem = await fieldAuthed('/rest/v1/rpc/my_membership', {method: 'POST', body: '{}'});
+  const m = mem.ok ? mem.body : null;
+  let refusal = null;
+  if(!m || !m.technician_id || m.company_id !== company.id) refusal = "This account can't sign in here. Check with your office.";
+  else if(m.removed) refusal = 'This sign-in has been removed. Check with your office.';
+  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the PoolLog technician app instead.';
+  if(refusal){
+    await fieldSignOut();
+    fieldForgetLogin(company.id, u);
+    return {ok: false, message: refusal};
+  }
+  deviceSet('membership', m);
+  // Remembered under the username actually signed in with, so it still works
+  // with no signal next time
+  await fieldRememberLogin(company, m.username || u, password, m, tok.body && tok.body.refresh_token);
+  return {ok: true, membership: m};
+}
+
+async function fieldSignOut(){
+  const s = deviceGet('session');
+  if(s && s.access_token){
+    try{ await fieldFetch('/auth/v1/logout', {method: 'POST'}); }catch(e){}
+  }
+  deviceSet('session', null);
+  deviceSet('membership', null);
+}
+
+// The signed-in technician, as the app uses it: their profile on this phone if
+// there is one, with the server deciding their name, username and admin access
+function fieldCurrentUser(){
+  const s = deviceGet('session');
+  const m = deviceGet('membership');
+  // Signed in offline counts: there is no access token until there is signal
+  const signedIn = s && (s.access_token || s.refresh_token || s.offline);
+  if(!signedIn || !m || !m.technician_id || m.removed) return null;
+  // Through the page's own storage helper, like every other read of profiles
+  let techs = [];
+  try{ techs = lsGet('technicians') || []; }catch(e){}
+  const local = techs.find(t => t && t.id === m.technician_id) || {};
+  const user = Object.assign({}, local, {
+    id: m.technician_id,
+    name: m.name || local.name || m.username,
+    username: m.username,
+    isAdmin: !!m.full_access
+  });
+  delete user.password;
+  return user;
+}
+
+// Re-check the account whenever there is signal. Calls onGone(reason) when the
+// phone must sign out: 'removed', 'signed-out' (password reset or account
+// deleted) or 'not-admin'.
+async function fieldCheckAccount(needAdmin, onGone){
+  if(!deviceGet('session')) return;
+  const res = await fieldAuthed('/rest/v1/rpc/my_membership', {method: 'POST', body: '{}'});
+  if(res.offline) return;
+  const company = deviceGet('company');
+  let reason = null;
+  if(res.revoked) reason = 'signed-out';
+  else if(res.ok){
+    const m = res.body;
+    if(!m || !m.technician_id || (company && m.company_id !== company.id)) reason = 'signed-out';
+    else if(m.removed) reason = 'removed';
+    else if(needAdmin && !m.full_access) reason = 'not-admin';
+    else deviceSet('membership', m);
+  }
+  if(reason){
+    const m = deviceGet('membership');
+    await fieldSignOut();
+    // A reset, removed or demoted account must not open this phone offline either
+    if(m && company) fieldForgetLogin(company.id, m.username);
+    if(onGone) onGone(reason);
+  }
+}
+
+function fieldGoneMessage(reason){
+  if(reason === 'removed') return 'Your sign-in was removed. Check with your office.';
+  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the PoolLog technician app instead.';
+  return 'You were signed out. Sign in again.';
+}
+
+// ---- The sign-in screen: company first, then username and password ----
+function fieldLoginParts(){
+  const u = document.getElementById('loginUsername');
+  const p = document.getElementById('loginPassword');
+  const b = document.getElementById('btnLogin');
+  const wrap = el => (el && el.closest && el.closest('.field')) || el;
+  return {user: wrap(u), pass: wrap(p), button: b};
+}
+
+function fieldShowError(msg){
+  const err = document.getElementById('loginError');
+  if(!err) return;
+  err.textContent = msg || '';
+  err.style.display = msg ? 'block' : 'none';
+}
+
+function fieldRenderLogin(){
+  const parts = fieldLoginParts();
+  if(!parts.user || !parts.button) return;
+  let row = document.getElementById('loginCompanyRow');
+  if(!row){
+    const holder = document.createElement('div');
+    holder.innerHTML = '<div id="loginCompanyRow" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px;padding:9px 12px;border:1px solid #D9E3E1;border-radius:10px;font-size:13px;">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+      + '<span style="color:#5E7371;">Company</span> <strong id="loginCompanyName"></strong></span>'
+      + '<button type="button" id="btnLoginChangeCompany" style="border:none;background:none;color:#16585C;font-weight:600;font-size:13px;cursor:pointer;padding:4px;flex-shrink:0;">Change</button>'
+      + '</div>'
+      + '<div id="loginCompanyStep" style="display:none;margin:0 0 6px;">'
+      + '<p style="font-size:13px;color:#5E7371;margin:0 0 10px;">Enter the company code from your office, or open the setup link they sent you.</p>'
+      + '<div class="field"><label>Company code</label><input id="loginCompanyCode" autocomplete="off" autocapitalize="characters" placeholder="K7WQ2M" style="text-transform:uppercase;"></div>'
+      + '<p id="loginCompanyFound" style="display:none;font-size:14px;margin:0 0 12px;"></p>'
+      + '<button type="button" class="btn btn-primary" id="btnLoginCompany" style="width:100%;">Continue</button>'
+      + '<button type="button" class="btn btn-ghost" id="btnLoginCompanyBack" style="width:100%;margin-top:8px;display:none;">Back</button>'
+      + '</div>';
+    while(holder.firstChild) parts.user.parentNode.insertBefore(holder.firstChild, parts.user);
+    row = document.getElementById('loginCompanyRow');
+
+    document.getElementById('btnLoginChangeCompany').addEventListener('click', ()=> fieldShowCompanyStep(true));
+    document.getElementById('btnLoginCompanyBack').addEventListener('click', ()=>{ fieldPendingCompany = null; fieldRenderLogin(); });
+    document.getElementById('btnLoginCompany').addEventListener('click', fieldCompanyContinue);
+    document.getElementById('loginCompanyCode').addEventListener('keydown', e => { if(e.key === 'Enter') fieldCompanyContinue(); });
+  }
+  const company = deviceGet('company');
+  if(company && company.id){
+    document.getElementById('loginCompanyName').textContent = company.name || '';
+    row.style.display = 'flex';
+    document.getElementById('loginCompanyStep').style.display = 'none';
+    [parts.user, parts.pass, parts.button].forEach(el => { if(el) el.style.display = ''; });
+  } else {
+    fieldShowCompanyStep(false);
+  }
+}
+
+let fieldPendingCompany = null;
+
+function fieldShowCompanyStep(canGoBack){
+  const parts = fieldLoginParts();
+  fieldPendingCompany = null;
+  document.getElementById('loginCompanyRow').style.display = 'none';
+  document.getElementById('loginCompanyStep').style.display = 'block';
+  document.getElementById('loginCompanyFound').style.display = 'none';
+  document.getElementById('btnLoginCompany').textContent = 'Continue';
+  document.getElementById('btnLoginCompanyBack').style.display = canGoBack && deviceGet('company') ? 'block' : 'none';
+  document.getElementById('loginCompanyCode').value = '';
+  [parts.user, parts.pass, parts.button].forEach(el => { if(el) el.style.display = 'none'; });
+  fieldShowError('');
+}
+
+async function fieldCompanyContinue(){
+  const btn = document.getElementById('btnLoginCompany');
+  if(fieldPendingCompany){
+    await fieldUseCompany(fieldPendingCompany);
+    return;
+  }
+  btn.disabled = true;
+  const found = await fieldLookupCompany(document.getElementById('loginCompanyCode').value);
+  btn.disabled = false;
+  if(!found.ok){ fieldShowError(found.message); return; }
+  fieldShowError('');
+  fieldPendingCompany = found.company;
+  const shown = document.getElementById('loginCompanyFound');
+  shown.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = found.company.name;
+  shown.appendChild(document.createTextNode('Company: '));
+  shown.appendChild(strong);
+  shown.style.display = 'block';
+  btn.textContent = 'Use this company';
+}
+
+// Switching company signs out whoever was signed in. This phone's customers and
+// visits are not touched here: they are not on the server yet, so wiping them
+// would lose them for good.
+async function fieldUseCompany(company){
+  const old = deviceGet('company');
+  if(old && old.id !== company.id){
+    // The old company's customers go, once whatever this phone was holding for
+    // them has reached their office
+    if(typeof fieldPendingCount === 'function'){
+      let pending = 0;
+      try{ pending = fieldPendingCount(); }catch(e){}
+      if(pending && typeof fieldFinishWipe === 'function'){
+        fieldStartWipe('company', old.id);
+        const done = await fieldFinishWipe();
+        if(!done){
+          const anyway = await fieldConfirm(pending + (pending === 1 ? ' change has' : ' changes have')
+            + ' not reached ' + fieldEscape(old.name) + ' yet. Switching now loses '
+            + (pending === 1 ? 'it' : 'them') + '. Switch anyway?');
+          if(!anyway){ deviceSet('wipe', null); return; }
+        }
+      }
+      if(typeof fieldWipeCompanyData === 'function') await fieldWipeCompanyData();
+      deviceSet('wipe', null);
+    }
+    await fieldSignOut();
+    if(typeof fieldOnSignedOut === 'function') fieldOnSignedOut();
+  }
+  deviceSet('company', {id: company.id, name: company.name});
+  fieldPendingCompany = null;
+  fieldRenderLogin();
+  const u = document.getElementById('loginUsername');
+  if(u) u.focus();
+}
+
+// A setup link: ?company=CODE. Taken off the address afterwards so a bookmark
+// or a reload doesn't repeat it.
+async function fieldHandleSetupLink(){
+  let code = null;
+  try{ code = new URLSearchParams(location.search).get('company'); }catch(e){}
+  if(!code) return;
+  try{
+    const url = new URL(location.href);
+    url.searchParams.delete('company');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
   }catch(e){}
-})();
+  const found = await fieldLookupCompany(code);
+  if(!found.ok){ fieldShowError(found.message); return; }
+  const old = deviceGet('company');
+  if(old && old.id === found.company.id) return;
+  if(old){
+    const ok = await fieldConfirm('This phone is set up for ' + fieldEscape(old.name) + '. Switch it to '
+      + fieldEscape(found.company.name) + '? Whoever is signed in will be signed out.');
+    if(!ok) return;
+  }
+  await fieldUseCompany(found.company);
+}
+
+function fieldEscape(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function fieldConfirm(message){
+  if(typeof confirmDialog === 'function') return confirmDialog(message, 'Switch');
+  return Promise.resolve(window.confirm(message));
+}
+
+// Check the account now and whenever signal returns or the app comes back to
+// the front. onGone(reason) runs after the phone has been signed out.
+function fieldWatchAccount(needAdmin, onGone){
+  const run = ()=> fieldCheckAccount(needAdmin, onGone);
+  run();
+  if(!fieldWatchAccount.started){
+    fieldWatchAccount.started = true;
+    window.addEventListener('online', run);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) run(); });
+  }
+}
 
 function showError(msg){
   const el = document.getElementById('loginError');
@@ -174,6 +616,7 @@ function showError(msg){
   el.style.display = 'block';
 }
 
+// Admin technicians go to the admin app, everyone else to the technician app
 function routeFor(tech){
   return tech.isAdmin ? './admin-readings-app.html' : './technician-app.html';
 }
@@ -190,22 +633,19 @@ async function goTo(url){
   }
 }
 
-function doLogin(){
-  const u = document.getElementById('loginUsername').value.trim().toLowerCase();
-  const p = document.getElementById('loginPassword').value;
-  const techs = lsGet('technicians') || [];
-
-  if(techs.length === 0){
-    showError('No accounts set up yet. Add technicians on the website first.');
-    return;
-  }
-  const match = techs.find(t => (t.username || '').toLowerCase() === u && t.password === p);
-  if(!match){
-    showError("That username and password don't match. Check with your admin.");
-    return;
-  }
-  lsSet('session', {techId: match.id});
-  goTo(routeFor(match));
+let loginBusy = false;
+async function doLogin(){
+  if(loginBusy) return;
+  loginBusy = true;
+  const btn = document.getElementById('btnLogin');
+  btn.disabled = true;
+  const r = await fieldSignIn(document.getElementById('loginUsername').value,
+                              document.getElementById('loginPassword').value, false);
+  loginBusy = false;
+  btn.disabled = false;
+  if(!r.ok){ showError(r.message); return; }
+  document.getElementById('loginPassword').value = '';
+  goTo(routeFor(fieldCurrentUser()));
 }
 
 document.getElementById('btnLogin').addEventListener('click', doLogin);
@@ -233,10 +673,13 @@ document.getElementById('loginUsername').addEventListener('keydown', (e)=>{
     }
   }
 
-  const session = lsGet('session');
-  if(!session || !session.techId) return;
-  const techs = lsGet('technicians') || [];
-  const tech = techs.find(t => t.id === session.techId);
+  fieldRenderLogin();
+  // A setup link is handled here and stays on this page to sign in
+  if(new URLSearchParams(window.location.search).get('company')){
+    fieldHandleSetupLink();
+    return;
+  }
+  const tech = fieldCurrentUser();
   if(tech) goTo(routeFor(tech));
 })();
 

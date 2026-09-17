@@ -2010,6 +2010,12 @@ function makeRoomForSave(){
 function lsSet(key, value){
   try{
     localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(value));
+    // Never let telling sync about a change get in the way of the save itself
+    if(key === 'customers' || key === 'tasks' || key === 'rescheduledVisits'
+     || key.indexOf('readings:') === 0 || key.indexOf('spaReadings:') === 0
+     || key.indexOf('fountainReadings:') === 0 || key.indexOf('skippedVisits:') === 0){
+      try{ if(typeof fieldNoteLocalChange === 'function') fieldNoteLocalChange(); }catch(e){}
+    }
     return true;
   }catch(e){
     const full = e && (e.name === 'QuotaExceededError'
@@ -2057,29 +2063,1370 @@ function lsSet(key, value){
   }
 }
 
-// ---------- Beta tester accounts ----------
-// There is no server yet, so accounts cannot be pushed to anyone's device.
-// Instead each beta build carries the accounts for the people testing it: the
-// first time the app opens on a device with no technicians set up, these are
-// created. After that the device's own list wins and this is ignored, so a
-// tester who renames themselves or adds staff keeps those changes.
+// ---------- Signing in (field apps) ----------
+// Technicians sign in with a username and password against the server. A phone
+// learns its company once — from the owner's setup link or the company code —
+// and remembers the company itself, so a later code change never locks it out.
 //
-// To add or change a tester: edit this list, commit, and tell them to reload.
-// Remove the whole block before any real launch — passwords in a public file
-// are fine for four known testers and nothing beyond that.
-const BETA_ACCOUNTS = [
-  {id: 'beta_owner', name: 'Owner', username: 'poollog', password: 'letmein', requireAfterPhoto: true}
-];
+// The first sign-in for a technician on a phone needs signal. After that the
+// phone can sign them in with no signal at all: it keeps a scrambled copy of
+// their password (PBKDF2, never the password itself) and checks against that.
+// Whenever there is signal the account is checked again, and a reset, removed
+// or demoted account is signed out and its scrambled copy thrown away.
+//
+// The phone's company and sign-in live under their own prefix, apart from the
+// company's data, so they are never copied into a backup.
+// Shared word for word by index.html, technician-app.html and admin-readings-app.html.
+const FIELD_SUPABASE_URL = 'https://myxxahrlmzvrbcmopwyo.supabase.co';
+const FIELD_SUPABASE_KEY = 'sb_publishable_32m_kcK3pQpClCGAvAAogg_Ut9RBFS1';
+const DEVICE_PREFIX = 'poollogdevice:';
 
-(function seedBetaAccounts(){
+function deviceGet(key){
+  try{ return JSON.parse(localStorage.getItem(DEVICE_PREFIX + key)); }catch(e){ return null; }
+}
+function deviceSet(key, value){
   try{
-    if(!Array.isArray(BETA_ACCOUNTS) || !BETA_ACCOUNTS.length) return;
-    const existing = lsGet('technicians');
-    // Only ever on a fresh device. Never overwrite a real list.
-    if(Array.isArray(existing) && existing.length) return;
-    lsSet('technicians', BETA_ACCOUNTS.map(a => Object.assign({}, a)));
+    if(value === null || value === undefined) localStorage.removeItem(DEVICE_PREFIX + key);
+    else localStorage.setItem(DEVICE_PREFIX + key, JSON.stringify(value));
+    return true;
+  }catch(e){ return false; }
+}
+
+async function fieldFetch(path, opts, withSession){
+  const o = opts || {};
+  const headers = {'apikey': FIELD_SUPABASE_KEY, 'Content-Type': 'application/json'};
+  const s = deviceGet('session');
+  if(withSession !== false && s && s.access_token) headers['Authorization'] = 'Bearer ' + s.access_token;
+  let res;
+  try{
+    res = await fetch(FIELD_SUPABASE_URL + path, Object.assign({}, o, {headers}));
+  }catch(e){
+    return {ok: false, status: 0, body: null, offline: true};
+  }
+  let body = null;
+  try{ body = await res.json(); }catch(e){}
+  return {ok: res.ok, status: res.status, body};
+}
+
+// ---- Signing in with no signal ----
+// Kept per technician, so a shared phone works for whoever has signed in on it
+// before. Nothing here lets anyone reach the server; it only unlocks this phone.
+const FIELD_PBKDF2_ROUNDS = 150000;
+const FIELD_SAVED_LOGINS = 8;
+
+function fieldCrypto(){
+  return (typeof crypto !== 'undefined' && crypto.subtle) ? crypto : null;
+}
+
+function fieldBytesToHex(buf){
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function fieldScramble(password, saltHex){
+  const c = fieldCrypto();
+  if(!c) return null;
+  const enc = new TextEncoder();
+  const salt = new Uint8Array((saltHex.match(/../g) || []).map(h => parseInt(h, 16)));
+  const key = await c.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await c.subtle.deriveBits(
+    {name: 'PBKDF2', salt: salt, iterations: FIELD_PBKDF2_ROUNDS, hash: 'SHA-256'}, key, 256);
+  return fieldBytesToHex(bits);
+}
+
+function fieldSavedLogins(){
+  const list = deviceGet('logins');
+  return Array.isArray(list) ? list : [];
+}
+
+// Remember this technician on this phone, so they can sign in again with no signal
+async function fieldRememberLogin(company, username, password, membership, refreshToken){
+  const c = fieldCrypto();
+  if(!c) return;
+  const salt = fieldBytesToHex(c.getRandomValues(new Uint8Array(16)));
+  const scrambled = await fieldScramble(password, salt);
+  if(!scrambled) return;
+  const keep = fieldSavedLogins().filter(l => !(l.companyId === company.id
+    && String(l.username).toLowerCase() === String(username).trim().toLowerCase()));
+  keep.unshift({companyId: company.id, username: String(username).trim(), salt: salt,
+                scrambled: scrambled, rounds: FIELD_PBKDF2_ROUNDS, membership: membership,
+                refresh: refreshToken || null, savedAt: new Date().toISOString()});
+  deviceSet('logins', keep.slice(0, FIELD_SAVED_LOGINS));
+}
+
+// Signing in offline reuses the way back to the server this phone was given
+// last time it signed in with signal. It is swapped for a fresh one every time
+// the phone reconnects, and thrown away the moment the server says no.
+function fieldRememberRefresh(refreshToken){
+  const m = deviceGet('membership');
+  const company = deviceGet('company');
+  if(!m || !company || !refreshToken) return;
+  const list = fieldSavedLogins();
+  let touched = false;
+  list.forEach(l=>{
+    if(l.companyId === company.id && String(l.username).toLowerCase() === String(m.username || '').toLowerCase()){
+      l.refresh = refreshToken;
+      touched = true;
+    }
+  });
+  if(touched) deviceSet('logins', list);
+}
+
+function fieldForgetLogin(companyId, username){
+  deviceSet('logins', fieldSavedLogins().filter(l => !(l.companyId === companyId
+    && String(l.username).toLowerCase() === String(username || '').trim().toLowerCase())));
+}
+
+// Same-length comparison, so how much matches cannot be measured
+function fieldSameSecret(a, b){
+  if(typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for(let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function fieldSignInOffline(company, username, password, needAdmin){
+  const saved = fieldSavedLogins().find(l => l.companyId === company.id
+    && String(l.username).toLowerCase() === String(username).trim().toLowerCase());
+  if(!saved) return {ok: false, message: 'You need a connection the first time you sign in on this phone.'};
+  const scrambled = await fieldScramble(password, saved.salt);
+  if(!scrambled || !fieldSameSecret(scrambled, saved.scrambled)) return {ok: false, message: FIELD_NO_MATCH};
+  const m = saved.membership;
+  if(needAdmin && !(m && m.full_access)){
+    return {ok: false, message: 'This app is for admins. Use the PoolLog technician app instead.'};
+  }
+  // No access token until there is signal: the first call once the phone is
+  // back online swaps this for a fresh session, or signs them out if the
+  // account has been reset or removed
+  deviceSet('membership', m);
+  deviceSet('session', {access_token: null, refresh_token: saved.refresh || null, offline: true});
+  return {ok: true, membership: m, offline: true};
+}
+
+function fieldStoreSession(body){
+  if(!body || !body.access_token) return false;
+  deviceSet('session', {
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+    user_id: body.user && body.user.id
+  });
+  fieldRememberRefresh(body.refresh_token);
+  return true;
+}
+
+// true when refreshed, 'offline' without signal, 'revoked' when the server
+// refuses — the password was reset or the account is gone
+async function fieldRefresh(){
+  const s = deviceGet('session');
+  if(!s || !s.refresh_token) return 'revoked';
+  const res = await fieldFetch('/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST', body: JSON.stringify({refresh_token: s.refresh_token})
+  }, false);
+  if(res.offline) return 'offline';
+  if(res.ok && fieldStoreSession(res.body)) return true;
+  return 'revoked';
+}
+
+async function fieldAuthed(path, opts){
+  const s = deviceGet('session');
+  if(s && !s.access_token && s.refresh_token){
+    const first = await fieldRefresh();
+    if(first === 'offline') return {ok: false, status: 0, body: null, offline: true};
+    if(first !== true) return {ok: false, status: 401, body: null, revoked: true};
+  }
+  let res = await fieldFetch(path, opts);
+  if(res.status === 401){
+    const r = await fieldRefresh();
+    if(r === true) res = await fieldFetch(path, opts);
+    else if(r === 'offline') res = {ok: false, status: 0, body: null, offline: true};
+    else res.revoked = true;
+  }
+  return res;
+}
+
+async function fieldLookupCompany(code){
+  const res = await fieldFetch('/rest/v1/rpc/company_for_code', {
+    method: 'POST', body: JSON.stringify({p_code: String(code || '').trim()})
+  }, false);
+  if(res.offline) return {ok: false, message: 'You need a connection to set up this phone.'};
+  if(!res.ok || !res.body || !res.body.id) return {ok: false, message: "That company code wasn't found. Check it with your office."};
+  return {ok: true, company: {id: res.body.id, name: res.body.name}};
+}
+
+const FIELD_NO_MATCH = "That username and password don't match.";
+
+async function fieldSignIn(username, password, needAdmin){
+  const company = deviceGet('company');
+  if(!company || !company.id) return {ok: false, message: 'Set up this phone with your company code first.'};
+  const u = String(username || '').trim();
+  if(!u || !password) return {ok: false, message: 'Enter your username and password.'};
+
+  const addr = await fieldFetch('/rest/v1/rpc/sign_in_address', {
+    method: 'POST', body: JSON.stringify({p_company_id: company.id, p_username: u})
+  }, false);
+  if(addr.offline) return fieldSignInOffline(company, u, password, needAdmin);
+  if(!addr.ok || typeof addr.body !== 'string' || !addr.body) return {ok: false, message: FIELD_NO_MATCH};
+
+  const tok = await fieldFetch('/auth/v1/token?grant_type=password', {
+    method: 'POST', body: JSON.stringify({email: addr.body, password: password})
+  }, false);
+  if(tok.offline) return fieldSignInOffline(company, u, password, needAdmin);
+  if(!tok.ok || !fieldStoreSession(tok.body)) return {ok: false, message: FIELD_NO_MATCH};
+
+  const mem = await fieldAuthed('/rest/v1/rpc/my_membership', {method: 'POST', body: '{}'});
+  const m = mem.ok ? mem.body : null;
+  let refusal = null;
+  if(!m || !m.technician_id || m.company_id !== company.id) refusal = "This account can't sign in here. Check with your office.";
+  else if(m.removed) refusal = 'This sign-in has been removed. Check with your office.';
+  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the PoolLog technician app instead.';
+  if(refusal){
+    await fieldSignOut();
+    fieldForgetLogin(company.id, u);
+    return {ok: false, message: refusal};
+  }
+  deviceSet('membership', m);
+  // Remembered under the username actually signed in with, so it still works
+  // with no signal next time
+  await fieldRememberLogin(company, m.username || u, password, m, tok.body && tok.body.refresh_token);
+  return {ok: true, membership: m};
+}
+
+async function fieldSignOut(){
+  const s = deviceGet('session');
+  if(s && s.access_token){
+    try{ await fieldFetch('/auth/v1/logout', {method: 'POST'}); }catch(e){}
+  }
+  deviceSet('session', null);
+  deviceSet('membership', null);
+}
+
+// The signed-in technician, as the app uses it: their profile on this phone if
+// there is one, with the server deciding their name, username and admin access
+function fieldCurrentUser(){
+  const s = deviceGet('session');
+  const m = deviceGet('membership');
+  // Signed in offline counts: there is no access token until there is signal
+  const signedIn = s && (s.access_token || s.refresh_token || s.offline);
+  if(!signedIn || !m || !m.technician_id || m.removed) return null;
+  // Through the page's own storage helper, like every other read of profiles
+  let techs = [];
+  try{ techs = lsGet('technicians') || []; }catch(e){}
+  const local = techs.find(t => t && t.id === m.technician_id) || {};
+  const user = Object.assign({}, local, {
+    id: m.technician_id,
+    name: m.name || local.name || m.username,
+    username: m.username,
+    isAdmin: !!m.full_access
+  });
+  delete user.password;
+  return user;
+}
+
+// Re-check the account whenever there is signal. Calls onGone(reason) when the
+// phone must sign out: 'removed', 'signed-out' (password reset or account
+// deleted) or 'not-admin'.
+async function fieldCheckAccount(needAdmin, onGone){
+  if(!deviceGet('session')) return;
+  const res = await fieldAuthed('/rest/v1/rpc/my_membership', {method: 'POST', body: '{}'});
+  if(res.offline) return;
+  const company = deviceGet('company');
+  let reason = null;
+  if(res.revoked) reason = 'signed-out';
+  else if(res.ok){
+    const m = res.body;
+    if(!m || !m.technician_id || (company && m.company_id !== company.id)) reason = 'signed-out';
+    else if(m.removed) reason = 'removed';
+    else if(needAdmin && !m.full_access) reason = 'not-admin';
+    else deviceSet('membership', m);
+  }
+  if(reason){
+    const m = deviceGet('membership');
+    if(reason === 'removed'){
+      // The customers on this phone go, but only once what it is holding has
+      // reached the office. Until then it stays signed out and keeps trying.
+      fieldStartWipe('removed', company ? company.id : null);
+      if(onGone) onGone(reason);
+      await fieldFinishWipe();
+      return;
+    }
+    await fieldSignOut();
+    // A reset or demoted account must not open this phone offline either
+    if(m && company) fieldForgetLogin(company.id, m.username);
+    if(onGone) onGone(reason);
+  }
+}
+
+function fieldGoneMessage(reason){
+  if(reason === 'removed') return 'Your sign-in was removed. Check with your office.';
+  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the PoolLog technician app instead.';
+  return 'You were signed out. Sign in again.';
+}
+
+// ---- The sign-in screen: company first, then username and password ----
+function fieldLoginParts(){
+  const u = document.getElementById('loginUsername');
+  const p = document.getElementById('loginPassword');
+  const b = document.getElementById('btnLogin');
+  const wrap = el => (el && el.closest && el.closest('.field')) || el;
+  return {user: wrap(u), pass: wrap(p), button: b};
+}
+
+function fieldShowError(msg){
+  const err = document.getElementById('loginError');
+  if(!err) return;
+  err.textContent = msg || '';
+  err.style.display = msg ? 'block' : 'none';
+}
+
+function fieldRenderLogin(){
+  const parts = fieldLoginParts();
+  if(!parts.user || !parts.button) return;
+  let row = document.getElementById('loginCompanyRow');
+  if(!row){
+    const holder = document.createElement('div');
+    holder.innerHTML = '<div id="loginCompanyRow" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 14px;padding:9px 12px;border:1px solid #D9E3E1;border-radius:10px;font-size:13px;">'
+      + '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+      + '<span style="color:#5E7371;">Company</span> <strong id="loginCompanyName"></strong></span>'
+      + '<button type="button" id="btnLoginChangeCompany" style="border:none;background:none;color:#16585C;font-weight:600;font-size:13px;cursor:pointer;padding:4px;flex-shrink:0;">Change</button>'
+      + '</div>'
+      + '<div id="loginCompanyStep" style="display:none;margin:0 0 6px;">'
+      + '<p style="font-size:13px;color:#5E7371;margin:0 0 10px;">Enter the company code from your office, or open the setup link they sent you.</p>'
+      + '<div class="field"><label>Company code</label><input id="loginCompanyCode" autocomplete="off" autocapitalize="characters" placeholder="K7WQ2M" style="text-transform:uppercase;"></div>'
+      + '<p id="loginCompanyFound" style="display:none;font-size:14px;margin:0 0 12px;"></p>'
+      + '<button type="button" class="btn btn-primary" id="btnLoginCompany" style="width:100%;">Continue</button>'
+      + '<button type="button" class="btn btn-ghost" id="btnLoginCompanyBack" style="width:100%;margin-top:8px;display:none;">Back</button>'
+      + '</div>';
+    while(holder.firstChild) parts.user.parentNode.insertBefore(holder.firstChild, parts.user);
+    row = document.getElementById('loginCompanyRow');
+
+    document.getElementById('btnLoginChangeCompany').addEventListener('click', ()=> fieldShowCompanyStep(true));
+    document.getElementById('btnLoginCompanyBack').addEventListener('click', ()=>{ fieldPendingCompany = null; fieldRenderLogin(); });
+    document.getElementById('btnLoginCompany').addEventListener('click', fieldCompanyContinue);
+    document.getElementById('loginCompanyCode').addEventListener('keydown', e => { if(e.key === 'Enter') fieldCompanyContinue(); });
+  }
+  const company = deviceGet('company');
+  if(company && company.id){
+    document.getElementById('loginCompanyName').textContent = company.name || '';
+    row.style.display = 'flex';
+    document.getElementById('loginCompanyStep').style.display = 'none';
+    [parts.user, parts.pass, parts.button].forEach(el => { if(el) el.style.display = ''; });
+  } else {
+    fieldShowCompanyStep(false);
+  }
+}
+
+let fieldPendingCompany = null;
+
+function fieldShowCompanyStep(canGoBack){
+  const parts = fieldLoginParts();
+  fieldPendingCompany = null;
+  document.getElementById('loginCompanyRow').style.display = 'none';
+  document.getElementById('loginCompanyStep').style.display = 'block';
+  document.getElementById('loginCompanyFound').style.display = 'none';
+  document.getElementById('btnLoginCompany').textContent = 'Continue';
+  document.getElementById('btnLoginCompanyBack').style.display = canGoBack && deviceGet('company') ? 'block' : 'none';
+  document.getElementById('loginCompanyCode').value = '';
+  [parts.user, parts.pass, parts.button].forEach(el => { if(el) el.style.display = 'none'; });
+  fieldShowError('');
+}
+
+async function fieldCompanyContinue(){
+  const btn = document.getElementById('btnLoginCompany');
+  if(fieldPendingCompany){
+    await fieldUseCompany(fieldPendingCompany);
+    return;
+  }
+  btn.disabled = true;
+  const found = await fieldLookupCompany(document.getElementById('loginCompanyCode').value);
+  btn.disabled = false;
+  if(!found.ok){ fieldShowError(found.message); return; }
+  fieldShowError('');
+  fieldPendingCompany = found.company;
+  const shown = document.getElementById('loginCompanyFound');
+  shown.textContent = '';
+  const strong = document.createElement('strong');
+  strong.textContent = found.company.name;
+  shown.appendChild(document.createTextNode('Company: '));
+  shown.appendChild(strong);
+  shown.style.display = 'block';
+  btn.textContent = 'Use this company';
+}
+
+// Switching company signs out whoever was signed in. This phone's customers and
+// visits are not touched here: they are not on the server yet, so wiping them
+// would lose them for good.
+async function fieldUseCompany(company){
+  const old = deviceGet('company');
+  if(old && old.id !== company.id){
+    // The old company's customers go, once whatever this phone was holding for
+    // them has reached their office
+    if(typeof fieldPendingCount === 'function'){
+      let pending = 0;
+      try{ pending = fieldPendingCount(); }catch(e){}
+      if(pending && typeof fieldFinishWipe === 'function'){
+        fieldStartWipe('company', old.id);
+        const done = await fieldFinishWipe();
+        if(!done){
+          const anyway = await fieldConfirm(pending + (pending === 1 ? ' change has' : ' changes have')
+            + ' not reached ' + fieldEscape(old.name) + ' yet. Switching now loses '
+            + (pending === 1 ? 'it' : 'them') + '. Switch anyway?');
+          if(!anyway){ deviceSet('wipe', null); return; }
+        }
+      }
+      if(typeof fieldWipeCompanyData === 'function') await fieldWipeCompanyData();
+      deviceSet('wipe', null);
+    }
+    await fieldSignOut();
+    if(typeof fieldOnSignedOut === 'function') fieldOnSignedOut();
+  }
+  deviceSet('company', {id: company.id, name: company.name});
+  fieldPendingCompany = null;
+  fieldRenderLogin();
+  const u = document.getElementById('loginUsername');
+  if(u) u.focus();
+}
+
+// A setup link: ?company=CODE. Taken off the address afterwards so a bookmark
+// or a reload doesn't repeat it.
+async function fieldHandleSetupLink(){
+  let code = null;
+  try{ code = new URLSearchParams(location.search).get('company'); }catch(e){}
+  if(!code) return;
+  try{
+    const url = new URL(location.href);
+    url.searchParams.delete('company');
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
   }catch(e){}
-})();
+  const found = await fieldLookupCompany(code);
+  if(!found.ok){ fieldShowError(found.message); return; }
+  const old = deviceGet('company');
+  if(old && old.id === found.company.id) return;
+  if(old){
+    const ok = await fieldConfirm('This phone is set up for ' + fieldEscape(old.name) + '. Switch it to '
+      + fieldEscape(found.company.name) + '? Whoever is signed in will be signed out.');
+    if(!ok) return;
+  }
+  await fieldUseCompany(found.company);
+}
+
+function fieldEscape(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function fieldConfirm(message){
+  if(typeof confirmDialog === 'function') return confirmDialog(message, 'Switch');
+  return Promise.resolve(window.confirm(message));
+}
+
+
+// ---------- Sync (field apps) ----------
+// Everything is saved on this phone first and works with no signal. Whenever
+// there is a connection the phone brings down what the office changed and sends
+// up what happened here.
+//
+// What comes down: the customers assigned to whoever is signed in (an admin
+// gets all of them), their own technician profile, the company's details,
+// the chemical and body-of-water setup, and the company-wide settings.
+// What goes up in this version: changes to those customers, such as a visit
+// being finished. Readings and photos stay on the phone until the next step.
+//
+// Settings about this phone — voice mode, the voice button, mic side, photo
+// storage — are never touched by sync. A settings change arriving mid-visit is
+// held until the visit ends, so the rules cannot change under a technician's
+// feet while they are at a pool.
+const SYNC_PAGE = 500;
+const SYNC_OVERLAP_MS = 5000;
+const SYNC_INTERVAL_MS = 60000;
+const SYNC_GONE = '__gone__';
+const SYNC_LIST_FIELDS = ['equipment', 'dogs', 'fountains'];
+const SYNC_SEP = '\u0001';
+const SYNC_ORDER = '__order';
+const SYNC_COMPANY_SETTINGS = ['showBeforePhotos', 'showAfterPhotos', 'showGatePhoto',
+  'requireSkipPhoto', 'requireSkipReason', 'allowRouteReorder', 'showDosageSuggestions',
+  'showWaterBalance', 'autoNotifyAll', 'autoNotifyAllLead', 'showPoolSizeInProfile',
+  'applyPoolDosagesToAll', 'applyPoolChemicalsToAll'];
+const SYNC_SETUP_KEYS = ['chemConfig', 'customChemConfig', 'customBodyOrder', 'routeOrders', 'reportEmailStyle'];
+const SYNC_COMPANY_DETAIL_KEYS = ['companyName', 'ownerName', 'licenseNumber', 'serviceArea',
+  'accountEmail', 'accountPhone', 'businessAddress', 'businessCity', 'businessState',
+  'businessZip', 'businessWebsite'];
+
+function syncStableString(v){
+  if(v === null || typeof v !== 'object') return JSON.stringify(v === undefined ? null : v);
+  if(Array.isArray(v)) return '[' + v.map(syncStableString).join(',') + ']';
+  return '{' + Object.keys(v).sort().filter(k => v[k] !== undefined)
+    .map(k => JSON.stringify(k) + ':' + syncStableString(v[k])).join(',') + '}';
+}
+
+function syncHash(obj){
+  const str = syncStableString(obj);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i = 0; i < str.length; i++){
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+function syncIsItemList(v){
+  if(!Array.isArray(v)) return false;
+  const ids = new Set();
+  for(const it of v){
+    if(!it || typeof it !== 'object' || Array.isArray(it)) return false;
+    if(typeof it.id !== 'string' && typeof it.id !== 'number') return false;
+    const id = String(it.id);
+    if(id === SYNC_ORDER || ids.has(id)) return false;
+    ids.add(id);
+  }
+  return true;
+}
+
+function syncExplode(c){
+  const flat = {};
+  Object.keys(c || {}).forEach(k=>{
+    const v = c[k];
+    if(v === undefined) return;
+    if(SYNC_LIST_FIELDS.indexOf(k) !== -1 && syncIsItemList(v)){
+      flat[k + SYNC_SEP + SYNC_ORDER] = v.map(it => String(it.id));
+      v.forEach(it=>{ flat[k + SYNC_SEP + String(it.id)] = it; });
+    } else {
+      flat[k] = v;
+    }
+  });
+  return flat;
+}
+
+function syncImplode(flat){
+  const out = {}, lists = {};
+  Object.keys(flat).forEach(key=>{
+    const at = key.indexOf(SYNC_SEP);
+    if(at === -1){ out[key] = flat[key]; return; }
+    const field = key.slice(0, at), sub = key.slice(at + 1);
+    const l = lists[field] || (lists[field] = {order: null, items: new Map()});
+    if(sub === SYNC_ORDER) l.order = flat[key];
+    else l.items.set(sub, flat[key]);
+  });
+  Object.keys(lists).forEach(field=>{
+    const l = lists[field], arr = [];
+    (Array.isArray(l.order) ? l.order : []).forEach(id=>{
+      id = String(id);
+      if(l.items.has(id)){ arr.push(l.items.get(id)); l.items.delete(id); }
+    });
+    l.items.forEach(it => arr.push(it));
+    out[field] = arr;
+  });
+  return out;
+}
+
+function syncFieldHashes(c){
+  const flat = syncExplode(c), f = {};
+  Object.keys(flat).forEach(k=>{ f[k] = syncHash(flat[k]); });
+  return f;
+}
+
+function syncMergeLocal(serverData, localRec, pending){
+  const flat = syncExplode(serverData);
+  const mine = syncExplode(localRec || {});
+  Object.keys(pending || {}).forEach(key=>{
+    if(key === '_deleted') return;
+    if(key in mine) flat[key] = mine[key];
+    else delete flat[key];
+  });
+  Object.keys(flat).forEach(key=>{
+    const at = key.indexOf(SYNC_SEP);
+    if(at === -1) return;
+    const field = key.slice(0, at);
+    if(!(field in flat)) return;
+    if(pending && pending[field]) delete flat[key];
+    else delete flat[field];
+  });
+  return syncImplode(flat);
+}
+
+// ---- What this phone knows about the server ----
+// Kept per company and per technician, so a shared phone keeps them apart, and
+// under the device prefix so it never lands in a backup.
+function syncStateKey(){
+  const c = deviceGet('company'), m = deviceGet('membership');
+  if(!c || !m) return null;
+  return 'sync:' + c.id + ':' + (m.technician_id || 'unknown');
+}
+
+function loadFieldSyncState(){
+  const key = syncStateKey();
+  const s = key ? deviceGet(key) : null;
+  const base = (s && typeof s === 'object') ? s : {};
+  return {
+    pulledOnce: base.pulledOnce === true,
+    backupAt: base.backupAt || null,
+    customers: base.customers || {cursor: null, known: {}, seen: {}, edits: {}},
+    records: base.records || {cursor: null, known: {}, seen: {}},
+    work: base.work || {known: {}, seen: {}, edits: {}, refused: {}},
+    visits: base.visits || {sent: {}}
+  };
+}
+
+function saveFieldSyncState(state){
+  const key = syncStateKey();
+  if(!key) return false;
+  return deviceSet(key, state);
+}
+
+// Safeguard: a full copy of this phone's data before its first sync, kept in
+// the browser's own database and untouched afterwards
+const SYNC_BACKUP_DB = 'poollog-sync-backups';
+
+function fieldBackupDb(){
+  return new Promise((resolve, reject)=>{
+    let req;
+    try{ req = indexedDB.open(SYNC_BACKUP_DB, 1); }catch(e){ reject(e); return; }
+    req.onupgradeneeded = ()=>{
+      const db = req.result;
+      if(!db.objectStoreNames.contains('backups')) db.createObjectStore('backups', {keyPath: 'key'});
+    };
+    req.onsuccess = ()=> resolve(req.result);
+    req.onerror = ()=> reject(req.error);
+  });
+}
+
+function fieldCollectBackup(){
+  const data = {};
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf(STORAGE_PREFIX) === 0) data[k.slice(STORAGE_PREFIX.length)] = localStorage.getItem(k);
+  }
+  return {app: 'PoolLog', createdAt: new Date().toISOString(), data: data};
+}
+
+async function fieldFirstSyncBackup(companyId){
+  const db = await fieldBackupDb();
+  const key = 'before-first-sync:' + companyId;
+  const existing = await new Promise((resolve, reject)=>{
+    const r = db.transaction('backups', 'readonly').objectStore('backups').get(key);
+    r.onsuccess = ()=> resolve(r.result || null);
+    r.onerror = ()=> reject(r.error);
+  });
+  if(existing) return existing.payload.createdAt;
+  const payload = fieldCollectBackup();
+  await new Promise((resolve, reject)=>{
+    const tx = db.transaction('backups', 'readwrite');
+    tx.objectStore('backups').put({key, payload});
+    tx.oncomplete = ()=> resolve();
+    tx.onerror = ()=> reject(tx.error);
+    tx.onabort = ()=> reject(tx.error);
+  });
+  return payload.createdAt;
+}
+
+// ---- Company records arriving from the office ----
+let syncHeldSettings = null;     // a settings change that arrived mid-visit
+
+function syncVisitInProgress(){
+  try{ return typeof currentVisitCustomerId !== 'undefined' && !!currentVisitCustomerId; }catch(e){ return false; }
+}
+
+function syncApplySettings(company){
+  const settings = lsGet('settings') || {};
+  SYNC_COMPANY_SETTINGS.forEach(key=>{ if(key in company) settings[key] = company[key]; });
+  if(!lsSet('settings', settings)) return false;
+  if(typeof appSettings === 'object' && appSettings) Object.assign(appSettings, settings);
+  return true;
+}
+
+// Called when a visit ends, so anything held is applied then
+function syncApplyHeldSettings(){
+  if(!syncHeldSettings) return;
+  const held = syncHeldSettings;
+  syncHeldSettings = null;
+  syncApplySettings(held);
+}
+
+function syncApplyRecord(kind, id, data, deleted, agreed){
+  const workList = (typeof SYNC_WORK_LISTS !== 'undefined')
+    ? SYNC_WORK_LISTS.find(([, k]) => k === kind) : null;
+  if(workList){
+    const key = workList[0];
+    const list = lsGet(key) || [];
+    const i = list.findIndex(x => x && String(x.id) === String(id));
+    if(deleted){ if(i === -1) return true; list.splice(i, 1); }
+    else if(i === -1) list.push(Object.assign({}, data));
+    else {
+      // Anything ticked off or moved here that has not gone up yet stays as it
+      // is — including a change made while this very download was in flight,
+      // which is why each field is compared with what the server last agreed.
+      const merged = Object.assign({}, data);
+      const was = agreed || {};
+      // Every field this phone holds, and every field the server last agreed
+      const fields = new Set(Object.keys(list[i]).concat(Object.keys(was)));
+      fields.forEach(field=>{
+        const mineNow = list[i][field];
+        if(was[field] !== undefined && syncHash(mineNow) === was[field]) return;  // nothing unsent
+        if(was[field] === undefined && mineNow === undefined) return;
+        if(mineNow !== undefined) merged[field] = mineNow;
+        else delete merged[field];
+      });
+      list[i] = merged;
+    }
+    if(!lsSet(key, list)) return false;
+    try{ if(typeof renderRouteTasks === 'function') renderRouteTasks(); }catch(e){}
+    try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+    return true;
+  }
+  if(kind === 'technician'){
+    const list = lsGet('technicians') || [];
+    const i = list.findIndex(t => t && String(t.id) === String(id));
+    if(deleted){
+      if(i === -1) return true;
+      list.splice(i, 1);
+    } else if(i === -1){
+      list.push(Object.assign({}, data));
+    } else {
+      list[i] = Object.assign({}, data);
+    }
+    if(!lsSet('technicians', list)) return false;
+    try{ if(typeof technicians !== 'undefined') technicians = list; }catch(e){}
+    // Whoever is signed in keeps their own settings up to date
+    try{
+      const m = deviceGet('membership');
+      if(m && String(m.technician_id) === String(id) && typeof currentUser !== 'undefined' && currentUser){
+        currentUser = fieldCurrentUser();
+      }
+    }catch(e){}
+    return true;
+  }
+  if(kind === 'company'){
+    if(deleted) return true;
+    let ok = true;
+    SYNC_COMPANY_DETAIL_KEYS.forEach(key=>{ if(key in data && !lsSet(key, data[key])) ok = false; });
+    return ok;
+  }
+  if(kind === 'setup'){
+    if(deleted || !('value' in data)) return true;
+    return lsSet(id, data.value);
+  }
+  if(kind === 'setting'){
+    if(deleted) return true;
+    if(syncVisitInProgress()){
+      // Held until the visit ends: the rules must not change mid-pool
+      syncHeldSettings = Object.assign({}, syncHeldSettings || {}, data);
+      return true;
+    }
+    return syncApplySettings(data);
+  }
+  return true;
+}
+
+async function syncPullRecords(state){
+  const r = state.records;
+  const rows = [];
+  const since = r.cursor ? new Date(new Date(r.cursor).getTime() - SYNC_OVERLAP_MS).toISOString() : null;
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    let path = '/rest/v1/company_records?select=kind,id,data,deleted,updated_at'
+      + '&order=updated_at.asc,kind.asc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset;
+    if(since) path += '&updated_at=gte.' + encodeURIComponent(since);
+    const res = await fieldAuthed(path);
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline, revoked: !!res.revoked};
+    rows.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+  let applied = 0;
+  rows.forEach(row=>{
+    const key = row.kind + '\u0002' + row.id;
+    const hashes = syncFieldHashes(row.data);
+    // What the server last agreed for this record, so unsent changes survive
+    const agreed = state.work && state.work.known && state.work.known[key] ? state.work.known[key].f : null;
+    if(!syncApplyRecord(row.kind, row.id, row.data, row.deleted, agreed)) return;
+    r.known[key] = {u: row.updated_at, d: !!row.deleted, f: hashes};
+    if(!r.cursor || row.updated_at > r.cursor) r.cursor = row.updated_at;
+    applied++;
+  });
+  return {ok: true, applied: applied};
+}
+
+// ---- Customers ----
+// What this phone may see is decided by the server: a technician gets the
+// customers assigned to them, an admin gets all of them. A customer that is no
+// longer theirs simply stops coming down, and is taken off this phone.
+async function syncPullCustomers(state){
+  const c = state.customers;
+  const listed = [];
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    const res = await fieldAuthed('/rest/v1/customers?select=id,updated_at,deleted'
+      + '&order=id.asc&limit=' + SYNC_PAGE + '&offset=' + offset);
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline, revoked: !!res.revoked};
+    listed.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+  const mine = new Map(listed.map(row => [String(row.id), row]));
+  const wanted = listed.filter(row=>{
+    if(row.deleted) return false;
+    const k = c.known[String(row.id)];
+    return !k || k.u !== row.updated_at || c.edits[String(row.id)];
+  }).map(row => String(row.id));
+
+  const fetched = [];
+  for(let i = 0; i < wanted.length; i += 50){
+    const chunk = wanted.slice(i, i + 50).map(id => '"' + id.replace(/"/g, '\\"') + '"').join(',');
+    const res = await fieldAuthed('/rest/v1/customers?select=id,data,deleted,updated_at&id=in.('
+      + encodeURIComponent(chunk) + ')');
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline, revoked: !!res.revoked};
+    fetched.push(...res.body);
+  }
+
+  let list = lsGet('customers') || [];
+  const byId = new Map(list.map((x, i) => [String(x.id), i]));
+  fetched.forEach(row=>{
+    const id = String(row.id);
+    const pending = c.edits[id];
+    const hashes = syncFieldHashes(row.data);
+    const local = byId.has(id) ? list[byId.get(id)] : null;
+    if(pending){
+      const merged = syncMergeLocal(row.data, local, pending);
+      if(local) list[byId.get(id)] = merged;
+      else { list.push(merged); byId.set(id, list.length - 1); }
+      const k = c.known[id] || {u: null, d: false, f: {}};
+      Object.keys(hashes).forEach(f => { if(!pending[f]) k.f[f] = hashes[f]; });
+      c.known[id] = k;
+      c.seen[id] = syncFieldHashes(merged);
+      return;
+    }
+    if(local) list[byId.get(id)] = row.data;
+    else { list.push(row.data); byId.set(id, list.length - 1); }
+    c.known[id] = {u: row.updated_at, d: !!row.deleted, f: hashes};
+    c.seen[id] = hashes;
+  });
+
+  // Anything the server no longer shows this phone: deleted, or given to
+  // someone else. Their visits and readings stay on the phone.
+  const drop = list.filter(x => !mine.has(String(x.id)) || mine.get(String(x.id)).deleted)
+                   .filter(x => !c.edits[String(x.id)])
+                   .map(x => String(x.id));
+  if(drop.length){
+    const goneIds = new Set(drop);
+    list = list.filter(x => !goneIds.has(String(x.id)));
+    drop.forEach(id=>{ c.seen[id] = SYNC_GONE; if(c.known[id]) c.known[id].d = true; });
+  }
+  if(!lsSet('customers', list)) return {ok: false, storage: true};
+  try{ if(typeof customers !== 'undefined') customers = list; }catch(e){}
+  return {ok: true, count: list.length};
+}
+
+// What changed on this phone since the server last agreed
+function syncScanCustomers(state, now){
+  const c = state.customers;
+  const stamp = now || new Date().toISOString();
+  const list = lsGet('customers') || [];
+  const present = new Set();
+  list.forEach(rec=>{
+    if(!rec || rec.id === undefined || rec.id === null) return;
+    const id = String(rec.id);
+    present.add(id);
+    const f = syncFieldHashes(rec);
+    const k = c.known[id];
+    const prev = c.seen[id];
+    const e = Object.assign({}, c.edits[id] || {});
+    const fields = new Set(Object.keys(f).concat(k ? Object.keys(k.f || {}) : []));
+    fields.forEach(field=>{
+      if(k && k.f && k.f[field] === f[field]){ delete e[field]; return; }
+      const noticed = prev && prev !== SYNC_GONE && prev[field] === f[field];
+      if(!noticed || !e[field]) e[field] = stamp;
+    });
+    delete e._deleted;                        // phones never delete customers
+    c.seen[id] = f;
+    if(Object.keys(e).length) c.edits[id] = e; else delete c.edits[id];
+  });
+  Object.keys(c.edits).forEach(id=>{ if(!present.has(id)) delete c.edits[id]; });
+}
+
+async function syncPushCustomers(state){
+  const c = state.customers;
+  let pushed = 0, refused = 0;
+  for(const id of Object.keys(c.edits)){
+    const list = lsGet('customers') || [];
+    const rec = list.find(x => String(x.id) === id);
+    if(!rec){ delete c.edits[id]; continue; }
+    const pending = Object.assign({}, c.edits[id]);
+    const mine = syncExplode(rec);
+    const changes = {};
+    const sentHash = {};
+    const listed = new Set();
+    Object.keys(pending).forEach(key=>{
+      if(key === '_deleted') return;
+      sentHash[key] = key in mine ? syncHash(mine[key]) : undefined;
+      const at = key.indexOf(SYNC_SEP);
+      if(at === -1){
+        if(listed.has(key)) return;
+        changes[key] = key in mine ? {t: pending[key], v: mine[key]} : {t: pending[key], gone: true};
+        return;
+      }
+      const field = key.slice(0, at), sub = key.slice(at + 1);
+      if(!listed.has(field)){ listed.add(field); changes[field] = {items: {}}; }
+      if(sub === SYNC_ORDER){ if(key in mine) changes[field].order = {t: pending[key], v: mine[key]}; }
+      else changes[field].items[sub] = key in mine ? {t: pending[key], v: mine[key]} : {t: pending[key], gone: true};
+    });
+    if(!Object.keys(changes).length){ delete c.edits[id]; continue; }
+
+    const k = c.known[id];
+    const res = await fieldAuthed('/rest/v1/rpc/push_customer_fields', {
+      method: 'POST',
+      body: JSON.stringify({p_id: id, p_changes: changes, p_base: k && k.u ? k.u : null})
+    });
+    if(res.offline || res.revoked || res.status === 0) return {ok: false, offline: !!res.offline, revoked: !!res.revoked, pushed};
+    if(!res.ok || !res.body || !res.body.result){
+      // The server refused this one — a customer no longer theirs, for
+      // instance. Leave it alone rather than trying forever.
+      refused++;
+      delete c.edits[id];
+      saveFieldSyncState(state);
+      continue;
+    }
+    // Anything changed here while this was in flight stays waiting
+    const after = (lsGet('customers') || []).find(x => String(x.id) === id);
+    const nowFlat = after ? syncExplode(after) : null;
+    const still = Object.assign({}, c.edits[id] || {});
+    Object.keys(pending).forEach(field=>{
+      if(still[field] !== pending[field]) return;
+      const h = nowFlat && field in nowFlat ? syncHash(nowFlat[field]) : undefined;
+      if(after && h === sentHash[field]) delete still[field];
+    });
+    c.known[id] = {u: res.body.updated_at, d: !!res.body.deleted, f: syncFieldHashes(res.body.data)};
+    if(!Object.keys(still).length){
+      delete c.edits[id];
+      const merged = syncMergeLocal(res.body.data, after, {});
+      const cur = lsGet('customers') || [];
+      const at = cur.findIndex(x => String(x.id) === id);
+      if(at !== -1){ cur[at] = merged; if(lsSet('customers', cur)){ try{ customers = cur; }catch(e){} } }
+      c.seen[id] = syncFieldHashes(merged);
+    } else {
+      c.edits[id] = still;
+    }
+    pushed++;
+    saveFieldSyncState(state);
+  }
+  return {ok: true, pushed: pushed, refused: refused};
+}
+
+let syncRunning = false;
+let syncAgain = false;
+let syncTimer = null;
+
+// ---- Visits: the readings and skips recorded on this phone ----
+// Append-only on the server (snippet 08): a visit goes up once, and sending it
+// again after a dropped signal changes nothing. Photos stay on this phone for
+// now, so what goes up is the readings, the notes and what was done, with a
+// note that photos exist here.
+const SYNC_VISIT_PHOTO_FIELDS = ['photo', 'beforePhoto', 'gatePhoto', 'afterPhoto', 'customPhotos'];
+const SYNC_VISITS_PER_RUN = 40;
+
+function syncVisitWithoutPhotos(reading){
+  const out = {};
+  let photos = false;
+  Object.keys(reading || {}).forEach(key=>{
+    if(SYNC_VISIT_PHOTO_FIELDS.indexOf(key) !== -1){
+      const v = reading[key];
+      if(v && (typeof v === 'string' || Object.keys(v).length)) photos = true;
+      return;
+    }
+    out[key] = reading[key];
+  });
+  if(photos) out.photosOnPhone = true;
+  return out;
+}
+
+// The local date a visit belongs to. Times are stored as an instant, and
+// slicing the text would put an evening visit in Arizona on the next day.
+function syncVisitServiceDate(stamp){
+  const d = new Date(stamp);
+  if(isNaN(d)) return String(stamp || '').slice(0, 10);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+// Everything recorded on this phone, as one list
+function syncVisitsHere(){
+  const out = [];
+  (lsGet('customers') || []).forEach(c=>{
+    if(!c || !c.id) return;
+    const id = String(c.id);
+    (lsGet(readingsStorageKey(id, 'pool')) || []).forEach(r=>{
+      if(r && r.id) out.push({customerId: id, kind: 'reading', body: 'pool', reading: r});
+    });
+    (lsGet(readingsStorageKey(id, 'spa')) || []).forEach(r=>{
+      if(r && r.id) out.push({customerId: id, kind: 'reading', body: 'spa', reading: r});
+    });
+    (c.fountains || []).forEach(f=>{
+      if(!f || !f.id) return;
+      (lsGet(fountainReadingsStorageKey(id, f.id)) || []).forEach(r=>{
+        if(r && r.id) out.push({customerId: id, kind: 'reading', body: 'fountain:' + f.id, reading: r});
+      });
+    });
+    (lsGet(skippedVisitsStorageKey(id)) || []).forEach(sk=>{
+      if(sk && sk.id) out.push({customerId: id, kind: 'skip', body: 'pool', reading: sk});
+    });
+  });
+  return out;
+}
+
+function syncVisitKey(v){ return v.customerId + '\u0002' + v.kind + '\u0002' + v.body + '\u0002' + v.reading.id; }
+
+// Sends what has not gone up yet, newest first, a batch at a time so a phone
+// with years of history does not sit uploading on one connection.
+async function syncPushVisits(state){
+  const sent = state.visits.sent || (state.visits.sent = {});
+  const here = syncVisitsHere().filter(v => !sent[syncVisitKey(v)]);
+  here.sort((a, b)=> String(b.reading.date || '').localeCompare(String(a.reading.date || '')));
+  let pushed = 0, refused = 0;
+  for(const v of here.slice(0, SYNC_VISITS_PER_RUN)){
+    const when = v.reading.date || v.reading.timestamp || new Date().toISOString();
+    const res = await fieldAuthed('/rest/v1/rpc/push_visit', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_customer_id: v.customerId,
+        p_kind: v.kind,
+        p_body: v.body,
+        p_id: String(v.reading.id),
+        p_data: syncVisitWithoutPhotos(v.reading),
+        p_occurred_at: when,
+        p_service_date: v.kind === 'skip' && v.reading.date && v.reading.date.length === 10
+          ? v.reading.date : syncVisitServiceDate(when)
+      })
+    });
+    if(res.offline || res.revoked || res.status === 0){
+      return {ok: false, offline: !!res.offline, pushed: pushed, refused: refused, more: true};
+    }
+    if(res.status === 400 || res.status === 403){
+      // The office does not accept this one — a customer it does not have, for
+      // instance. Keeping it at the front would block everything behind it.
+      sent[syncVisitKey(v)] = 'refused';
+      refused++;
+      saveFieldSyncState(state);
+      continue;
+    }
+    if(!res.ok || !res.body || !res.body.result) return {ok: false, pushed: pushed, refused: refused, more: true};
+    sent[syncVisitKey(v)] = true;
+    pushed++;
+    saveFieldSyncState(state);          // per visit, so a dropped signal resumes
+  }
+  return {ok: true, pushed: pushed, refused: refused, more: here.length > SYNC_VISITS_PER_RUN};
+}
+
+// ---- Work records: tasks, filter cleans, work orders and one-day moves ----
+// They arrive here like the rest. Two of them go back the other way: ticking a
+// task off, and moving one of this person's own visits to another day. The
+// server allows exactly that and nothing else (snippet 09).
+const SYNC_WORK_LISTS = [
+  ['tasks', 'task'],
+  ['scheduledFilterCleans', 'filter_clean'],
+  ['scheduledWorkOrders', 'work_order'],
+  ['rescheduledVisits', 'reschedule']
+];
+const SYNC_WORK_SENDABLE = ['task', 'reschedule'];
+const SYNC_TASK_FIELDS = ['done', 'doneAt', 'doneBy'];
+
+function syncWorkLocal(){
+  const out = {};
+  SYNC_WORK_LISTS.forEach(([key, kind])=>{
+    if(SYNC_WORK_SENDABLE.indexOf(kind) === -1) return;
+    (lsGet(key) || []).forEach(item=>{
+      if(item && item.id) out[kind + '\u0002' + String(item.id)] = Object.assign({}, item);
+    });
+  });
+  return out;
+}
+
+// Notice what was ticked off or moved on this phone
+function syncScanWork(state, now){
+  const wk = state.work;
+  const stamp = now || new Date().toISOString();
+  const local = syncWorkLocal();
+  Object.keys(local).forEach(key=>{
+    const f = syncFieldHashes(local[key]);
+    // Set aside after the office refused it, until it changes here again
+    if(wk.refused && wk.refused[key]){
+      if(syncStableString(wk.refused[key]) === syncStableString(f)) return;
+      delete wk.refused[key];
+    }
+    const k = wk.known[key], prev = wk.seen[key];
+    const e = Object.assign({}, wk.edits[key] || {});
+    const fields = new Set(Object.keys(f).concat(k ? Object.keys(k.f || {}) : []));
+    fields.forEach(field=>{
+      if(k && k.f && k.f[field] === f[field]){ delete e[field]; return; }
+      // Only the fields the server will accept are ever sent
+      if(key.indexOf('task\u0002') === 0 && SYNC_TASK_FIELDS.indexOf(field) === -1) return;
+      const noticed = prev && prev[field] === f[field];
+      if(!noticed || !e[field]) e[field] = stamp;
+    });
+    wk.seen[key] = f;
+    if(Object.keys(e).length) wk.edits[key] = e; else delete wk.edits[key];
+  });
+  // Nothing on this phone is ever sent as a deletion: only the office deletes
+  Object.keys(wk.edits).forEach(key=>{ if(!local[key]) delete wk.edits[key]; });
+}
+
+async function syncPushWork(state){
+  const wk = state.work;
+  syncScanWork(state);
+  const local = syncWorkLocal();
+  let pushed = 0, refused = 0;
+  for(const key of Object.keys(wk.edits)){
+    const at = key.indexOf('\u0002');
+    const kind = key.slice(0, at), id = key.slice(at + 1);
+    const pending = Object.assign({}, wk.edits[key]);
+    const mine = local[key];
+    if(!mine){ delete wk.edits[key]; continue; }
+    const changes = {}, sentHash = {};
+    Object.keys(pending).forEach(field=>{
+      if(mine[field] === undefined) return;
+      sentHash[field] = syncHash(mine[field]);
+      changes[field] = {t: pending[field], v: mine[field]};
+    });
+    if(!Object.keys(changes).length){ delete wk.edits[key]; continue; }
+    const k = wk.known[key];
+    const res = await fieldAuthed('/rest/v1/rpc/push_record_fields', {
+      method: 'POST',
+      body: JSON.stringify({p_kind: kind, p_id: id, p_changes: changes, p_base: k && k.u ? k.u : null})
+    });
+    if(res.offline || res.revoked || res.status === 0) return {ok: false, offline: !!res.offline, pushed: pushed, refused: refused};
+    if(res.status === 400 || res.status === 403){
+      // The office does not allow this one. Keeping it would block the rest, and
+      // sending it again every minute would be pointless, so it is set aside
+      // until it changes here again.
+      delete wk.edits[key];
+      wk.refused = wk.refused || {};
+      wk.refused[key] = syncFieldHashes(mine);
+      refused++;
+      saveFieldSyncState(state);
+      continue;
+    }
+    if(!res.ok || !res.body || !res.body.result) return {ok: false, pushed: pushed, refused: refused};
+    wk.known[key] = {u: res.body.updated_at, f: syncFieldHashes(res.body.data)};
+    if(!res.body.deleted) syncApplyRecord(kind, id, res.body.data, false);
+    wk.seen[key] = syncFieldHashes(syncWorkLocal()[key] || res.body.data);
+    delete wk.edits[key];
+    pushed++;
+    saveFieldSyncState(state);
+  }
+  return {ok: true, pushed: pushed, refused: refused};
+}
+
+// ---- Clearing a phone: after a removal, or when it changes company ----
+// A phone holds customers' addresses, gate codes and notes. When the office
+// removes someone, or the phone is set up for a different company, that has to
+// go — but never before what the phone was holding has reached the office.
+// Until it has, the phone stays signed out and keeps trying whenever it has
+// signal. Nothing can be done about a phone that never connects again.
+const FIELD_DEVICE_SETTINGS = ['voiceModeEnabled', 'pushToTalkEnabled', 'micSide',
+  'showTechniciansTab', 'storePhotos'];
+
+// How much this phone is still holding that the office has not got
+function fieldPendingCount(state){
+  const s = state || loadFieldSyncState();
+  let n = Object.keys(s.customers.edits || {}).length + Object.keys(s.work.edits || {}).length;
+  const sent = (s.visits && s.visits.sent) || {};
+  try{ n += syncVisitsHere().filter(v => !sent[syncVisitKey(v)]).length; }catch(e){}
+  return n;
+}
+
+function fieldClearDatabase(name){
+  return new Promise(resolve=>{
+    try{
+      const req = indexedDB.deleteDatabase(name);
+      req.onsuccess = req.onerror = req.onblocked = ()=> resolve();
+    }catch(e){ resolve(); }
+  });
+}
+
+// Everything belonging to the company goes; how this phone itself is set up stays
+async function fieldWipeCompanyData(){
+  const keep = {};
+  const settings = lsGet('settings') || {};
+  FIELD_DEVICE_SETTINGS.forEach(k=>{ if(settings[k] !== undefined) keep[k] = settings[k]; });
+  const mine = [];
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(k && k.indexOf(STORAGE_PREFIX) === 0) mine.push(k);
+  }
+  mine.forEach(k=>{ try{ localStorage.removeItem(k); }catch(e){} });
+  lsSet('settings', keep);
+  try{ customers = []; }catch(e){}
+  await fieldClearDatabase(PHOTO_DB);
+  await fieldClearDatabase(SYNC_BACKUP_DB);   // it holds the same customers
+  const key = syncStateKey();
+  if(key) deviceSet(key, null);
+  try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+}
+
+// Asked for when the office removes someone, or the phone switches company.
+// The wipe waits for the upload; both are remembered so closing the app does
+// not lose the intention.
+function fieldStartWipe(reason, companyId){
+  const m = deviceGet('membership');
+  // Who this was is written down now: signing out clears it, and the phone may
+  // not finish clearing until days later
+  deviceSet('wipe', {reason: reason, companyId: companyId || (deviceGet('company') || {}).id,
+                     username: m ? m.username : null, since: new Date().toISOString()});
+}
+
+// While a phone is waiting to finish sending, the message belongs on the
+// sign-in screen, which is where whoever holds it will be looking
+function fieldSyncStatus(text){
+  if(!text) return;
+  try{ fieldShowError(text); }catch(e){}
+}
+
+function fieldWipeMessage(pending, reason){
+  const who = reason === 'company' ? 'This phone is being set up for another company.'
+    : 'Your sign-in was removed.';
+  return pending
+    ? who + ' ' + pending + (pending === 1 ? ' change is' : ' changes are')
+      + ' still to reach the office — this phone will finish sending when it has signal.'
+    : who + ' This phone has been cleared.';
+}
+
+// Runs on every sync, and whenever the app opens
+async function fieldFinishWipe(){
+  const wipe = deviceGet('wipe');
+  if(!wipe) return false;
+  const state = loadFieldSyncState();
+  let pending = fieldPendingCount(state);
+
+  if(pending && deviceGet('session')){
+    // Still signed in enough to upload: send what is left. A removed technician
+    // has seven days for exactly this (snippet 06).
+    try{
+      const work = await syncPushWork(state);
+      const visits = await syncPushVisits(state);
+      const customers = await syncPushCustomers(state);
+      saveFieldSyncState(state);
+      if(!work.ok || !visits.ok || !customers.ok){
+        fieldSyncStatus(fieldWipeMessage(fieldPendingCount(), wipe.reason));
+        return false;
+      }
+    }catch(e){
+      return false;
+    }
+    pending = fieldPendingCount();
+  }
+  if(pending && deviceGet('session')){
+    fieldSyncStatus(fieldWipeMessage(pending, wipe.reason));
+    return false;
+  }
+
+  const membership = deviceGet('membership');
+  const username = wipe.username || (membership && membership.username);
+  await fieldWipeCompanyData();
+  await fieldSignOut();
+  if(wipe.companyId && username) fieldForgetLogin(wipe.companyId, username);
+  deviceSet('wipe', null);
+  if(typeof fieldOnSignedOut === 'function') fieldOnSignedOut();
+  fieldShowError(fieldWipeMessage(0, wipe.reason));
+  return true;
+}
+
+async function fieldSync(){
+  const company = deviceGet('company');
+  const membership = deviceGet('membership');
+  if(!company || !membership || !deviceGet('session') || !fieldCurrentUser()) return {ok: false, reason: 'signed-out'};
+  if(syncRunning){ syncAgain = true; return {ok: false, reason: 'busy'}; }
+  syncRunning = true;
+  const result = {ok: false, records: 0, customers: 0, pushed: 0};
+  try{
+    if(deviceGet('wipe')){
+      await fieldFinishWipe();
+      return {ok: true, reason: 'clearing'};
+    }
+    const state = loadFieldSyncState();
+
+    // Safeguard: a copy of everything on this phone before its first sync
+    if(!state.pulledOnce && !state.backupAt){
+      try{
+        state.backupAt = await fieldFirstSyncBackup(company.id);
+        saveFieldSyncState(state);
+      }catch(e){ result.reason = 'backup-failed'; return result; }
+    }
+
+    syncScanCustomers(state);
+    syncScanWork(state);          // notice ticks and moves before anything is pulled
+    saveFieldSyncState(state);
+
+    const records = await syncPullRecords(state);
+    if(!records.ok){ result.reason = records.offline ? 'offline' : 'pull-failed'; saveFieldSyncState(state); return result; }
+    result.records = records.applied;
+
+    const pulled = await syncPullCustomers(state);
+    if(!pulled.ok){ result.reason = pulled.offline ? 'offline' : 'pull-failed'; saveFieldSyncState(state); return result; }
+    result.customers = pulled.count;
+
+    // Nothing goes up until a full pull has finished on this phone
+    state.pulledOnce = true;
+    saveFieldSyncState(state);
+    try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+
+    syncScanCustomers(state);
+    const pushedResult = await syncPushCustomers(state);
+    result.pushed = pushedResult.pushed || 0;
+    if(!pushedResult.ok){ result.reason = pushedResult.offline ? 'offline' : 'push-failed'; saveFieldSyncState(state); return result; }
+
+    // Tasks ticked off and visits moved here
+    const work = await syncPushWork(state);
+    result.work = work.pushed || 0;
+    saveFieldSyncState(state);
+    if(!work.ok){ result.reason = work.offline ? 'offline' : 'push-failed'; return result; }
+
+    // Readings and skips recorded here
+    const visits = await syncPushVisits(state);
+    result.visits = visits.pushed || 0;
+    result.visitsRefused = visits.refused || 0;
+    saveFieldSyncState(state);
+    if(!visits.ok){ result.reason = visits.offline ? 'offline' : 'push-failed'; return result; }
+    if(visits.more) setTimeout(()=> fieldSync(), 1500);   // more to send, a batch at a time
+
+    state.lastSyncedAt = new Date().toISOString();
+    saveFieldSyncState(state);
+    result.ok = true;
+    return result;
+  }catch(e){
+    result.reason = 'error';
+    return result;
+  }finally{
+    syncRunning = false;
+    if(syncAgain){ syncAgain = false; setTimeout(()=> fieldSync(), 0); }
+  }
+}
+
+// A visit finishing, or anything else that changes a customer here
+function fieldNoteLocalChange(){
+  if(!deviceGet('session')) return;
+  try{
+    const state = loadFieldSyncState();
+    syncScanCustomers(state);
+    saveFieldSyncState(state);
+  }catch(e){}
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=> fieldSync(), 2000);
+}
+
+function startFieldSync(){
+  fieldSync();
+  if(!startFieldSync.started){
+    startFieldSync.started = true;
+    setInterval(()=>{ if(!document.hidden) fieldSync(); }, SYNC_INTERVAL_MS);
+    window.addEventListener('online', ()=> fieldSync());
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) fieldSync(); });
+  }
+}
+
+// Check the account now and whenever signal returns or the app comes back to
+// the front. onGone(reason) runs after the phone has been signed out.
+function fieldWatchAccount(needAdmin, onGone){
+  const run = ()=> fieldCheckAccount(needAdmin, onGone);
+  run();
+  if(!fieldWatchAccount.started){
+    fieldWatchAccount.started = true;
+    window.addEventListener('online', run);
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) run(); });
+  }
+}
 
 
 // How close storage is to full, so it can be shown before it becomes a problem
@@ -7828,6 +9175,7 @@ async function finalizeVisitSend(){
   }
 
   currentVisitCustomerId = null;
+  try{ if(typeof syncApplyHeldSettings === 'function') syncApplyHeldSettings(); }catch(e){}
   currentVisibleSection = null;
   currentVisitStep = 1;
   visitStepBySection = {};
@@ -8583,11 +9931,9 @@ document.getElementById('btnDeleteReport').addEventListener('click', async ()=>{
 
 let currentUser = null;
 
+// Whoever is signed in on this phone, from the server sign-in (see Signing in)
 function loadSession(){
-  const saved = lsGet('session');
-  if(!saved) return null;
-  const techs = lsGet('technicians') || [];
-  return techs.find(t => t.id === saved.techId) || null;
+  return fieldCurrentUser();
 }
 
 
@@ -8604,36 +9950,37 @@ function attachLoginHandlers(afterLogin){
   const btn = document.getElementById('btnLogin');
   const pass = document.getElementById('loginPassword');
 
-  function attempt(){
-    const u = document.getElementById('loginUsername').value.trim().toLowerCase();
-    const p = pass.value;
-    const err = document.getElementById('loginError');
-    const techs = lsGet('technicians') || [];
-    if(techs.length === 0){
-      err.textContent = 'No accounts set up yet — add technicians on the website first.';
-      err.style.display = 'block';
-      return;
-    }
-    const match = techs.find(t => (t.username || '').toLowerCase() === u && t.password === p);
-    if(!match){
-      err.textContent = "That username and password don't match.";
-      err.style.display = 'block';
-      return;
-    }
-    err.style.display = 'none';
-    lsSet('session', {techId: match.id});
+  let busy = false;
+  async function attempt(){
+    if(busy) return;
+    busy = true;
+    if(btn) btn.disabled = true;
+    const r = await fieldSignIn(document.getElementById('loginUsername').value, pass.value, false);
+    busy = false;
+    if(btn) btn.disabled = false;
+    if(!r.ok){ fieldShowError(r.message); return; }
+    fieldShowError('');
     pass.value = '';
-    afterLogin(match);
+    afterLogin(fieldCurrentUser());
   }
 
   if(btn) btn.addEventListener('click', attempt);
   if(pass) pass.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') attempt(); });
 }
 
-function logout(){
-  lsSet('session', null);
+function logout(message){
+  fieldSignOut();
   currentUser = null;
   document.getElementById('loginUsername').value = '';
+  document.getElementById('loginPassword').value = '';
+  fieldRenderLogin();
+  fieldShowError(typeof message === 'string' ? message : '');
+  showLogin();
+}
+
+// Switching company signs out whoever was in, back to the sign-in screen
+function fieldOnSignedOut(){
+  currentUser = null;
   document.getElementById('loginPassword').value = '';
   showLogin();
 }
@@ -8656,15 +10003,19 @@ async function init(){
     renderHomeList();
   }
 
-  attachLoginHandlers(enter);
+  const watch = ()=> fieldWatchAccount(false, reason => logout(fieldGoneMessage(reason)));
+  attachLoginHandlers(user => { enter(user); watch(); startFieldSync(); });
+  fieldRenderLogin();
 
   if(session){
-    const techs = lsGet('technicians') || [];
-    enter(session || techs.find(t => !t.isAdmin) || techs[0] || null);
+    enter(session);
+    watch();
+    startFieldSync();
   } else {
     showLogin();
     renderHomeList();
   }
+  fieldHandleSetupLink();
 }
 init();
 
