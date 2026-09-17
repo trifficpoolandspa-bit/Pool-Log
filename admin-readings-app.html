@@ -3060,6 +3060,9 @@ function loadFieldSyncState(){
     pulledOnce: base.pulledOnce === true,
     backupAt: base.backupAt || null,
     lastSyncedAt: base.lastSyncedAt || null,
+    lastRefusedAt: base.lastRefusedAt || null,
+    lastRefusedName: base.lastRefusedName || null,
+    lastRefusedWhy: base.lastRefusedWhy || null,
     customers: base.customers || {cursor: null, known: {}, seen: {}, edits: {}},
     records: base.records || {cursor: null, known: {}, seen: {}},
     work: base.work || {known: {}, seen: {}, edits: {}, refused: {}},
@@ -3375,9 +3378,36 @@ async function syncPushCustomers(state){
     if(res.offline || res.revoked || res.status === 0) return {ok: false, offline: !!res.offline, revoked: !!res.revoked, pushed};
     if(!res.ok || !res.body || !res.body.result){
       // The server refused this one — a customer no longer theirs, for
-      // instance. Leave it alone rather than trying forever.
+      // instance. The office's version wins: the change is dropped and this
+      // phone forgets what it thought it knew, so the next pull brings the
+      // office's copy down whole. Keeping it would leave this phone quietly
+      // showing something the office has already changed.
       refused++;
       delete c.edits[id];
+      // Take the office's copy now, whole, so this phone stops showing
+      // something the office has already decided otherwise
+      const theirs = await fieldAuthed('/rest/v1/customers?select=id,data,deleted,updated_at&id=eq.'
+        + encodeURIComponent(id));
+      if(theirs.ok && Array.isArray(theirs.body) && theirs.body.length){
+        const row = theirs.body[0];
+        const cur = lsGet('customers') || [];
+        const at = cur.findIndex(x => String(x.id) === id);
+        if(row.deleted){
+          if(at !== -1) cur.splice(at, 1);
+          c.seen[id] = SYNC_GONE;
+        } else {
+          if(at === -1) cur.push(row.data); else cur[at] = row.data;
+          c.seen[id] = syncFieldHashes(row.data);
+        }
+        c.known[id] = {u: row.updated_at, d: !!row.deleted, f: syncFieldHashes(row.data)};
+        if(lsSet('customers', cur)){
+          try{ customers = cur; }catch(e){}
+          try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+        }
+      }
+      state.lastRefusedAt = new Date().toISOString();
+      state.lastRefusedName = (rec && rec.name) || id;
+      state.lastRefusedWhy = (res.body && (res.body.message || res.body.msg)) || 'the office refused it';
       saveFieldSyncState(state);
       continue;
     }
@@ -3694,9 +3724,13 @@ function fieldSyncSummary(){
   }
   if(!when) return pending ? pending + (pending === 1 ? ' change' : ' changes') + ' to send.'
     : 'Waiting for the first sync\u2026';
-  return pending
+  const refused = state.lastRefusedAt
+    ? ' The office did not accept a change to ' + (state.lastRefusedName || 'a customer')
+      + ' (' + (state.lastRefusedWhy || 'refused') + '), so its version is being used.'
+    : '';
+  return (pending
     ? 'Last synced ' + when + ' — ' + pending + (pending === 1 ? ' change' : ' changes') + ' still to send.'
-    : 'Up to date with the office. Last synced ' + when + '.';
+    : 'Up to date with the office. Last synced ' + when + '.') + refused;
 }
 
 function fieldRenderSyncCard(){
