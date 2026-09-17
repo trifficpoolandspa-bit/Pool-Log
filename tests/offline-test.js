@@ -107,6 +107,7 @@ function boot(file){
   // Customer sync and company records, against real Postgres
   await serverCustomerSync();
   await serverCompanyRecords();
+  await websiteCompanyRecords();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
@@ -206,6 +207,22 @@ async function serverCustomerSync(){
           ${where.length ? 'where ' + where.join(' and ') : ''}
           order by updated_at asc, id asc limit ${limit} offset ${offset}) t`, params);
         return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/company_records'){
+        const since = u.searchParams.get('updated_at');
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select kind, id, data, deleted, updated_at from public.company_records
+          ${since ? 'where updated_at >= $1' : ''} order by updated_at, kind, id) t`,
+          since ? [since.replace(/^gte\./, '')] : []);
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/rpc/push_record_fields'){
+        const b = JSON.parse(o.body);
+        try{
+          const r = await asUser(uid, 'select public.push_record_fields($1, $2, $3::jsonb, $4::timestamptz) j',
+            [b.p_kind, b.p_id, JSON.stringify(b.p_changes), b.p_base]);
+          return [200, r.rows[0].j];
+        }catch(e){ return [400, {message: e.message}]; }
       }
       if(u.pathname === '/rest/v1/rpc/push_customer_fields'){
         srv.rpcCount++;
@@ -1015,4 +1032,214 @@ async function serverCompanyRecords(){
     }catch(e){ check('records suite', false, e.stack); }
     await pool.end();
   })();
+}
+
+
+// ======== the website sending and receiving company records ========
+async function websiteCompanyRecords(){
+  const FDBFactory = require('fake-indexeddb/lib/FDBFactory');
+  const { JSDOM } = require('jsdom');
+  const { Pool } = require('pg');
+  const pool = new Pool({host: '127.0.0.1', user: 'postgres', password: 'pw', database: 'pl', max: 3});
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const CO = 'aaaaaaaa-0000-0000-0000-000000000001', OTHER_CO = 'bbbbbbbb-0000-0000-0000-000000000002';
+  const OWNER = '11111111-1111-1111-1111-111111111111', OUTSIDER = '22222222-2222-2222-2222-222222222222';
+
+  async function asUser(uid, sql, params){
+    const c = await pool.connect();
+    try{
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query("select set_config('request.uid', $1, true)", [uid]);
+      const r = await c.query(sql, params);
+      await c.query('commit');
+      return r;
+    }catch(e){ await c.query('rollback').catch(()=>{}); throw e; }
+    finally{ c.release(); }
+  }
+
+  const RPC = {
+    my_membership: [],
+    push_customer_fields: [['p_id','text'], ['p_changes','jsonb'], ['p_base','timestamptz']],
+    push_record_fields: [['p_kind','text'], ['p_id','text'], ['p_changes','jsonb'], ['p_base','timestamptz']]
+  };
+
+  function makeServer(){
+    const srv = {offline: false, calls: []};
+    srv.handle = async (uid, url, opts) => {
+      const o = opts || {};
+      const u = new URL(url);
+      srv.calls.push((o.method || 'GET') + ' ' + u.pathname);
+      if(srv.offline) throw new TypeError('Failed to fetch');
+      if(u.pathname === '/rest/v1/rpc/my_membership'){
+        const r = await asUser(uid, 'select public.my_membership() j');
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/customers'){
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select id, data, deleted, updated_at from public.customers order by updated_at, id) t`);
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/company_records'){
+        const since = u.searchParams.get('updated_at');
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select kind, id, data, deleted, updated_at from public.company_records
+          ${since ? "where updated_at >= $1" : ''} order by updated_at, kind, id) t`,
+          since ? [since.replace(/^gte\./, '')] : []);
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/members'){
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select technician_id, username, is_admin from public.members where technician_id is not null and removed_at is null) t`);
+        return [200, r.rows[0].j];
+      }
+      const m = u.pathname.match(/^\/rest\/v1\/rpc\/(\w+)$/);
+      if(m && RPC[m[1]]){
+        const args = JSON.parse(o.body || '{}');
+        const sig = RPC[m[1]];
+        const params = sig.map(([k, type]) => type === 'jsonb' ? JSON.stringify(args[k]) : (args[k] === undefined ? null : args[k]));
+        const sql = `select public.${m[1]}(${sig.map(([k, type], i) => `${k} => $${i + 1}::${type}`).join(', ')}) j`;
+        try{
+          const r = await asUser(uid, sql, params);
+          return [200, r.rows[0].j];
+        }catch(e){ return [400, {message: e.message}]; }
+      }
+      return [404, {message: 'not found'}];
+    };
+    return srv;
+  }
+
+  async function boot(srv, seed){
+    const dom = new JSDOM(fs.readFileSync('customer-intake.html', 'utf8'), {
+      runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://example.com/',
+      beforeParse(w){
+        w.matchMedia = () => ({matches:false, addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){}});
+        w.scrollTo = () => {}; w.scrollBy = () => {}; w.alert = () => {};
+        w.HTMLCanvasElement.prototype.getContext = () => ({drawImage(){}, fillRect(){}});
+        w.Element.prototype.scrollIntoView = function(){};
+        w.console.warn = () => {}; w.console.error = (...a) => { (w.__errs = w.__errs || []).push(a.map(String).join(' ')); };
+        w.indexedDB = new FDBFactory(); w.IDBKeyRange = global.IDBKeyRange;
+        w.fetch = async (url, o2) => {
+          await sleep(1);
+          const [status, body] = await srv.handle(OWNER, url, o2);
+          return {ok: status >= 200 && status < 300, status, json: async () => body};
+        };
+        w.localStorage.setItem('poollog:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
+        Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('poollog:' + k, JSON.stringify(v)));
+      }
+    });
+    const w = dom.window;
+    await sleep(700);
+    for(let i = 0; i < 400 && w.eval('syncRunning'); i++) await sleep(10);
+    return {w, d: w.document, close(){ w.close(); }};
+  }
+  const idle = async w => { for(let i = 0; i < 600; i++){ await sleep(10); if(!w.eval('syncRunning')){ await sleep(20); if(!w.eval('syncRunning')) return; } } };
+  const syncNow = async w => { await w.eval('syncCustomers()'); await idle(w); };
+  const record = async (kind, id) => (await pool.query('select data, deleted from public.company_records where company_id = $1 and kind = $2 and id = $3', [CO, kind, id])).rows[0];
+  const local = (w, key) => JSON.parse(w.localStorage.getItem('poollog:' + key) || 'null');
+
+  console.log('\n=== the website puts company records on the server ===');
+  try{
+    await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions');
+    await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
+    await pool.query(`insert into auth.users(id, email) values ($1,'john@triffic.test'),($2,'mike@affinity.test')`, [OWNER, OUTSIDER]);
+    await pool.query(`insert into public.companies(id, name, code) values ($1,'Triffic Pool and Spa','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
+    await pool.query(`insert into public.members(user_id, company_id, role, name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
+
+    const srv = makeServer();
+    const site = await boot(srv, {
+      customers: [],
+      technicians: [{id: 't1', name: 'Alex', phone: '(623) 555-0100', canPhotoEquipment: true,
+                     requireSkipProof: true, requireGatePhoto: false, username: 'alex', password: 'secret123'}],
+      companyName: 'Triffic Pool and Spa',
+      accountPhone: '(623) 555-0142',
+      licenseNumber: 'ROC-284419',
+      chemConfig: {pool: {chemicals: [{key: 'chlorine'}], dosages: []}},
+      settings: {showBeforePhotos: true, showAfterPhotos: true, showGatePhoto: false,
+                 voiceModeEnabled: true, storePhotos: false, micSide: 'left'}
+    });
+    const w = site.w;
+
+    const tech = await record('technician', 't1');
+    check('  a technician profile reaches the server', !!tech && tech.data.name === 'Alex', JSON.stringify(tech));
+    check('  with the settings from their page',
+          tech && tech.data.canPhotoEquipment === true && tech.data.requireSkipProof === true && tech.data.requireGatePhoto === false);
+    check('  but never their password', tech && !('password' in tech.data), JSON.stringify(tech && tech.data));
+    const details = await record('company', 'details');
+    check('  company details reach the server',
+          details && details.data.companyName === 'Triffic Pool and Spa' && details.data.licenseNumber === 'ROC-284419', JSON.stringify(details));
+    const setup = await record('setup', 'chemConfig');
+    check('  the chemical setup reaches the server', setup && setup.data.value.pool.chemicals[0].key === 'chlorine', JSON.stringify(setup));
+    const setting = await record('setting', 'company');
+    check('  company-wide settings reach the server',
+          setting && setting.data.showBeforePhotos === true && setting.data.showGatePhoto === false, JSON.stringify(setting));
+    check('  settings about the phone itself do not',
+          setting && !('voiceModeEnabled' in setting.data) && !('storePhotos' in setting.data) && !('micSide' in setting.data),
+          JSON.stringify(setting && setting.data));
+
+    console.log('\n=== changes on the website go up on their own ===');
+    w.eval("lsSet('companyName', 'Triffic Pools LLC')");
+    await sleep(2300); await idle(w);
+    check('  a changed company name goes up without pressing anything', (await record('company', 'details')).data.companyName === 'Triffic Pools LLC');
+    w.eval("technicians[0].requireGatePhoto = true; saveTechnicians();");
+    await sleep(2300); await idle(w);
+    check('  a changed technician setting goes up', (await record('technician', 't1')).data.requireGatePhoto === true);
+    w.eval("technicians.push({id:'t2', name:'Sam'}); saveTechnicians();");
+    await sleep(2300); await idle(w);
+    check('  a new technician goes up', !!(await record('technician', 't2')));
+    w.eval("technicians = technicians.filter(t => t.id !== 't2'); saveTechnicians();");
+    await sleep(2300); await idle(w);
+    const gone = await record('technician', 't2');
+    check('  a deleted technician is only marked deleted, details kept', gone && gone.deleted === true && gone.data.name === 'Sam', JSON.stringify(gone));
+
+    console.log('\n=== changes made elsewhere come down ===');
+    const t = new Date().toISOString();
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['setting', 'company', JSON.stringify({showGatePhoto: {t, v: true}})]);
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['technician', 't1', JSON.stringify({phone: {t, v: '(623) 555-0999'}})]);
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['company', 'details', JSON.stringify({accountEmail: {t, v: 'service@triffic.test'}})]);
+    await syncNow(w);
+    check('  a setting changed elsewhere arrives', local(w, 'settings').showGatePhoto === true, JSON.stringify(local(w, 'settings')));
+    check('  and the app is using it', w.eval('appSettings.showGatePhoto') === true);
+    check('  this phone\'s own settings are untouched',
+          local(w, 'settings').voiceModeEnabled === true && local(w, 'settings').micSide === 'left', JSON.stringify(local(w, 'settings')));
+    check('  a technician change arrives', local(w, 'technicians').find(x => x.id === 't1').phone === '(623) 555-0999');
+    check('  without losing the password kept here', local(w, 'technicians').find(x => x.id === 't1').password === 'secret123');
+    check('  a company detail arrives', local(w, 'accountEmail') === 'service@triffic.test');
+    const before = srv.calls.length;
+    await syncNow(w);
+    check('  a second sync sends nothing new', srv.calls.filter(c => c.indexOf('push_record_fields') !== -1).length === 0
+          || srv.calls.slice(before).every(c => c.indexOf('push_record_fields') === -1), srv.calls.slice(before).join(', '));
+
+    console.log('\n=== two people, different fields ===');
+    srv.offline = true;
+    w.eval("lsSet('licenseNumber', 'ROC-999999')");
+    await sleep(2300); await idle(w);
+    const t2 = new Date().toISOString();
+    await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+      ['company', 'details', JSON.stringify({accountPhone: {t: t2, v: '(623) 555-1111'}})]);
+    srv.offline = false;
+    await syncNow(w);
+    const merged = await record('company', 'details');
+    check('  the change made here goes up', merged.data.licenseNumber === 'ROC-999999', JSON.stringify(merged.data));
+    check('  and the one made elsewhere survives', merged.data.accountPhone === '(623) 555-1111', JSON.stringify(merged.data));
+    check('  both are on this device now',
+          local(w, 'licenseNumber') === 'ROC-999999' && local(w, 'accountPhone') === '(623) 555-1111');
+
+    console.log('\n=== offline ===');
+    srv.offline = true;
+    w.eval("lsSet('companyName', 'Saved While Offline')");
+    await sleep(2300); await idle(w);
+    check('  a change made offline stays on the website', local(w, 'companyName') === 'Saved While Offline');
+    check('  and has not reached the server', (await record('company', 'details')).data.companyName === 'Triffic Pools LLC');
+    srv.offline = false;
+    await syncNow(w);
+    check('  it goes up when the connection is back', (await record('company', 'details')).data.companyName === 'Saved While Offline');
+    site.close();
+  }catch(e){
+    check('  website company records', false, e.stack);
+  }
+  await pool.end();
 }
