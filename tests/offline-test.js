@@ -109,6 +109,7 @@ function boot(file){
   await serverCompanyRecords();
   await websiteCompanyRecords();
   await serverVisits();
+  await serverPhotos();
 
   console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
@@ -1489,6 +1490,91 @@ async function serverVisits(){
     check('  after the 7 days, no more uploads', !r.ok, r.error);
   }catch(e){
     check('  visits', false, e.stack);
+  }
+  await pool.end();
+}
+
+
+// ======== photos on the server (snippet 10) ========
+async function serverPhotos(){
+  const { Pool } = require('pg');
+  const pool = new Pool({host: '127.0.0.1', user: 'postgres', password: 'pw', database: 'pl', max: 3});
+  const CO = 'aaaaaaaa-0000-0000-0000-000000000001', OTHER_CO = 'bbbbbbbb-0000-0000-0000-000000000002';
+  const OWNER = '11111111-1111-1111-1111-111111111111', OUTSIDER = '22222222-2222-2222-2222-222222222222';
+  const ALEX = '33333333-3333-3333-3333-333333333333', SAM = '44444444-4444-4444-4444-444444444444';
+  async function as(uid, sql, params){
+    const c = await pool.connect();
+    try{
+      await c.query('begin');
+      await c.query('set local role authenticated');
+      await c.query("select set_config('request.uid', $1, true)", [uid]);
+      const r = await c.query(sql, params);
+      await c.query('commit');
+      return {ok: true, rows: r.rows};
+    }catch(e){ await c.query('rollback').catch(()=>{}); return {ok: false, error: e.message}; }
+    finally{ c.release(); }
+  }
+  const val = r => r.ok && r.rows[0] ? Object.values(r.rows[0])[0] : undefined;
+  const put = (uid, id, customer, kind, path, extra) => as(uid,
+    'select public.push_photo($1,$2,$3,$4,$5,$6,$7,$8,now(),current_date) j',
+    [id, customer, kind, (extra||{}).body || null, (extra||{}).visit || null, (extra||{}).equip || null, path, 50000]);
+  const seen = async uid => Number(val(await as(uid, 'select count(*)::int n from public.photos')));
+
+  console.log('\n=== photos belong to a company, a customer and whoever took them ===');
+  try{
+    await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions, public.visits, public.photos');
+    await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
+    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.poollog.invalid'),($4,'tech-s@accounts.poollog.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
+    await pool.query(`insert into public.companies(id,name,code) values ($1,'Triffic','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
+    await pool.query(`insert into public.members(user_id,company_id,role,name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
+    await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [ALEX, 'alex', 't_alex', 'Alex', false]);
+    await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [SAM, 'sam', 't_sam', 'Sam', true]);
+    const t = new Date().toISOString();
+    for(const [id, tech] of [['c1', 't_alex'], ['c2', 't_sam']]){
+      await as(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        [id, JSON.stringify({id: {t, v: id}, technicianId: {t, v: tech}})]);
+    }
+    const path = (customer, id) => CO + '/' + customer + '/' + id;
+
+    let r = await put(ALEX, 'p1', 'c1', 'after', path('c1', 'p1'), {body: 'pool', visit: 'read_1'});
+    check('  a technician files a photo for their own customer', r.ok && val(r).result === 'saved', r.error);
+    r = await put(ALEX, 'p1', 'c1', 'after', path('c1', 'p1'));
+    check('  sending the same one again changes nothing', r.ok && val(r).result === 'already there', r.error);
+    r = await put(ALEX, 'p2', 'c1', 'equipment', path('c1', 'p2'), {equip: 'e1'});
+    check('  equipment photos are filed too', r.ok && val(r).result === 'saved', r.error);
+    r = await put(ALEX, 'p3', 'c1', 'selfie', path('c1', 'p3'));
+    check('  an unknown kind of photo is refused', !r.ok && /not a kind of photo/.test(r.error), r.error);
+    r = await put(ALEX, 'p4', 'c1', 'after', OTHER_CO + '/c1/p4');
+    check('  a photo cannot be filed under another company', !r.ok && /own company and customer/.test(r.error), r.error);
+    r = await put(ALEX, 'p5', 'c1', 'after', path('c9', 'p5'));
+    check('  nor under another customer', !r.ok && /own company and customer/.test(r.error), r.error);
+    r = await put(ALEX, 'p6', 'nope', 'after', path('nope', 'p6'));
+    check('  nor for a customer the office does not have', !r.ok && /not on the server/.test(r.error), r.error);
+
+    check('  the technician sees their own customer\'s photos', await seen(ALEX) === 2, await seen(ALEX));
+    check('  an admin sees them', await seen(SAM) === 2);
+    check('  another company sees none', await seen(OUTSIDER) === 0);
+    r = await as(ALEX, "select public.remove_photo('p1') j");
+    check('  a technician cannot remove one', !r.ok && /Only the office/.test(r.error), r.error);
+    r = await as(ALEX, "update public.photos set deleted = true");
+    check('  nor write to the table directly', !r.ok && /permission denied/.test(r.error), r.error);
+    r = await as(OWNER, "select public.remove_photo('p1') j");
+    check('  the office removes one, which only marks it', r.ok && val(r).result === 'removed'
+          && val(await as(OWNER, "select deleted from public.photos where id='p1'")) === true, r.error);
+
+    r = await as(ALEX, "select public.photo_path('c1','p9') p");
+    check('  the server decides where a photo goes', val(r) === path('c1', 'p9'), val(r));
+
+    await pool.query(`update public.photos set taken_at = now() - interval '4 years' where id = 'p2'`);
+    r = await as(OWNER, 'select count(*)::int n from public.photos_past_keeping()');
+    check('  photos past three years are listed for clean-up', val(r) === 1, JSON.stringify(r));
+
+    await as(OWNER, 'select public.remove_technician_account($1)', ['t_alex']);
+    r = await put(ALEX, 'p7', 'c1', 'after', path('c1', 'p7'));
+    check('  a removed technician can still finish uploading', r.ok && val(r).result === 'saved', r.error);
+    check('  while seeing nothing', await seen(ALEX) === 0);
+  }catch(e){
+    check('  photos', false, e.stack);
   }
   await pool.end();
 }
