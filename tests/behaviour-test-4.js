@@ -890,6 +890,23 @@ console.log('\n=== No development shortcuts remain ===');
 }
 
 
+console.log('\n=== Forgotten password on the office site ===');
+{
+  const src = fs.readFileSync('customer-intake.html', 'utf8');
+  check('there is a Forgot your password button', src.indexOf('id="btnForgotPassword"') !== -1);
+  check('and a screen for setting a new one', src.indexOf('id="resetScreen"') !== -1);
+  check('it asks the server for a reset link', src.indexOf("/auth/v1/recover") !== -1);
+  check('the link comes back to this same page', src.indexOf('redirect_to: here') !== -1);
+  check('the same answer either way, so it gives nothing away',
+        src.indexOf('If that address has an account') !== -1);
+  check('the new password must be typed twice', src.indexOf('id="resetPassword2"') !== -1);
+  check('and must be at least 8 characters', src.indexOf('one.length < 8') !== -1);
+  check('the link is cleared from the address bar afterwards',
+        src.indexOf("history.replaceState(null, '', location.origin + location.pathname)") !== -1);
+  check('the field apps do not offer it, since their sign-ins have no real address',
+        fs.readFileSync('technician-app.html', 'utf8').indexOf('btnForgotPassword') === -1);
+}
+
 console.log('\n=== The Settings tab has no heading bar ===');
 {
   // A card that only repeated the tab's own name, taking space at the top
