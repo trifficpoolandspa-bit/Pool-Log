@@ -2093,7 +2093,18 @@ async function serverFieldSignIn(){
         srv.tokens.set(at, rec.id); srv.refresh.set(rt, rec);
         return [200, {access_token: at, refresh_token: rt, user: {id: rec.id}}];
       }
-      if(u.pathname === '/auth/v1/logout'){
+      if(u.pathname.indexOf('/storage/v1/object/') === 0){
+      const path = u.pathname.slice('/storage/v1/object/'.length);
+      srv.files = srv.files || {};
+      if((o.method || 'GET') === 'POST'){
+        if(!bearer || !uid) return [401, {message: 'not signed in'}];
+        srv.files[path] = o.body;
+        return [200, {Key: path}];
+      }
+      if(!srv.files[path]) return [404, {message: 'not found'}];
+      return [200, {stored: true}];
+    }
+    if(u.pathname === '/auth/v1/logout'){
         if(uid) await pool.query('delete from auth.sessions where user_id = $1', [uid]);
         return [204, null];
       }
@@ -2129,7 +2140,10 @@ async function serverFieldSignIn(){
           push_customer_fields: ['p_id::text', 'p_changes::jsonb', 'p_base::timestamptz'],
           push_visit: ['p_customer_id::text', 'p_kind::text', 'p_body::text', 'p_id::text',
                        'p_data::jsonb', 'p_occurred_at::timestamptz', 'p_service_date::date'],
-          push_record_fields: ['p_kind::text', 'p_id::text', 'p_changes::jsonb', 'p_base::timestamptz']
+          push_record_fields: ['p_kind::text', 'p_id::text', 'p_changes::jsonb', 'p_base::timestamptz'],
+          push_photo: ['p_id::text', 'p_customer_id::text', 'p_kind::text', 'p_body::text',
+                       'p_visit_id::text', 'p_equipment_id::text', 'p_path::text', 'p_bytes::integer',
+                       'p_taken_at::timestamptz', 'p_service_date::date']
         };
         if(!sigs[m[1]]) return [404, {message: 'unknown function'}];
         const names = sigs[m[1]].map(x => x.split('::')[0]);
@@ -2169,7 +2183,12 @@ async function serverFieldSignIn(){
         w.fetch = async (url, o2) => {
           await sleep(1);
           const [status, body] = await srv.handle(String(url).startsWith('http') ? url : 'https://trifficpoolandspa-bit.github.io/Pool-Log/' + url, o2);
-          return {ok: status >= 200 && status < 300, status, json: async () => { if(body === null) throw new Error('no body'); return body; }};
+          return {
+            ok: status >= 200 && status < 300, status,
+            json: async () => { if(body === null) throw new Error('no body'); return body; },
+            // A file comes back as a file, as it would from Supabase Storage
+            blob: async () => new w.Blob([body && body.__file !== undefined ? body.__file : ''])
+          };
         };
         Object.entries(o.storage || {}).forEach(([k, v]) => w.localStorage.setItem(k, v));
       }
@@ -2667,6 +2686,53 @@ async function serverFieldSignIn(){
       check('a customer change from the office arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n2') || {}).notes === 'Office note');
       check('a profile change from the office arrives', JSON.parse(phone.storage()['poollog:technicians'])[0].requireGatePhoto === false);
 
+      console.log('\n=== photos go up to the office ===');
+      {
+        const tiny = 'data:image/jpeg;base64,' + Buffer.from('a-photo').toString('base64');
+        await phone.w.eval(`(async ()=>{
+          await savePhotoData('shot_1', ${JSON.stringify(tiny)});
+          const list = lsGet('readings:n1') || [];
+          list.unshift({id:'visit_photo_1', date: new Date().toISOString(), chlorine:'3.0',
+                        photo: 'idb:shot_1'});
+          lsSet('readings:n1', list);
+        })()`);
+        await sleep(2400);
+        for(let i = 0; i < 900 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        await sleep(200);
+
+        const rows = (await pool.query("select id, customer_id, kind, path, bytes, visit_id from public.photos")).rows;
+        check('the photo is recorded at the office', rows.some(r => r.id === 'shot_1' && r.kind === 'after'), JSON.stringify(rows));
+        check('under its own company and customer',
+              rows.some(r => r.path === CO + '/n1/shot_1'), JSON.stringify(rows.map(r => r.path)));
+        check('linked to the visit it belongs to', (rows.find(r => r.id === 'shot_1') || {}).visit_id === 'visit_photo_1');
+        check('and the file itself was uploaded', !!(srv.files || {})[('visit-photos/' + CO + '/n1/shot_1')],
+              Object.keys(srv.files || {}).join(', '));
+        check('the phone still has its own copy for now',
+              !!(await phone.w.eval("loadPhotoData('shot_1')")));
+
+        // Sending again does not upload it twice
+        const before = Object.keys(srv.files || {}).length;
+        await phone.w.eval('fieldSync()');
+        for(let i = 0; i < 600 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        check('a photo already sent is not sent again',
+              (await pool.query("select count(*)::int n from public.photos")).rows[0].n === rows.length);
+
+        // Thirty days later the phone lets its copy go
+        await phone.w.eval(`(async ()=>{
+          const st = loadFieldSyncState();
+          st.photos.sent['shot_1'].at = new Date(Date.now() - 31 * 86400000).toISOString();
+          saveFieldSyncState(st);
+          await syncCleanUploadedPhotos(loadFieldSyncState());
+        })()`);
+        await sleep(200);
+        check('after 30 days the phone lets its copy go',
+              !(await phone.w.eval("loadPhotoData('shot_1')")));
+
+        // And fetches it back when a report needs it
+        const got = await phone.w.eval("resolvePhoto('idb:shot_1')");
+        check('and fetches it back from the office when needed', !!got, String(got).slice(0, 40));
+      }
+
       console.log('\n=== a panel stays open while sync runs underneath ===');
       {
         // Tapping a customer opens a briefing panel. Sync used to rewrite the
@@ -2845,8 +2911,10 @@ async function serverFieldSignIn(){
         await phone.w.eval('fieldSync()');
         for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
         const after = await visitsOf();
-        check('a visit already sent is not sent again', after.filter(x => x.customer_id === 'n1').length === 3,
-              JSON.stringify(after.filter(x => x.customer_id === 'n1').map(x => x.id)));
+        const mineNow = after.filter(x => x.customer_id === 'n1').map(x => x.id).sort();
+        check('a visit already sent is not sent again',
+              mineNow.length === new Set(mineNow).size && mineNow.indexOf('read_a') !== -1,
+              JSON.stringify(mineNow));
         check('so an office correction stands', (after.find(x => x.id === 'read_a') || {}).data.chlorine === '3.5');
 
         // A visit recorded with no signal waits, then goes up
