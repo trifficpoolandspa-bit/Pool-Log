@@ -700,39 +700,6 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-ghost" id="btnCancelTech">Cancel</button>
       </div>
     </div>
-    <div class="card">
-      <div class="section-head">
-        <h2>All technicians</h2>
-        <span class="section-count" id="techCount"></span>
-      </div>
-      <div id="technicianList"></div>
-    </div>
-  </div>
-
-  <div class="view" id="view-tech-detail">
-    <div class="card">
-      <button class="btn btn-ghost" id="backToTechs" type="button" style="width:auto;">← Back to Technicians</button>
-      <div class="section-head" style="margin-top:12px;">
-        <div>
-          <h2 id="techDetailName">Technician</h2>
-          <p id="techDetailContact" style="font-size:12.5px;color:var(--muted);margin:3px 0 0;"></p>
-        </div>
-        <span class="section-count" id="techDetailCount"></span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="seg-control" id="techTabControl">
-        <button class="history-type-btn active" data-techtab="profile" type="button">Profile</button>
-        <button class="history-type-btn" data-techtab="customers" type="button">Customers</button>
-      </div>
-    </div>
-
-    <div class="card" id="techProfileCard">
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Tap any field to edit it.</p>
-      <div id="techProfileMeta"></div>
-    </div>
-
     <div class="card" id="techCustomersCard" style="display:none;">
       <div class="section-head">
         <h2>Assigned customers</h2>
@@ -771,6 +738,40 @@ input::placeholder{color:#A9BCB9;}
       <div id="techAssignList"></div>
     </div>
     </div>
+
+    <div class="card">
+      <div class="section-head">
+        <h2>All technicians</h2>
+        <span class="section-count" id="techCount"></span>
+      </div>
+      <div id="technicianList"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-tech-detail">
+    <div class="card">
+      <button class="btn btn-ghost" id="backToTechs" type="button" style="width:auto;">← Back to Technicians</button>
+      <div class="section-head" style="margin-top:12px;">
+        <div>
+          <h2 id="techDetailName">Technician</h2>
+          <p id="techDetailContact" style="font-size:12.5px;color:var(--muted);margin:3px 0 0;"></p>
+        </div>
+        <span class="section-count" id="techDetailCount"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="seg-control" id="techTabControl">
+        <button class="history-type-btn active" data-techtab="profile" type="button">Profile</button>
+        <button class="history-type-btn" data-techtab="customers" type="button">Customers</button>
+      </div>
+    </div>
+
+    <div class="card" id="techProfileCard">
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Tap any field to edit it.</p>
+      <div id="techProfileMeta"></div>
+    </div>
+
   </div>
 
   <div class="view" id="view-chemconfig">
@@ -5893,6 +5894,8 @@ function loadSyncState(companyId){
     records: (s.records && typeof s.records === 'object') ? s.records : {cursor: null, known: {}, seen: {}, edits: {}},
     // Readings and skips recorded in the field
     visits: (s.visits && typeof s.visits === 'object') ? s.visits : {cursor: null},
+    // Photos taken in the field: where each one lives, so it can be shown
+    photoIndex: (s.photoIndex && typeof s.photoIndex === 'object') ? s.photoIndex : {cursor: null, known: {}},
     lastSyncedAt: s.lastSyncedAt || null,
     backupAt: s.backupAt || null
   };
@@ -6424,6 +6427,10 @@ async function syncCustomers(){
     const visits = await syncPullVisits(state, companyId);
     result.visits = visits.applied || 0;
     if(!visits.ok && !visits.offline) result.failed++;
+
+    const fieldPhotos = await syncPullPhotos(state, companyId);
+    result.photos = fieldPhotos.count || 0;
+    if(!fieldPhotos.ok && !fieldPhotos.offline) result.failed++;
 
     const records = await syncRecords(state, companyId);
     result.recordsPulled = records.pulled;
@@ -7016,6 +7023,100 @@ async function syncPullVisits(state, companyId){
   });
   saveSyncState(companyId, state);
   return {ok: true, applied: applied};
+}
+
+// ---- Photos taken in the field ----
+// The files live in the office's own storage. This keeps a note of which photo
+// belongs to which visit, hangs it on the reading so the history shows it, and
+// fetches the image itself only when something actually needs to show it.
+const SYNC_PHOTO_BUCKET = 'visit-photos';
+
+function syncPhotoIndex(state){
+  if(!state.photoIndex || typeof state.photoIndex !== 'object'){
+    state.photoIndex = {cursor: null, known: {}};
+  }
+  return state.photoIndex;
+}
+
+// Hang a photo on the reading or skip it was taken during, so the history and
+// reports show it exactly as they would for one taken here.
+function syncAttachPhoto(row){
+  const key = row.kind === 'gate' || row.body === 'pool' || !row.body
+    ? 'readings:' + row.customer_id
+    : (row.body === 'spa' ? 'spaReadings:' + row.customer_id
+       : 'fountainReadings:' + row.customer_id + ':' + String(row.body).slice('fountain:'.length));
+  const lists = [key, 'skippedVisits:' + row.customer_id];
+  for(const k of lists){
+    const list = lsGet(k) || [];
+    const i = list.findIndex(x => x && String(x.id) === String(row.visit_id));
+    if(i === -1) continue;
+    const field = row.kind === 'before' ? 'beforePhoto'
+      : row.kind === 'gate' ? 'gatePhoto'
+      : row.kind === 'custom' ? null : 'photo';
+    const ref = PHOTO_REF + row.id;
+    if(row.deleted){
+      if(field && list[i][field] === ref) delete list[i][field];
+      if(list[i].customPhotos) Object.keys(list[i].customPhotos).forEach(x=>{
+        if(list[i].customPhotos[x] === ref) delete list[i].customPhotos[x];
+      });
+    } else if(field){
+      if(list[i][field] === ref) return true;     // already there
+      list[i][field] = ref;
+    } else {
+      list[i].customPhotos = list[i].customPhotos || {};
+      if(list[i].customPhotos[row.id] === ref) return true;
+      list[i].customPhotos[row.id] = ref;
+    }
+    return lsSet(k, list);
+  }
+  return true;                                   // its visit is not here (yet)
+}
+
+async function syncPullPhotos(state, companyId){
+  const idx = syncPhotoIndex(state);
+  const since = idx.cursor ? new Date(new Date(idx.cursor).getTime() - SYNC_OVERLAP_MS).toISOString() : null;
+  const rows = [];
+  for(let offset = 0; ; offset += SYNC_PAGE){
+    let path = '/rest/v1/photos?select=id,customer_id,kind,body,visit_id,equipment_id,path,taken_at,deleted,updated_at'
+      + '&order=updated_at.asc,id.asc&limit=' + SYNC_PAGE + '&offset=' + offset;
+    if(since) path += '&updated_at=gte.' + encodeURIComponent(since);
+    const res = await syncCall(path);
+    if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline};
+    rows.push(...res.body);
+    if(res.body.length < SYNC_PAGE) break;
+  }
+  rows.forEach(row=>{
+    idx.known[row.id] = {path: row.path, customerId: row.customer_id, kind: row.kind,
+                         visitId: row.visit_id, equipmentId: row.equipment_id, deleted: !!row.deleted};
+    try{ syncAttachPhoto(row); }catch(e){}
+    if(!idx.cursor || row.updated_at > idx.cursor) idx.cursor = row.updated_at;
+  });
+  saveSyncState(companyId, state);
+  return {ok: true, count: rows.length};
+}
+
+// Fetch the image itself, once, and keep it here so it is instant next time
+async function syncFetchPhoto(id){
+  if(!siteUser || !siteUser.companyId) return null;
+  const state = loadSyncState(siteUser.companyId);
+  const rec = syncPhotoIndex(state).known[id];
+  if(!rec || !rec.path || rec.deleted) return null;
+  const session = sbSession();
+  try{
+    const r = await fetch(SUPABASE_URL + '/storage/v1/object/' + SYNC_PHOTO_BUCKET + '/' + rec.path, {
+      headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + (session && session.access_token)}
+    });
+    if(!r.ok) return null;
+    const blob = await r.blob();
+    const dataUrl = await new Promise(resolve=>{
+      const reader = new FileReader();
+      reader.onload = ()=> resolve(reader.result);
+      reader.onerror = ()=> resolve(null);
+      reader.readAsDataURL(blob);
+    });
+    if(dataUrl){ try{ await savePhotoData(id, dataUrl); }catch(e){} }
+    return dataUrl;
+  }catch(e){ return null; }
 }
 
 // ---------- Deleted customers ----------
@@ -11092,6 +11193,13 @@ function editTechnician(t){
   document.getElementById('techName').value = t.name || '';
   document.getElementById('techPhone').value = t.phone || '';
   document.getElementById('techEmail').value = t.email || '';
+  // Their assigned customers sit under the rest of their details now
+  currentTechDetailId = t.id;
+  techAssignedDayFilter = '';
+  const custCard = document.getElementById('techCustomersCard');
+  if(custCard) custCard.style.display = 'block';
+  try{ renderTechAssignedList(t.id); }catch(e){}
+
   const acct = techAccounts ? techAccounts[t.id] : null;
   document.getElementById('techUsername').value = (acct && acct.username) || t.username || '';
   // Passwords are never shown back. Blank keeps the current one.
@@ -13515,7 +13623,14 @@ function isPhotoRef(v){
 
 async function resolvePhoto(v){
   if(!v) return null;
-  if(isPhotoRef(v)) return await loadPhotoData(v.slice(PHOTO_REF.length));
+  if(isPhotoRef(v)){
+    const id = v.slice(PHOTO_REF.length);
+    const here = await loadPhotoData(id);
+    if(here) return here;
+    // Taken on a phone: the image lives in the office's storage
+    if(typeof syncFetchPhoto === 'function') return await syncFetchPhoto(id);
+    return null;
+  }
   return v;                                  // an older reading, still inline
 }
 
