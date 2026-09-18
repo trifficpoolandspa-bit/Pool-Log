@@ -3061,7 +3061,8 @@ function loadFieldSyncState(){
     customers: base.customers || {cursor: null, known: {}, seen: {}, edits: {}},
     records: base.records || {cursor: null, known: {}, seen: {}},
     work: base.work || {known: {}, seen: {}, edits: {}, refused: {}},
-    visits: base.visits || {sent: {}}
+    visits: base.visits || {sent: {}},
+    photos: base.photos || {sent: {}}
   };
 }
 
@@ -3810,6 +3811,171 @@ async function fieldFinishWipe(){
   return true;
 }
 
+// ---- Photos: up to the office, and back again when needed ----
+// Photos are taken on the phone and kept in its own database. They go up to the
+// office in small batches, because they are far bigger than anything else that
+// syncs. Once the office has one, the phone keeps its copy for 30 days and then
+// lets it go; if a report needs it after that, it is fetched back.
+const SYNC_PHOTO_BUCKET = 'visit-photos';
+const SYNC_PHOTOS_PER_RUN = 6;
+const SYNC_PHOTO_KEEP_DAYS = 30;
+
+function syncPhotoState(state){
+  if(!state.photos || typeof state.photos !== 'object') state.photos = {sent: {}};
+  if(!state.photos.sent) state.photos.sent = {};
+  return state.photos;
+}
+
+// Every photo on this phone, with what it belongs to
+function syncPhotosHere(){
+  const out = [];
+  const add = (ref, info)=>{
+    if(!isPhotoRef(ref)) return;
+    out.push(Object.assign({id: ref.slice(PHOTO_REF.length)}, info));
+  };
+  (lsGet('customers') || []).forEach(c=>{
+    if(!c || !c.id) return;
+    const customerId = String(c.id);
+    (c.equipment || []).forEach(item=>{
+      (item && item.photos || []).forEach(ph=>{
+        if(!ph) return;
+        const ref = ph.ref || (ph.stored && ph.id ? PHOTO_REF + ph.id : null);
+        if(ref) add(ref, {customerId, kind: 'equipment', equipmentId: item.id,
+                          takenAt: ph.takenAt || c.updatedAt || new Date().toISOString()});
+      });
+    });
+    const fromVisit = (r, body)=>{
+      if(!r || !r.id) return;
+      const when = r.date || r.timestamp || new Date().toISOString();
+      add(r.beforePhoto, {customerId, kind: 'before', body, visitId: String(r.id), takenAt: when});
+      add(r.photo, {customerId, kind: 'after', body, visitId: String(r.id), takenAt: when});
+      add(r.afterPhoto, {customerId, kind: 'after', body, visitId: String(r.id), takenAt: when});
+      add(r.gatePhoto, {customerId, kind: 'gate', body, visitId: String(r.id), takenAt: when});
+      Object.keys(r.customPhotos || {}).forEach(k=>{
+        add(r.customPhotos[k], {customerId, kind: 'custom', body, visitId: String(r.id), takenAt: when});
+      });
+    };
+    (lsGet(readingsStorageKey(customerId, 'pool')) || []).forEach(r => fromVisit(r, 'pool'));
+    (lsGet(readingsStorageKey(customerId, 'spa')) || []).forEach(r => fromVisit(r, 'spa'));
+    (c.fountains || []).forEach(f=>{
+      if(!f || !f.id) return;
+      (lsGet(fountainReadingsStorageKey(customerId, f.id)) || []).forEach(r => fromVisit(r, 'fountain:' + f.id));
+    });
+    (lsGet(skippedVisitsStorageKey(customerId)) || []).forEach(sk => fromVisit(sk, 'pool'));
+  });
+  return out;
+}
+
+function syncDataUrlToBlob(dataUrl){
+  const at = String(dataUrl).indexOf(',');
+  const head = String(dataUrl).slice(0, at);
+  const type = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+  const raw = atob(String(dataUrl).slice(at + 1));
+  const bytes = new Uint8Array(raw.length);
+  for(let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return {blob: new Blob([bytes], {type}), type, size: bytes.length};
+}
+
+async function syncPushPhotos(state){
+  const ph = syncPhotoState(state);
+  const company = deviceGet('company');
+  if(!company) return {ok: true, pushed: 0};
+  const waiting = syncPhotosHere().filter(p => !ph.sent[p.id]);
+  let pushed = 0, refused = 0;
+  for(const item of waiting.slice(0, SYNC_PHOTOS_PER_RUN)){
+    const data = await loadPhotoData(item.id);
+    if(!data){ ph.sent[item.id] = {gone: true}; saveFieldSyncState(state); continue; }
+    const path = company.id + '/' + item.customerId + '/' + item.id;
+    let file;
+    try{ file = syncDataUrlToBlob(data); }catch(e){ ph.sent[item.id] = {gone: true}; continue; }
+
+    const s = deviceGet('session');
+    let res;
+    try{
+      const r = await fetch(FIELD_SUPABASE_URL + '/storage/v1/object/' + SYNC_PHOTO_BUCKET + '/' + path, {
+        method: 'POST',
+        headers: {'apikey': FIELD_SUPABASE_KEY,
+                  'Authorization': 'Bearer ' + (s && s.access_token),
+                  'Content-Type': file.type,
+                  'x-upsert': 'true'},
+        body: file.blob
+      });
+      res = {ok: r.ok, status: r.status};
+    }catch(e){
+      return {ok: false, offline: true, pushed: pushed};
+    }
+    if(res.status === 401){
+      // The session needed refreshing; the next run picks this up
+      const again = await fieldRefresh();
+      return {ok: again === true, offline: again === 'offline', pushed: pushed};
+    }
+    if(!res.ok && res.status !== 409) return {ok: false, pushed: pushed};
+
+    const noted = await fieldAuthed('/rest/v1/rpc/push_photo', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_id: item.id, p_customer_id: item.customerId, p_kind: item.kind,
+        p_body: item.body || null, p_visit_id: item.visitId || null,
+        p_equipment_id: item.equipmentId || null, p_path: path,
+        p_bytes: file.size, p_taken_at: item.takenAt,
+        p_service_date: syncVisitServiceDate(item.takenAt)
+      })
+    });
+    if(noted.offline) return {ok: false, offline: true, pushed: pushed};
+    if(noted.status === 400 || noted.status === 403){
+      // The office will not have it — a customer it does not know, say
+      ph.sent[item.id] = {refused: true};
+      refused++;
+      saveFieldSyncState(state);
+      continue;
+    }
+    if(!noted.ok || !noted.body || !noted.body.result) return {ok: false, pushed: pushed};
+    ph.sent[item.id] = {path: path, at: new Date().toISOString()};
+    pushed++;
+    saveFieldSyncState(state);      // one at a time, so a dropped signal resumes
+  }
+  return {ok: true, pushed: pushed, refused: refused, more: waiting.length > SYNC_PHOTOS_PER_RUN};
+}
+
+// After 30 days the phone lets its own copy go. The office has it, and it can
+// be fetched back if a report needs it.
+async function syncCleanUploadedPhotos(state){
+  const ph = syncPhotoState(state);
+  const cutoff = Date.now() - SYNC_PHOTO_KEEP_DAYS * 86400000;
+  let freed = 0;
+  for(const id of Object.keys(ph.sent)){
+    const rec = ph.sent[id];
+    if(!rec || !rec.path || rec.local === false) continue;
+    if(new Date(rec.at).getTime() > cutoff) continue;
+    await deletePhotoData(id);
+    rec.local = false;
+    freed++;
+  }
+  if(freed) saveFieldSyncState(state);
+  return freed;
+}
+
+// Fetch one back from the office, for a report or to look at
+async function syncFetchPhoto(id){
+  const state = loadFieldSyncState();
+  const rec = syncPhotoState(state).sent[id];
+  if(!rec || !rec.path) return null;
+  const s = deviceGet('session');
+  try{
+    const r = await fetch(FIELD_SUPABASE_URL + '/storage/v1/object/' + SYNC_PHOTO_BUCKET + '/' + rec.path, {
+      headers: {'apikey': FIELD_SUPABASE_KEY, 'Authorization': 'Bearer ' + (s && s.access_token)}
+    });
+    if(!r.ok) return null;
+    const blob = await r.blob();
+    return await new Promise((resolve)=>{
+      const reader = new FileReader();
+      reader.onload = ()=> resolve(reader.result);
+      reader.onerror = ()=> resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  }catch(e){ return null; }
+}
+
 async function fieldSync(){
   const company = deviceGet('company');
   const membership = deviceGet('membership');
@@ -3869,6 +4035,14 @@ async function fieldSync(){
     saveFieldSyncState(state);
     if(!visits.ok){ result.reason = visits.offline ? 'offline' : 'push-failed'; return result; }
     if(visits.more) setTimeout(()=> fieldSync(), 1500);   // more to send, a batch at a time
+
+    // Photos, after the visits they belong to
+    const photos = await syncPushPhotos(state);
+    result.photos = photos.pushed || 0;
+    saveFieldSyncState(state);
+    if(!photos.ok){ result.reason = photos.offline ? 'offline' : 'push-failed'; return result; }
+    if(photos.more) setTimeout(()=> fieldSync(), 2500);
+    try{ await syncCleanUploadedPhotos(state); }catch(e){}
 
     state.lastSyncedAt = new Date().toISOString();
     setTimeout(fieldRenderSyncCard, 0);
@@ -4070,7 +4244,20 @@ function isPhotoRef(v){
 
 async function resolvePhoto(v){
   if(!v) return null;
-  if(isPhotoRef(v)) return await loadPhotoData(v.slice(PHOTO_REF.length));
+  if(isPhotoRef(v)){
+    const id = v.slice(PHOTO_REF.length);
+    const here = await loadPhotoData(id);
+    if(here) return here;
+    // Let go after 30 days: fetch it back from the office
+    if(typeof syncFetchPhoto === 'function'){
+      const fromOffice = await syncFetchPhoto(id);
+      if(fromOffice){
+        try{ await savePhotoData(id, fromOffice); }catch(e){}
+        return fromOffice;
+      }
+    }
+    return null;
+  }
   return v;                                  // still held inline
 }
 
