@@ -226,6 +226,14 @@ async function serverCustomerSync(){
           since ? [since.replace(/^gte\./, '')] : []);
         return [200, r.rows[0].j];
       }
+      if(u.pathname === '/rest/v1/photos'){
+        const since = u.searchParams.get('updated_at');
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select id, customer_id, kind, body, visit_id, equipment_id, path, taken_at, deleted, updated_at
+          from public.photos ${since ? 'where updated_at >= $1' : ''} order by updated_at, id) t`,
+          since ? [since.replace(/^gte\./, '')] : []);
+        return [200, r.rows[0].j];
+      }
       if(u.pathname === '/rest/v1/rpc/push_record_fields'){
         const b = JSON.parse(o.body);
         try{
@@ -1155,6 +1163,18 @@ async function websiteCompanyRecords(){
           select customer_id, kind, body, id, data, deleted, updated_at from public.visits order by updated_at, id) t`);
         return [200, r.rows[0].j];
       }
+      if(u.pathname === '/rest/v1/photos'){
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from (
+          select id, customer_id, kind, body, visit_id, equipment_id, path, taken_at, deleted, updated_at
+          from public.photos order by updated_at, id) t`);
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname.indexOf('/storage/v1/object/') === 0){
+        const key = u.pathname.slice('/storage/v1/object/'.length);
+        srv.files = srv.files || {};
+        if(!srv.files[key]) return [404, {message: 'not found'}];
+        return [200, {__file: srv.files[key]}];
+      }
       const m = u.pathname.match(/^\/rest\/v1\/rpc\/(\w+)$/);
       if(m && RPC[m[1]]){
         const args = JSON.parse(o.body || '{}');
@@ -1184,7 +1204,11 @@ async function websiteCompanyRecords(){
         w.fetch = async (url, o2) => {
           await sleep(1);
           const [status, body] = await srv.handle(OWNER, url, o2);
-          return {ok: status >= 200 && status < 300, status, json: async () => body};
+          return {
+            ok: status >= 200 && status < 300, status,
+            json: async () => body,
+            blob: async () => new w.Blob([body && body.__file !== undefined ? body.__file : ''])
+          };
         };
         w.localStorage.setItem('poollog:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
         Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('poollog:' + k, JSON.stringify(v)));
@@ -1318,6 +1342,39 @@ async function websiteCompanyRecords(){
       await sleep(400);
       check('  and it redraws as soon as they are done', w.eval('window.__renderCount') >= 1,
             String(w.eval('window.__renderCount')));
+    }
+
+    console.log('\n=== photos taken in the field show on the website ===');
+    {
+      const t = new Date().toISOString();
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['ph1', JSON.stringify({id: {t, v: 'ph1'}, name: {t, v: 'Photo Pool'}})]);
+      await pool.query(`insert into public.visits (company_id, customer_id, kind, body, id, data, occurred_at, service_date, technician_id)
+        values ($1,'ph1','reading','pool','vis_1','{"chlorine":"3.0","photosOnPhone":true}', now(), current_date, 't_alex')`, [CO]);
+      await pool.query(`insert into public.photos (company_id, id, customer_id, kind, body, visit_id, path, taken_at, service_date, technician_id)
+        values ($1,'shot_a','ph1','after','pool','vis_1',$2, now(), current_date, 't_alex'),
+               ($1,'shot_b','ph1','before','pool','vis_1',$3, now(), current_date, 't_alex')`,
+        [CO, CO + '/ph1/shot_a', CO + '/ph1/shot_b']);
+      srv.files = srv.files || {};
+      srv.files['visit-photos/' + CO + '/ph1/shot_a'] = 'the-after-photo';
+      srv.files['visit-photos/' + CO + '/ph1/shot_b'] = 'the-before-photo';
+      await syncNow(w);
+
+      const reading = (local(w, 'readings:ph1') || []).find(x => x.id === 'vis_1');
+      check('  the visit arrives', !!reading, JSON.stringify(local(w, 'readings:ph1')));
+      check('  with its after photo attached', reading && reading.photo === 'idb:shot_a', JSON.stringify(reading));
+      check('  and its before photo', reading && reading.beforePhoto === 'idb:shot_b');
+      const img = await w.eval("resolvePhoto('idb:shot_a')");
+      check('  the image itself is fetched from the office storage', !!img, String(img).slice(0, 40));
+      const again = await w.eval("resolvePhoto('idb:shot_a')");
+      check('  and kept here, so it is instant next time', !!again);
+
+      // Removing one at the office takes it off the reading
+      await asUser(OWNER, "select public.remove_photo('shot_b')");
+      await syncNow(w);
+      const after = (local(w, 'readings:ph1') || []).find(x => x.id === 'vis_1');
+      check('  a photo removed at the office leaves the reading', after && !after.beforePhoto, JSON.stringify(after));
+      check('  and the other one stays', after && after.photo === 'idb:shot_a');
     }
 
     console.log('\n=== tasks, jobs and day moves on the website ===');
