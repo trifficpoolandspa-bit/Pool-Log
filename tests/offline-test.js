@@ -1169,9 +1169,24 @@ async function websiteCompanyRecords(){
           from public.photos order by updated_at, id) t`);
         return [200, r.rows[0].j];
       }
+      if(u.pathname === '/rest/v1/rpc/photos_past_keeping'){
+        const r = await asUser(uid, `select coalesce(json_agg(t), '[]') j from public.photos_past_keeping() t`);
+        return [200, r.rows[0].j];
+      }
+      if(u.pathname === '/rest/v1/rpc/remove_photo'){
+        const b2 = JSON.parse(o.body || '{}');
+        try{
+          const r = await asUser(uid, 'select public.remove_photo($1) j', [b2.p_id]);
+          return [200, r.rows[0].j];
+        }catch(e){ return [400, {message: e.message}]; }
+      }
       if(u.pathname.indexOf('/storage/v1/object/') === 0){
         const key = u.pathname.slice('/storage/v1/object/'.length);
         srv.files = srv.files || {};
+        if((o.method || 'GET') === 'DELETE'){
+          delete srv.files[key];
+          return [200, {}];
+        }
         if(!srv.files[key]) return [404, {message: 'not found'}];
         return [200, {__file: srv.files[key]}];
       }
@@ -1375,6 +1390,27 @@ async function websiteCompanyRecords(){
       const after = (local(w, 'readings:ph1') || []).find(x => x.id === 'vis_1');
       check('  a photo removed at the office leaves the reading', after && !after.beforePhoto, JSON.stringify(after));
       check('  and the other one stays', after && after.photo === 'idb:shot_a');
+    }
+
+    console.log('\n=== photos past three years are cleared out ===');
+    {
+      await pool.query(`insert into public.photos (company_id, id, customer_id, kind, body, visit_id, path, taken_at, service_date)
+        values ($1,'old_1','ph1','after','pool','vis_1',$2, now() - interval '4 years', current_date - 1400),
+               ($1,'recent_1','ph1','after','pool','vis_1',$3, now(), current_date)`,
+        [CO, CO + '/ph1/old_1', CO + '/ph1/recent_1']);
+      srv.files['visit-photos/' + CO + '/ph1/old_1'] = 'ancient';
+      srv.files['visit-photos/' + CO + '/ph1/recent_1'] = 'fresh';
+      w.eval("lsSet('lastPhotoPurge', null)");
+      await syncNow(w);
+      check('  a photo over three years old is deleted from the office',
+            !srv.files['visit-photos/' + CO + '/ph1/old_1'], Object.keys(srv.files).join(', '));
+      check('  and marked gone, so every device stops expecting it',
+            (await pool.query("select deleted from public.photos where id = 'old_1'")).rows[0].deleted === true);
+      check('  a recent photo is left alone', !!srv.files['visit-photos/' + CO + '/ph1/recent_1']
+            && (await pool.query("select deleted from public.photos where id = 'recent_1'")).rows[0].deleted === false);
+      const filesBefore = Object.keys(srv.files).length;
+      await syncNow(w);
+      check('  and it does not run again the same day', Object.keys(srv.files).length === filesBefore);
     }
 
     console.log('\n=== tasks, jobs and day moves on the website ===');
