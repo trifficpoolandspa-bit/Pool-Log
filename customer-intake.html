@@ -11360,6 +11360,10 @@ document.querySelectorAll('#techTabControl .history-type-btn').forEach(btn=>{
     document.querySelectorAll('#techTabControl .history-type-btn')
       .forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+    if(btn.dataset.techtab === 'customers'){
+      techAssignedDayFilter = '';
+      if(currentTechDetailId) renderTechAssignedList(currentTechDetailId);
+    }
     applyTechTab();
   });
 });
@@ -11391,6 +11395,16 @@ function techSignInEditor(tech, field){
       committed = true;
       const value = field === 'password' ? input.value : input.value.trim();
       if(field === 'password' ? !value : value === (tech.username || '')){ done(); return; }
+      const acct = techAccounts ? techAccounts[tech.id] : null;
+      if(acct){
+        const ask = field === 'password'
+          ? 'Set a new password for ' + escapeSyncText(tech.name)
+            + '? They are signed out of every phone straight away and cannot sign in until you give them the new one.'
+          : 'Change ' + escapeSyncText(tech.name) + "'s username from " + escapeSyncText(acct.username)
+            + ' to ' + escapeSyncText(value) + '? They will not be able to sign in with the old one.';
+        const sure = await confirmDialog(ask, field === 'password' ? 'Set it' : 'Change it');
+        if(!sure){ done(); return; }
+      }
       input.disabled = true;
       const r = await saveTechnicianSignIn({
         techId: tech.id, name: tech.name,
@@ -11566,16 +11580,10 @@ function renderTechAssignedList(techId){
   const assigned = customers
     .filter(c => c.technicianId === techId && c.active !== false)
     .slice()
-    .sort((a,b)=>{
-      // Day order first, with unscheduled customers last
-      const dayIdx = d => {
-        const i = DAYS_OF_WEEK.indexOf(d);
-        return i === -1 ? 99 : i;
-      };
-      const da = dayIdx(a.day), db = dayIdx(b.day);
-      if(da !== db) return da - db;
-      return sortKeyName(a.name).localeCompare(sortKeyName(b.name));
-    });
+    // Alphabetical by name. It used to group by service day first, which made
+    // finding one person in a long list harder; the day filter above still
+    // narrows it to one day when that is what is wanted.
+    .sort((a,b)=> sortKeyName(a.name).localeCompare(sortKeyName(b.name)));
 
   if(countEl) countEl.textContent = assigned.length
     ? assigned.length + (assigned.length === 1 ? ' customer' : ' customers') : '';
@@ -11596,9 +11604,10 @@ function renderTechAssignedList(techId){
     allOpt.value = '';
     allOpt.textContent = 'All days (' + assigned.length + ')';
     daySel.appendChild(allOpt);
+    // Every day is listed, even with nobody on it: leaving empty days out meant
+    // Saturday and Sunday disappeared, so a customer could not be moved to one
     DAYS_OF_WEEK.forEach(d=>{
       const n = assigned.filter(x => (x.day || '') === d).length;
-      if(n === 0) return;
       const o = document.createElement('option');
       o.value = d;
       o.textContent = d + ' (' + n + ')';
@@ -11792,6 +11801,9 @@ document.getElementById('btnDoneAssigning').addEventListener('click', closeAssig
 
 function openTechDetail(t){
   currentTechDetailId = t.id;
+  // The day filter starts at All days each time this is opened, rather than
+  // keeping whichever day was picked last time
+  techAssignedDayFilter = '';
   // The overlay must go too, or opening another technician leaves the dark
   // backdrop over the page with nothing on it
   document.getElementById('techAssignOverlay').style.display = 'none';
@@ -11849,6 +11861,26 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
   const requireGatePhoto = document.getElementById('techRequireGatePhoto').checked;
   if(!name){ showToast('Enter a technician name'); return; }
 
+  // Changing either of these stops the technician signing in with what they
+  // have now, so it is worth being sure. Asked before anything is locked, so
+  // saying no leaves the form exactly as it was.
+  const prevTech = editingTechId ? technicians.find(t => t.id === editingTechId) : null;
+  const hadAccount = !!(techAccounts && prevTech && techAccounts[prevTech.id]);
+  if(hadAccount){
+    const oldName = (techAccounts[prevTech.id] || {}).username || '';
+    if(username && username.toLowerCase() !== String(oldName).toLowerCase()){
+      const ok = await confirmDialog('Change ' + escapeSyncText(name) + "'s username from "
+        + escapeSyncText(oldName) + ' to ' + escapeSyncText(username)
+        + '? They will not be able to sign in with the old one, so tell them the new one.', 'Change it');
+      if(!ok) return;
+    }
+    if(password){
+      const ok = await confirmDialog('Set a new password for ' + escapeSyncText(name)
+        + '? They are signed out of every phone straight away and cannot sign in until you give them the new one.', 'Set it');
+      if(!ok) return;
+    }
+  }
+
   // The sign-in is settled on the server first. If that fails nothing is
   // saved, so the profile and the account never disagree.
   const techId = editingTechId || ('tech_' + Date.now());
@@ -11857,9 +11889,8 @@ document.getElementById('btnSaveTech').addEventListener('click', async ()=>{
   saveBtn.textContent = 'Saving\u2026';
   let account;
   try{
-    const before = editingTechId ? technicians.find(t => t.id === editingTechId) : null;
     account = await saveTechnicianSignIn({techId, name, username, password, isAdmin,
-      prev: before ? {username: before.username, isAdmin: before.isAdmin} : {}});
+      prev: prevTech ? {username: prevTech.username, isAdmin: prevTech.isAdmin} : {}});
   }finally{
     saveBtn.disabled = false;
     saveBtn.textContent = prevLabel;
