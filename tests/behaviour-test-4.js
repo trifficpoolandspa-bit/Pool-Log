@@ -1815,7 +1815,51 @@ async function serverTechniciansTab(){
       await saveForm(d);
       check('typing a password creates their sign-in with their username', (await members()).some(m => m.technician_id === 'tech_old' && m.username === 'oldlocal'), JSON.stringify((await members()).map(m => m.username)));
 
-      console.log('\n=== A technician\'s Customers tab ===');
+      console.log('\n=== Giving a technician a sign-in on their profile page ===');
+    {
+      w.eval('resetTechForm(); hideTechForm();');
+      d.getElementById('btnAddTech').click(); await sleep(50);
+      fill(d, w, {techName: 'Nolan Nosign', techUsername: '', techPassword: ''});
+      await saveForm(d);
+      const nolanId = w.eval("technicians.find(t => t.name === 'Nolan Nosign').id");
+      check('added with no username and no password', !!nolanId && !(await members()).some(m => m.technician_id === nolanId));
+
+      w.eval("openTechDetail(technicians.find(t => t.id === '" + nolanId + "'))"); await sleep(300);
+      const row = label => Array.from(d.querySelectorAll('#techProfileMeta .profile-meta-row'))
+        .find(r => r.querySelector('.profile-meta-label') && r.querySelector('.profile-meta-label').textContent === label);
+      const typeInto = async (label, value)=>{
+        row(label).click(); await sleep(40);
+        const input = row(label).querySelector('input');
+        input.value = value;
+        input.dispatchEvent(new w.Event('blur'));
+        await sleep(450);
+      };
+
+      await typeInto('Username', 'nolan');
+      check('the username is kept on the profile', w.eval("technicians.find(t => t.id === '" + nolanId + "').username") === 'nolan',
+            w.eval("JSON.stringify(technicians.find(t => t.id === '" + nolanId + "'))"));
+      check('and shows in the row', /nolan/.test(row('Username').textContent), row('Username').textContent);
+
+      // A sync replacing the technician in the list must not lose later edits
+      await w.eval('syncCustomers()');
+      for(let i = 0; i < 400 && w.eval('syncRunning'); i++) await sleep(10);
+      check('a sync does not wipe the username just typed',
+            w.eval("technicians.find(t => t.id === '" + nolanId + "').username") === 'nolan');
+      // The profile page was drawn before that sync; editing now must still stick
+      await typeInto('Phone', '(623) 555-0123');
+      check('an edit made after a sync still sticks',
+            w.eval("technicians.find(t => t.id === '" + nolanId + "').phone") === '(623) 555-0123',
+            w.eval("JSON.stringify(technicians.find(t => t.id === '" + nolanId + "'))"));
+
+      await typeInto('Password', 'nolanpass12');
+      check('setting a password then creates their sign-in',
+            (await members()).some(m => m.technician_id === nolanId && m.username === 'nolan'),
+            toasts(w) + ' | ' + JSON.stringify((await members()).map(m => m.username)));
+      w.eval("switchView('technicians')"); await sleep(250);
+      check('and the list shows who they sign in as', /Signs in as nolan/.test(rowText(d, 'Nolan Nosign')), rowText(d, 'Nolan Nosign'));
+    }
+
+    console.log('\n=== A technician\'s Customers tab ===');
     {
       // A technician with customers on several days, added out of order
       w.eval('resetTechForm(); hideTechForm();');
@@ -1854,6 +1898,29 @@ async function serverTechniciansTab(){
       daySel.dispatchEvent(new w.Event('change', {bubbles: true}));
       await sleep(150);
       check('picking a day still narrows the list', names().join() === 'Cross, Mia', names().join(' | '));
+
+      // Leaving and coming back starts at All days again
+      w.eval("switchView('customers')"); await sleep(200);
+      w.eval("switchView('technicians')"); await sleep(200);
+      w.eval("openTechDetail(technicians.find(t => t.name === 'List Lister'))"); await sleep(250);
+      const tabAgain = Array.from(d.querySelectorAll('[data-techtab]')).find(b2 => b2.dataset.techtab === 'customers');
+      tabAgain.click(); await sleep(250);
+      check('the day filter is back to All days', d.getElementById('techAssignedDay').value === '',
+            d.getElementById('techAssignedDay').value);
+      check('and every customer is listed again', names().length === 4, names().join(' | '));
+
+      // And pressing the Customers tab again after picking a day resets it too
+      const sel2 = d.getElementById('techAssignedDay');
+      sel2.value = 'Monday';
+      sel2.dispatchEvent(new w.Event('change', {bubbles: true}));
+      await sleep(150);
+      Array.from(d.querySelectorAll('[data-techtab]')).find(b2 => b2.dataset.techtab === 'profile').click();
+      await sleep(100);
+      Array.from(d.querySelectorAll('[data-techtab]')).find(b2 => b2.dataset.techtab === 'customers').click();
+      await sleep(200);
+      check('pressing Customers again also goes back to All days',
+            d.getElementById('techAssignedDay').value === '' && names().length === 4,
+            d.getElementById('techAssignedDay').value + ' / ' + names().join(' | '));
       w.eval("switchView('technicians')"); await sleep(250);
     }
 
