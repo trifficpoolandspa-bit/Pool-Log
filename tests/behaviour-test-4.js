@@ -890,6 +890,18 @@ console.log('\n=== No development shortcuts remain ===');
 }
 
 
+console.log('\n=== The Settings tab has no heading bar ===');
+{
+  // A card that only repeated the tab's own name, taking space at the top
+  ['technician-app.html','admin-readings-app.html'].forEach(file=>{
+    const src = fs.readFileSync(file, 'utf8');
+    check(file + ' has no Settings heading card',
+          src.indexOf('<h2 style="margin-bottom:0;">Settings</h2>') === -1);
+    check(file + ' still has the Settings tab itself', /data-view="options"/.test(src));
+    check(file + ' and the cards below it', src.indexOf('id="syncCard"') !== -1);
+  });
+}
+
 console.log('\n=== The starter account is gone; the field apps sign in against the server ===');
 {
   // The field apps used to carry a starter login in the public files. Sign-in
@@ -1532,7 +1544,12 @@ async function serverTechniciansTab(){
     w.__answer = 'ok';
     const iv = setInterval(()=>{
       const ov = Array.from(w.document.querySelectorAll('.confirm-overlay')).filter(x => x.querySelector('#confirmOk')).pop();
-      if(ov){ dialogs.push(ov.textContent); ov.querySelector(w.__answer === 'ok' ? '#confirmOk' : '#confirmCancel').click(); }
+      // Wait until it has its text: catching it mid-render answered questions
+      // before they could be read
+      if(ov && ov.textContent.trim().length > 20){
+        dialogs.push(ov.textContent);
+        ov.querySelector(w.__answer === 'ok' ? '#confirmOk' : '#confirmCancel').click();
+      }
     }, 5);
     await sleep(700);
     return {w, d: w.document, dialogs, close(){ clearInterval(iv); w.close(); }};
@@ -1798,7 +1815,112 @@ async function serverTechniciansTab(){
       await saveForm(d);
       check('typing a password creates their sign-in with their username', (await members()).some(m => m.technician_id === 'tech_old' && m.username === 'oldlocal'), JSON.stringify((await members()).map(m => m.username)));
 
-      console.log('\n=== Deleting a technician ===');
+      console.log('\n=== A technician\'s Customers tab ===');
+    {
+      // A technician with customers on several days, added out of order
+      w.eval('resetTechForm(); hideTechForm();');
+      d.getElementById('btnAddTech').click(); await sleep(50);
+      fill(d, w, {techName: 'List Lister', techUsername: '', techPassword: ''});
+      await saveForm(d);
+      const listId = w.eval("technicians.find(t => t.name === 'List Lister').id");
+      w.eval(`customers = [
+        {id:'z1', name:'Zoe Adams',  day:'Monday',   active:true, technicianId:'${listId}'},
+        {id:'a1', name:'Aaron Bell', day:'Friday',   active:true, technicianId:'${listId}'},
+        {id:'m1', name:'Mia Cross',  day:'Saturday', active:true, technicianId:'${listId}'},
+        {id:'b1', name:'Ben Dunn',   day:'',         active:true, technicianId:'${listId}'}
+      ]; saveCustomers();`);
+      w.eval("openTechDetail(technicians.find(t => t.name === 'List Lister'))"); await sleep(300);
+      const tab = Array.from(d.querySelectorAll('[data-techtab]')).find(b2 => b2.dataset.techtab === 'customers');
+      check('there is a Customers tab', !!tab, Array.from(d.querySelectorAll('[data-techtab]')).map(x => x.dataset.techtab).join('|'));
+      tab.click(); await sleep(250);
+      check('it opens that card', d.getElementById('techCustomersCard').style.display !== 'none');
+
+      const names = () => Array.from(d.querySelectorAll('#techAssignedList .cust-name')).map(n => n.textContent.trim());
+      // Names are shown and sorted as "Surname, First", which is what
+      // alphabetical means on this list
+      check('the customers are in alphabetical order',
+            names().join(' | ') === 'Adams, Zoe | Bell, Aaron | Cross, Mia | Dunn, Ben', names().join(' | '));
+
+      const daySel = d.getElementById('techAssignedDay');
+      const days = Array.from(daySel.options).map(o => o.value);
+      ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'].forEach(day=>{
+        check('  ' + day + ' is in the day filter', days.indexOf(day) !== -1, days.join('|'));
+      });
+      check('including days nobody is on, shown as zero',
+            Array.from(daySel.options).some(o => /Tuesday \(0\)/.test(o.textContent)),
+            Array.from(daySel.options).map(o => o.textContent).join(' | '));
+      check('All days is still first', daySel.options[0].value === '');
+      daySel.value = 'Saturday';
+      daySel.dispatchEvent(new w.Event('change', {bubbles: true}));
+      await sleep(150);
+      check('picking a day still narrows the list', names().join() === 'Cross, Mia', names().join(' | '));
+      w.eval("switchView('technicians')"); await sleep(250);
+    }
+
+    console.log('\n=== Changing a username or password asks first ===');
+    {
+      // Its own technician, so nothing earlier in this suite can interfere
+      w.eval('resetTechForm(); hideTechForm();');
+      d.getElementById('btnAddTech').click(); await sleep(50);
+      fill(d, w, {techName: 'Ask Me', techUsername: 'askme', techPassword: 'askmepass12', techIsAdmin: false});
+      await saveForm(d);
+      const askId = w.eval("technicians.find(t => t.name === 'Ask Me').id");
+      const acct = async () => (await members()).find(m => m.technician_id === askId);
+      check('the technician was created with a sign-in', !!(await acct()), toasts(w));
+
+      w.__answer = 'cancel';
+      w.eval("editTechnician(technicians.find(t => t.name === 'Ask Me'))"); await sleep(80);
+      fill(d, w, {techUsername: 'askme.renamed'});
+      await saveForm(d);
+      check('changing a username asks first', dialogs.some(t => /username from askme to askme.renamed/.test(t)), dialogs.slice(-1)[0]);
+      check('and saying no changes nothing', (await acct()).username === 'askme', (await acct()).username);
+
+      const passBefore = (await acct()).encrypted_password;
+      w.eval("editTechnician(technicians.find(t => t.name === 'Ask Me'))"); await sleep(80);
+      fill(d, w, {techPassword: 'newaskpass12'});
+      check('the password box has what was typed', d.getElementById('techPassword').value === 'newaskpass12',
+            d.getElementById('techPassword').value);
+      await saveForm(d);
+      check('setting a password asks first', dialogs.some(t => /Set a new password for Ask Me/.test(t)), dialogs.slice(-1)[0]);
+      check('and saying no leaves the old password working', (await acct()).encrypted_password === passBefore);
+
+      w.__answer = 'ok';
+      w.eval("editTechnician(technicians.find(t => t.name === 'Ask Me'))"); await sleep(80);
+      fill(d, w, {techUsername: 'askme.renamed'});
+      await saveForm(d);
+      check('saying yes changes the username', (await acct()).username === 'askme.renamed', (await acct()).username + ' | ' + toasts(w));
+
+      // The profile page asks as well
+      w.eval("openTechDetail(technicians.find(t => t.name === 'Ask Me'))"); await sleep(400);
+      const row = label => Array.from(d.querySelectorAll('#techProfileMeta .profile-meta-row'))
+        .find(r => r.querySelector('.profile-meta-label') && r.querySelector('.profile-meta-label').textContent === label);
+      w.__answer = 'cancel';
+      row('Password').click(); await sleep(40);
+      const input = row('Password').querySelector('input');
+      input.value = 'profilepass99';
+      input.dispatchEvent(new w.Event('blur')); await sleep(450);
+      check('the profile page asks before a new password', dialogs.some(t => /Set a new password for Ask Me/.test(t)));
+      check('and saying no leaves it', (await acct()).encrypted_password === passBefore);
+      w.__answer = 'ok';
+      w.eval("switchView('technicians')"); await sleep(250);
+      w.eval('resetTechForm(); hideTechForm();');
+    }
+
+    console.log('\n=== A technician added without a sign-in, given one later ===');
+    d.getElementById('btnAddTech').click(); await sleep(50);
+    fill(d, w, {techName: 'Later Larry', techUsername: '', techPassword: ''});
+    await saveForm(d);
+    check('a technician can be added with no username or password', w.eval("technicians.some(t => t.name === 'Later Larry')"), toasts(w));
+    check('and has no sign-in yet', !(await members()).some(m => m.technician_id === w.eval("technicians.find(t => t.name === 'Later Larry').id")));
+    w.eval("editTechnician(technicians.find(t => t.name === 'Later Larry'))"); await sleep(50);
+    fill(d, w, {techUsername: 'larry', techPassword: 'larrypass12'});
+    await saveForm(d);
+    const larryId = w.eval("technicians.find(t => t.name === 'Later Larry') && technicians.find(t => t.name === 'Later Larry').id");
+    check('editing them later creates their sign-in', (await members()).some(m => m.technician_id === larryId && m.username === 'larry'),
+          toasts(w) + ' | ' + JSON.stringify((await members()).map(m => m.username)));
+    check('and the list shows it', /Signs in as larry/.test(rowText(d, 'Later Larry')), rowText(d, 'Later Larry'));
+
+    console.log('\n=== Deleting a technician ===');
       const alexId = alex().id;
       w.eval("deleteTechnician(technicians.find(t => t.name === 'Alex Rivera'))"); await sleep(500);
       check('the question explains the 7 days', dialogs.some(t => /upload visits it was holding for 7 days/.test(t)), dialogs.join(' | '));
@@ -1989,7 +2111,12 @@ async function serverFieldSignIn(){
     w.__answer = 'ok';
     const iv = setInterval(()=>{
       const ov = Array.from(w.document.querySelectorAll('.confirm-overlay')).filter(x => x.querySelector('#confirmOk')).pop();
-      if(ov){ dialogs.push(ov.textContent); ov.querySelector(w.__answer === 'ok' ? '#confirmOk' : '#confirmCancel').click(); }
+      // Wait until it has its text: catching it mid-render answered questions
+      // before they could be read
+      if(ov && ov.textContent.trim().length > 20){
+        dialogs.push(ov.textContent);
+        ov.querySelector(w.__answer === 'ok' ? '#confirmOk' : '#confirmCancel').click();
+      }
     }, 5);
     await sleep(o.wait || 900);
     return {w, d: w.document, dialogs, close(){ clearInterval(iv); w.close(); },
@@ -2091,6 +2218,10 @@ async function serverFieldSignIn(){
       check('the new one does', !loginVisible(p.d));
 
       console.log('\n=== technician-app.html: signing out ===');
+      check('the Sign out button is wired to something', !!p.d.getElementById('btnLogout'));
+      p.d.getElementById('btnLogout').click(); await sleep(300);
+      check('pressing it signs out', loginVisible(p.d) && p.w.eval('currentUser') === null);
+      await signIn(p, 'alex', 'resetpass99');
       p.w.eval('logout()'); await sleep(200);
       check('Sign out goes back to the sign-in screen', loginVisible(p.d) && p.w.eval('currentUser') === null);
       check('the session is gone from the phone', !p.storage()['poollogdevice:session']);
