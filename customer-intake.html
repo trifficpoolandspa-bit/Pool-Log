@@ -400,7 +400,20 @@ input::placeholder{color:#A9BCB9;}
     <div class="field"><label>Email</label><input id="siteUsername" type="email" autocomplete="username" inputmode="email" placeholder="you@yourcompany.com"></div>
     <div class="field"><label>Password</label><input id="sitePassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
     <p id="siteLoginError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
+    <p id="siteLoginNote" style="display:none;font-size:12.5px;color:#2F6F4F;margin:0 0 12px;"></p>
     <button class="btn btn-primary" id="btnSiteLogin" style="width:100%;">Sign in</button>
+    <button class="btn btn-ghost" id="btnForgotPassword" style="width:100%;margin-top:8px;font-size:12.5px;">Forgot your password?</button>
+  </div>
+</div>
+
+<div id="resetScreen" style="display:none;position:fixed;inset:0;z-index:401;background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
+    <h2 style="font-size:20px;margin:0 0 4px;">Set a new password</h2>
+    <p style="font-size:12.5px;color:#5E7371;margin:0 0 18px;">Choose a password of at least 8 characters.</p>
+    <div class="field"><label>New password</label><input id="resetPassword" type="password" autocomplete="new-password" placeholder="New password"></div>
+    <div class="field"><label>Type it again</label><input id="resetPassword2" type="password" autocomplete="new-password" placeholder="The same password"></div>
+    <p id="resetError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
+    <button class="btn btn-primary" id="btnSetPassword" style="width:100%;">Save it</button>
   </div>
 </div>
 
@@ -5603,6 +5616,13 @@ function renderAccountButton(){
 // not mean signing in again on the other.
 let siteUser = null;
 
+document.addEventListener('DOMContentLoaded', ()=>{
+  const forgot = document.getElementById('btnForgotPassword');
+  if(forgot) forgot.addEventListener('click', sendPasswordReset);
+  // Arriving from the emailed link: set a password before anything else
+  try{ startPasswordReset(); }catch(e){}
+});
+
 function showSiteLogin(){
   const el = document.getElementById('loginScreen');
   if(el) el.style.display = 'flex';
@@ -5734,6 +5754,101 @@ async function siteLogout(){
   // usually the Account page, since that is where the sign-out button is.
   try{ switchView('customers'); }catch(e){}
   showSiteLogin();
+}
+
+// ---------- Forgotten password ----------
+// Only for office accounts, which have a real email address. A technician's
+// sign-in uses an address no mail can reach, so the office resets theirs from
+// the Technicians tab instead.
+function siteLoginNote(text){
+  const el = document.getElementById('siteLoginNote');
+  if(!el) return;
+  el.textContent = text || '';
+  el.style.display = text ? 'block' : 'none';
+}
+
+async function sendPasswordReset(){
+  const email = (document.getElementById('siteUsername').value || '').trim();
+  if(!email){
+    const err = document.getElementById('siteLoginError');
+    if(err){ err.textContent = 'Type your email address first, then press this again.'; err.style.display = 'block'; }
+    return;
+  }
+  const btn = document.getElementById('btnForgotPassword');
+  btn.disabled = true;
+  const err = document.getElementById('siteLoginError');
+  if(err) err.style.display = 'none';
+  try{
+    const here = location.origin + location.pathname;
+    await fetch(SUPABASE_URL + '/auth/v1/recover', {
+      method: 'POST',
+      headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email, gotrue_meta_security: {}, redirect_to: here})
+    });
+    // The same message either way: whether an address has an account here is
+    // nobody else's business
+    siteLoginNote('If that address has an account, a link to set a new password is on its way. It lasts an hour.');
+  }catch(e){
+    if(err){ err.textContent = 'Could not reach the server. Check your connection and try again.'; err.style.display = 'block'; }
+  }finally{
+    btn.disabled = false;
+  }
+}
+
+// Arriving back from the link in that email
+function siteResetTokenFromUrl(){
+  const hash = (location.hash || '').replace(/^#/, '');
+  if(!hash) return null;
+  const parts = new URLSearchParams(hash);
+  if(parts.get('type') !== 'recovery') return null;
+  const token = parts.get('access_token');
+  return token ? {token: token, refresh: parts.get('refresh_token')} : null;
+}
+
+async function setNewPassword(recovery){
+  const one = document.getElementById('resetPassword').value || '';
+  const two = document.getElementById('resetPassword2').value || '';
+  const err = document.getElementById('resetError');
+  const show = t => { err.textContent = t || ''; err.style.display = t ? 'block' : 'none'; };
+  if(one.length < 8){ show('That is too short — use at least 8 characters.'); return; }
+  if(one !== two){ show('Those two do not match.'); return; }
+  const btn = document.getElementById('btnSetPassword');
+  btn.disabled = true;
+  show('');
+  try{
+    const res = await fetch(SUPABASE_URL + '/auth/v1/user', {
+      method: 'PUT',
+      headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + recovery.token},
+      body: JSON.stringify({password: one})
+    });
+    if(!res.ok){
+      const body = await res.json().catch(()=> ({}));
+      show(body.msg || body.error_description || 'That link has expired. Ask for a new one.');
+      btn.disabled = false;
+      return;
+    }
+    history.replaceState(null, '', location.origin + location.pathname);
+    document.getElementById('resetScreen').style.display = 'none';
+    document.getElementById('resetPassword').value = '';
+    document.getElementById('resetPassword2').value = '';
+    showSiteLogin();
+    siteLoginNote('Your password is set. Sign in with it.');
+  }catch(e){
+    show('Could not reach the server. Try again.');
+    btn.disabled = false;
+  }
+}
+
+function startPasswordReset(){
+  const recovery = siteResetTokenFromUrl();
+  if(!recovery) return false;
+  const screen = document.getElementById('resetScreen');
+  screen.style.display = 'flex';
+  const go = ()=> setNewPassword(recovery);
+  document.getElementById('btnSetPassword').addEventListener('click', go);
+  document.getElementById('resetPassword2').addEventListener('keydown', e=>{ if(e.key === 'Enter') go(); });
+  return true;
 }
 
 async function attemptSiteLogin(){
