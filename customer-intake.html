@@ -6432,6 +6432,11 @@ async function syncCustomers(){
     result.photos = fieldPhotos.count || 0;
     if(!fieldPhotos.ok && !fieldPhotos.offline) result.failed++;
 
+    try{
+      const purged = await syncPurgeOldPhotos(companyId);
+      if(purged && purged.removed) result.photosRemoved = purged.removed;
+    }catch(e){}
+
     const records = await syncRecords(state, companyId);
     result.recordsPulled = records.pulled;
     result.recordsPushed = records.pushed;
@@ -7093,6 +7098,40 @@ async function syncPullPhotos(state, companyId){
   });
   saveSyncState(companyId, state);
   return {ok: true, count: rows.length};
+}
+
+// Photos older than three years go, matching what the phones do. The office
+// does this, because only the office is allowed to delete the files. It runs
+// at most once a day and takes a batch at a time, so it never holds anything up.
+const SYNC_PHOTO_PURGE_BATCH = 50;
+
+async function syncPurgeOldPhotos(companyId){
+  const last = lsGet('lastPhotoPurge');
+  if(last && Date.now() - new Date(last).getTime() < 20 * 3600000) return {skipped: true};
+  const res = await syncCall('/rest/v1/rpc/photos_past_keeping', {method: 'POST', body: '{}'});
+  if(!res.ok || !Array.isArray(res.body)) return {ok: false, offline: !!res.offline};
+  const old = res.body.filter(r => r && !r.deleted).slice(0, SYNC_PHOTO_PURGE_BATCH);
+  let removed = 0;
+  const session = sbSession();
+  for(const row of old){
+    try{
+      await fetch(SUPABASE_URL + '/storage/v1/object/' + SYNC_PHOTO_BUCKET + '/' + row.path, {
+        method: 'DELETE',
+        headers: {'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + (session && session.access_token)}
+      });
+    }catch(e){
+      return {ok: false, offline: true, removed: removed};
+    }
+    // The record is marked either way, so every device stops expecting it
+    const marked = await syncCall('/rest/v1/rpc/remove_photo', {
+      method: 'POST', body: JSON.stringify({p_id: row.id})
+    });
+    if(!marked.ok) break;
+    try{ await deletePhotoData(row.id); }catch(e){}
+    removed++;
+  }
+  if(old.length < SYNC_PHOTO_PURGE_BATCH) lsSet('lastPhotoPurge', new Date().toISOString());
+  return {ok: true, removed: removed};
 }
 
 // Fetch the image itself, once, and keep it here so it is instant next time
