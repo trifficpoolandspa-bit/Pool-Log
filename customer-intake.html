@@ -6180,10 +6180,37 @@ function syncStatus(text){
   if(el) el.textContent = text;
 }
 
+// Redrawing the list closes whatever is open on top of it — a dropdown being
+// picked from, a row being edited. So the redraw waits until that is finished.
+let syncRedrawWanted = false;
+
+function syncSomethingIsOpen(){
+  const el = document.activeElement;
+  if(el && ['SELECT', 'INPUT', 'TEXTAREA'].indexOf(el.tagName) !== -1) return true;
+  if(document.querySelector('.confirm-overlay')) return true;
+  return false;
+}
+
 function syncShowList(list){
   customers = list;
+  if(syncSomethingIsOpen()){
+    syncRedrawWanted = true;
+    return;
+  }
   try{ if(typeof renderList === 'function') renderList(); }catch(e){}
 }
+
+// Once whatever was open is finished with, the list catches up
+['focusout', 'change', 'click'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{
+    if(!syncRedrawWanted) return;
+    setTimeout(()=>{
+      if(!syncRedrawWanted || syncSomethingIsOpen()) return;
+      syncRedrawWanted = false;
+      try{ if(typeof renderList === 'function') renderList(); }catch(e){}
+    }, 0);
+  }, true);
+});
 
 let syncRunning = false;
 let syncAgain = false;

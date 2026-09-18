@@ -844,15 +844,13 @@ select#customerSelect{font-weight:600;}
       </div>
       <div class="field">
         <label>Service day</label>
-        <select id="ncDay">
-          <option value="Sunday">Sunday</option>
-          <option value="Monday" selected>Monday</option>
-          <option value="Tuesday">Tuesday</option>
-          <option value="Wednesday">Wednesday</option>
-          <option value="Thursday">Thursday</option>
-          <option value="Friday">Friday</option>
-          <option value="Saturday">Saturday</option>
-        </select>
+        <!-- Buttons rather than a dropdown: on a phone a native dropdown gets
+             dismissed by anything that shifts the page underneath it — the
+             keyboard closing, a bar resizing — which made picking a day a
+             fight. The value still lives in a field called ncDay, so
+             everything that reads or sets it is unchanged. -->
+        <input type="hidden" id="ncDay" value="Monday">
+        <div id="ncDayButtons" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
       </div>
       <div class="field">
         <label>Assigned technician</label>
@@ -3168,7 +3166,12 @@ function syncApplyRecord(kind, id, data, deleted, agreed){
       });
       list[i] = merged;
     }
-    if(!lsSet(key, list)) return false;
+    const wasList = syncStableString(lsGet(key) || []);
+    if(syncStableString(list) === wasList) return true;      // nothing new here
+    syncApplyingRemote = true;
+    const wrote = lsSet(key, list);
+    syncApplyingRemote = false;
+    if(!wrote) return false;
     try{ if(typeof renderRouteTasks === 'function') renderRouteTasks(); }catch(e){}
     try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
     return true;
@@ -3307,9 +3310,18 @@ async function syncPullCustomers(state){
     list = list.filter(x => !goneIds.has(String(x.id)));
     drop.forEach(id=>{ c.seen[id] = SYNC_GONE; if(c.known[id]) c.known[id].d = true; });
   }
-  if(!lsSet('customers', list)) return {ok: false, storage: true};
+  // Writing an unchanged list is what started the loop: every write scheduled
+  // another sync, which wrote again, and the route redrew endlessly
+  const beforeSave = syncStableString(lsGet('customers') || []);
+  const afterSave = syncStableString(list);
+  if(beforeSave !== afterSave){
+    syncApplyingRemote = true;
+    const saved = lsSet('customers', list);
+    syncApplyingRemote = false;
+    if(!saved) return {ok: false, storage: true};
+  }
   try{ if(typeof customers !== 'undefined') customers = list; }catch(e){}
-  return {ok: true, count: list.length};
+  return {ok: true, count: list.length, changed: beforeSave !== afterSave};
 }
 
 // What changed on this phone since the server last agreed
@@ -3835,7 +3847,9 @@ async function fieldSync(){
     // Nothing goes up until a full pull has finished on this phone
     state.pulledOnce = true;
     saveFieldSyncState(state);
-    try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+    // Only when something actually arrived: redrawing on every sync closed
+    // whatever panel was open under the person using it
+    if(pulled.changed) syncRedrawRoute();
 
     syncScanCustomers(state);
     const pushedResult = await syncPushCustomers(state);
@@ -3871,7 +3885,42 @@ async function fieldSync(){
 }
 
 // A visit finishing, or anything else that changes a customer here
+// True while sync is writing what it just brought down. Those writes are not
+// somebody's change, so they must not schedule another sync — that looped every
+// couple of seconds, redrawing the route under whoever was using it.
+let syncApplyingRemote = false;
+
+// Redrawing the route closes anything open on top of it — the panel that opens
+// when a customer is tapped, or a dropdown being picked from. The redraw waits
+// until that is finished with.
+let syncRouteRedrawWanted = false;
+
+function syncSomethingIsOpen(){
+  const el = document.activeElement;
+  if(el && ['SELECT', 'INPUT', 'TEXTAREA'].indexOf(el.tagName) !== -1) return true;
+  if(document.querySelector('.route-brief')) return true;
+  if(document.querySelector('.confirm-overlay')) return true;
+  return false;
+}
+
+function syncRedrawRoute(){
+  if(syncSomethingIsOpen()){ syncRouteRedrawWanted = true; return; }
+  try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+}
+
+['focusout', 'change', 'click'].forEach(evt=>{
+  document.addEventListener(evt, ()=>{
+    if(!syncRouteRedrawWanted) return;
+    setTimeout(()=>{
+      if(!syncRouteRedrawWanted || syncSomethingIsOpen()) return;
+      syncRouteRedrawWanted = false;
+      try{ if(typeof renderHomeList === 'function') renderHomeList(); }catch(e){}
+    }, 0);
+  }, true);
+});
+
 function fieldNoteLocalChange(){
+  if(syncApplyingRemote) return;
   if(!deviceGet('session')) return;
   try{
     const state = loadFieldSyncState();
@@ -5451,6 +5500,7 @@ function resetCustomerForm(){
   ['ncName','ncAddress','ncCity','ncState','ncZip','ncEmail','ncPhone','ncPoolGallons','ncNeighborhoodGateCode','ncGateCode','ncAccessNotes']
     .forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   document.getElementById('ncDay').value = 'Monday';
+  renderNcDayButtons();
   document.getElementById('ncHasPool').checked = true;
   document.getElementById('ncHasSpa').checked = false;
   populateNcTechnicianSelect();
@@ -5459,6 +5509,29 @@ function resetCustomerForm(){
   ncDogs = []; renderNcDogFields();
   document.getElementById('newCustomerHeading').textContent = 'New customer';
   document.getElementById('btnSaveCustomer').textContent = 'Save customer';
+}
+
+// The day buttons under Service day, with the chosen one filled in
+function renderNcDayButtons(){
+  const wrap = document.getElementById('ncDayButtons');
+  const field = document.getElementById('ncDay');
+  if(!wrap || !field) return;
+  wrap.innerHTML = '';
+  DAYS_OF_WEEK.forEach(day=>{
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-ghost';
+    btn.dataset.day = day;
+    btn.textContent = day.slice(0, 3);
+    const on = (field.value || 'Monday') === day;
+    btn.style.cssText = 'width:auto;padding:8px 12px;font-size:13px;flex:0 0 auto;'
+      + (on ? 'background:var(--teal-deep);color:#fff;border-color:var(--teal-deep);' : '');
+    btn.addEventListener('click', ()=>{
+      field.value = day;
+      renderNcDayButtons();
+    });
+    wrap.appendChild(btn);
+  });
 }
 
 function showCustomerForm(){
@@ -8287,6 +8360,7 @@ function openCustomerEditor(customer){
   document.getElementById('ncEmail').value = customer.email || '';
   document.getElementById('ncPhone').value = customer.phone || '';
   document.getElementById('ncDay').value = customer.day || 'Monday';
+  renderNcDayButtons();
   document.getElementById('ncHasPool').checked = customer.hasPool !== false;
   document.getElementById('ncHasSpa').checked = !!customer.hasSpa;
   document.getElementById('ncPoolGallons').value = customer.poolGallons || '';
