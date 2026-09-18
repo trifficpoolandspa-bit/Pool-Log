@@ -1289,6 +1289,36 @@ async function websiteCompanyRecords(){
     check('  both are on this device now',
           local(w, 'licenseNumber') === 'ROC-999999' && local(w, 'accountPhone') === '(623) 555-1111');
 
+    console.log('\n=== a sync does not close what you have open ===');
+    {
+      // Someone is picking a service day when a change arrives from elsewhere
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['open1', JSON.stringify({id: {t: new Date().toISOString(), v: 'open1'},
+                                  name: {t: new Date().toISOString(), v: 'Open Row Pool'}})]);
+      await syncNow(w);
+      w.eval("switchView('customers')");
+      await sleep(100);
+      const sel = w.document.createElement('select');
+      sel.id = 'testDaySelect';
+      w.document.body.appendChild(sel);
+      sel.focus();
+      let redrawn = 0;
+      w.eval("window.__renderCount = 0; const realRender = renderList; renderList = function(){ window.__renderCount++; return realRender.apply(this, arguments); }; 'ok'");
+      await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+        ['open1', JSON.stringify({notes: {t: new Date().toISOString(), v: 'Changed elsewhere'}})]);
+      await syncNow(w);
+      check('  the list is not redrawn while a dropdown is open', w.eval('window.__renderCount') === 0,
+            String(w.eval('window.__renderCount')));
+      check('  but the change is already saved here',
+            (local(w, 'customers') || []).some(x => x.id === 'open1' && x.notes === 'Changed elsewhere'));
+      sel.blur();
+      w.document.body.removeChild(sel);
+      w.document.dispatchEvent(new w.Event('focusout', {bubbles: true}));
+      await sleep(400);
+      check('  and it redraws as soon as they are done', w.eval('window.__renderCount') >= 1,
+            String(w.eval('window.__renderCount')));
+    }
+
     console.log('\n=== tasks, jobs and day moves on the website ===');
     w.eval(`
       lsSet('tasks', [{id:'task_w1', title:'Drop off tabs', technicianId:'t1', done:false}]);

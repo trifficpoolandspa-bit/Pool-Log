@@ -2667,6 +2667,49 @@ async function serverFieldSignIn(){
       check('a customer change from the office arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n2') || {}).notes === 'Office note');
       check('a profile change from the office arrives', JSON.parse(phone.storage()['poollog:technicians'])[0].requireGatePhoto === false);
 
+      console.log('\n=== a panel stays open while sync runs underneath ===');
+      {
+        // Tapping a customer opens a briefing panel. Sync used to rewrite the
+        // customer list on every run, which scheduled another sync two seconds
+        // later and redrew the route endlessly, closing whatever was open.
+        const row = phone.d.querySelector('#homeCustomerList .cust-row');
+        check('there is a customer to tap', !!row, routeNames(phone.d).join(' | '));
+        row.click(); await sleep(150);
+        check('tapping opens the panel', !!phone.d.querySelector('.route-brief'));
+
+        let writes = 0;
+        phone.w.eval(`
+          window.__customerWrites = 0;
+          const realSet = lsSet;
+          lsSet = function(key, value){
+            if(key === 'customers') window.__customerWrites++;
+            return realSet.apply(this, arguments);
+          };
+          'ok';`);
+        await phone.w.eval('fieldSync()');
+        for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        writes = phone.w.eval('window.__customerWrites');
+        check('a sync with nothing new does not rewrite the customer list', writes === 0, String(writes));
+        check('and the panel is still open', !!phone.d.querySelector('.route-brief'));
+
+        await sleep(2600);   // longer than the two-second follow-up sync
+        check('no follow-up sync was scheduled by sync itself', phone.w.eval('window.__customerWrites') === 0,
+              String(phone.w.eval('window.__customerWrites')));
+        check('so the panel is still open a few seconds later', !!phone.d.querySelector('.route-brief'));
+
+        // A real change from the office still comes through and redraws
+        await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+          ['n1', JSON.stringify({gateCode: {t: new Date().toISOString(), v: 'CHANGED-1'}})]);
+        await phone.w.eval('fieldSync()');
+        for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        check('a real change still arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n1') || {}).gateCode === 'CHANGED-1');
+        check('and even that does not close the open panel', !!phone.d.querySelector('.route-brief'));
+        // Closing it lets the route catch up
+        phone.d.querySelector('#homeCustomerList .cust-row').click(); await sleep(200);
+        check('once it is closed the route shows the change',
+              !phone.d.querySelector('.route-brief'), 'panel still open');
+      }
+
       console.log('\n=== technician-app.html: the Office sync card ===');
       {
         const card = phone.d.getElementById('fieldSyncStatus');
