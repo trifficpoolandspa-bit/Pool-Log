@@ -725,6 +725,39 @@ input::placeholder{color:#A9BCB9;}
         <button class="btn btn-ghost" id="btnCancelTech">Cancel</button>
       </div>
     </div>
+    <div class="card">
+      <div class="section-head">
+        <h2>All technicians</h2>
+        <span class="section-count" id="techCount"></span>
+      </div>
+      <div id="technicianList"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-tech-detail">
+    <div class="card">
+      <button class="btn btn-ghost" id="backToTechs" type="button" style="width:auto;">← Back to Technicians</button>
+      <div class="section-head" style="margin-top:12px;">
+        <div>
+          <h2 id="techDetailName">Technician</h2>
+          <p id="techDetailContact" style="font-size:12.5px;color:var(--muted);margin:3px 0 0;"></p>
+        </div>
+        <span class="section-count" id="techDetailCount"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="seg-control" id="techTabControl">
+        <button class="history-type-btn active" data-techtab="profile" type="button">Profile</button>
+        <button class="history-type-btn" data-techtab="customers" type="button">Customers</button>
+      </div>
+    </div>
+
+    <div class="card" id="techProfileCard">
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Tap any field to edit it.</p>
+      <div id="techProfileMeta"></div>
+    </div>
+
     <div class="card" id="techCustomersCard" style="display:none;">
       <div class="section-head">
         <h2>Assigned customers</h2>
@@ -762,39 +795,6 @@ input::placeholder{color:#A9BCB9;}
       <div id="techAssignPager"></div>
       <div id="techAssignList"></div>
     </div>
-    </div>
-
-    <div class="card">
-      <div class="section-head">
-        <h2>All technicians</h2>
-        <span class="section-count" id="techCount"></span>
-      </div>
-      <div id="technicianList"></div>
-    </div>
-  </div>
-
-  <div class="view" id="view-tech-detail">
-    <div class="card">
-      <button class="btn btn-ghost" id="backToTechs" type="button" style="width:auto;">← Back to Technicians</button>
-      <div class="section-head" style="margin-top:12px;">
-        <div>
-          <h2 id="techDetailName">Technician</h2>
-          <p id="techDetailContact" style="font-size:12.5px;color:var(--muted);margin:3px 0 0;"></p>
-        </div>
-        <span class="section-count" id="techDetailCount"></span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="seg-control" id="techTabControl">
-        <button class="history-type-btn active" data-techtab="profile" type="button">Profile</button>
-        <button class="history-type-btn" data-techtab="customers" type="button">Customers</button>
-      </div>
-    </div>
-
-    <div class="card" id="techProfileCard">
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Tap any field to edit it.</p>
-      <div id="techProfileMeta"></div>
     </div>
 
   </div>

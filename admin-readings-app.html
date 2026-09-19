@@ -7496,7 +7496,22 @@ function orderCustomersForDay(day, list){
 // ---------- Route order prompt ----------
 let pendingOrderIds = null;
 let orderBeforeDrag = null;
+// Whose route is being looked at. It starts as the person signed in: being an
+// admin gives access to every customer through the Customers tab, not a route
+// made of everybody. Another technician's day can still be picked from the
+// selector when there is a reason to look.
 let adminViewTechId = '';
+let adminRouteStarted = false;
+
+function adminStartOnOwnRoute(){
+  if(adminRouteStarted) return;
+  const me = (typeof currentUser === 'object' && currentUser) ? currentUser.id : null;
+  if(!me) return;
+  adminRouteStarted = true;
+  adminViewTechId = me;
+  const sel = document.getElementById('adminViewTech');
+  if(sel) sel.value = me;
+}
 
 document.getElementById('adminViewTech').addEventListener('change', (e)=>{
   adminViewTechId = e.target.value;
@@ -7854,7 +7869,26 @@ function renderHomeList(){
       o.value = t.id; o.textContent = t.name;
       techSel.appendChild(o);
     });
-    techSel.value = Array.from(techSel.options).some(o => o.value === prev) ? prev : '';
+    if(!adminRouteStarted) adminStartOnOwnRoute();
+    // Whoever is signed in is always an option, even before the technician list
+    // has arrived from the office — otherwise their own route would silently
+    // fall back to everybody's on the first draw
+    const me = (typeof currentUser === 'object' && currentUser) ? currentUser : null;
+    const wanted = adminRouteStarted && prev === '' && adminViewTechId ? adminViewTechId : prev;
+    // Anyone being looked at stays in the list even before the technician list
+    // has arrived from the office; otherwise the choice would silently fall back
+    // to everybody's route
+    [me && me.id ? {id: me.id, name: me.name} : null,
+     wanted ? {id: wanted, name: (lsGet('technicians') || []).reduce((n, t)=> t && t.id === wanted ? (t.name || n) : n, 'Technician')} : null]
+      .forEach(who=>{
+        if(!who || !who.id) return;
+        if(Array.from(techSel.options).some(o => o.value === who.id)) return;
+        const o = document.createElement('option');
+        o.value = who.id;
+        o.textContent = who.name || 'Technician';
+        techSel.appendChild(o);
+      });
+    techSel.value = Array.from(techSel.options).some(o => o.value === wanted) ? wanted : '';
     adminViewTechId = techSel.value;
   }
 
@@ -12046,6 +12080,8 @@ function attachAdminLoginHandlers(){
     const who = document.getElementById('adminSignedInAs');
     if(who) who.textContent = currentUser ? currentUser.name : '';
     hideLogin();
+    adminStartOnOwnRoute();
+    try{ renderHomeList(); }catch(e){}
     watchAdminAccount();
     startFieldSync();
   }
@@ -12063,6 +12099,8 @@ function guardAdminSession(){
   if(user && user.isAdmin){
     currentUser = user;
     hideLogin();
+    adminStartOnOwnRoute();
+    try{ renderHomeList(); }catch(e){}
     watchAdminAccount();
     startFieldSync();
   } else {
