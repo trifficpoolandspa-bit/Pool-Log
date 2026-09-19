@@ -406,6 +406,18 @@ input::placeholder{color:#A9BCB9;}
   </div>
 </div>
 
+<div id="forgotScreen" style="display:none;position:fixed;inset:0;z-index:402;background:rgba(9,32,34,0.55);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:#fff;border-radius:16px;padding:24px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.3);">
+    <h2 style="font-size:18px;margin:0 0 4px;">Which email address?</h2>
+    <p style="font-size:12.5px;color:#5E7371;margin:0 0 16px;">We will send a link to set a new password. It lasts an hour.</p>
+    <div class="field"><label>Email</label><input id="forgotEmail" type="email" autocomplete="username" inputmode="email" placeholder="you@yourcompany.com"></div>
+    <p id="forgotError" style="display:none;font-size:12.5px;color:#B8492E;margin:0 0 12px;"></p>
+    <p id="forgotDone" style="display:none;font-size:12.5px;color:#2F6F4F;margin:0 0 12px;"></p>
+    <button class="btn btn-primary" id="btnSendReset" style="width:100%;">Send the link</button>
+    <button class="btn btn-ghost" id="btnCancelForgot" style="width:100%;margin-top:8px;">Cancel</button>
+  </div>
+</div>
+
 <div id="resetScreen" style="display:none;position:fixed;inset:0;z-index:401;background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);align-items:center;justify-content:center;padding:24px;">
   <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
     <h2 style="font-size:20px;margin:0 0 4px;">Set a new password</h2>
@@ -5618,7 +5630,15 @@ let siteUser = null;
 
 document.addEventListener('DOMContentLoaded', ()=>{
   const forgot = document.getElementById('btnForgotPassword');
-  if(forgot) forgot.addEventListener('click', sendPasswordReset);
+  if(forgot) forgot.addEventListener('click', openForgotBox);
+  const send = document.getElementById('btnSendReset');
+  if(send) send.addEventListener('click', sendPasswordReset);
+  const cancel = document.getElementById('btnCancelForgot');
+  if(cancel) cancel.addEventListener('click', closeForgotBox);
+  const typed = document.getElementById('forgotEmail');
+  if(typed) typed.addEventListener('keydown', e=>{ if(e.key === 'Enter') sendPasswordReset(); });
+  const box = document.getElementById('forgotScreen');
+  if(box) box.addEventListener('click', e=>{ if(e.target === box) closeForgotBox(); });
   // Arriving from the emailed link: set a password before anything else
   try{ startPasswordReset(); }catch(e){}
 });
@@ -5767,17 +5787,33 @@ function siteLoginNote(text){
   el.style.display = text ? 'block' : 'none';
 }
 
+function openForgotBox(){
+  const box = document.getElementById('forgotScreen');
+  const field = document.getElementById('forgotEmail');
+  // Whatever was already typed on the sign-in screen, so it rarely needs typing
+  field.value = (document.getElementById('siteUsername').value || '').trim();
+  document.getElementById('forgotError').style.display = 'none';
+  document.getElementById('forgotDone').style.display = 'none';
+  document.getElementById('btnSendReset').disabled = false;
+  box.style.display = 'flex';
+  field.focus();
+}
+
+function closeForgotBox(){
+  document.getElementById('forgotScreen').style.display = 'none';
+}
+
 async function sendPasswordReset(){
-  const email = (document.getElementById('siteUsername').value || '').trim();
-  if(!email){
-    const err = document.getElementById('siteLoginError');
-    if(err){ err.textContent = 'Type your email address first, then press this again.'; err.style.display = 'block'; }
-    return;
-  }
-  const btn = document.getElementById('btnForgotPassword');
+  const field = document.getElementById('forgotEmail');
+  const email = (field.value || '').trim();
+  const err = document.getElementById('forgotError');
+  const done = document.getElementById('forgotDone');
+  const say = t => { err.textContent = t || ''; err.style.display = t ? 'block' : 'none'; };
+  if(!email || email.indexOf('@') === -1){ say('Type the email address you sign in with.'); field.focus(); return; }
+  const btn = document.getElementById('btnSendReset');
   btn.disabled = true;
-  const err = document.getElementById('siteLoginError');
-  if(err) err.style.display = 'none';
+  btn.textContent = 'Sending\u2026';
+  say('');
   try{
     const here = location.origin + location.pathname;
     await fetch(SUPABASE_URL + '/auth/v1/recover', {
@@ -5787,11 +5823,17 @@ async function sendPasswordReset(){
     });
     // The same message either way: whether an address has an account here is
     // nobody else's business
-    siteLoginNote('If that address has an account, a link to set a new password is on its way. It lasts an hour.');
+    done.textContent = 'If that address has an account, the link is on its way. Check the junk folder if it does not appear.';
+    done.style.display = 'block';
+    btn.textContent = 'Sent';
+    setTimeout(()=>{
+      closeForgotBox();
+      siteLoginNote('Check your email for the link to set a new password.');
+    }, 2500);
   }catch(e){
-    if(err){ err.textContent = 'Could not reach the server. Check your connection and try again.'; err.style.display = 'block'; }
-  }finally{
+    say('Could not reach the server. Check your connection and try again.');
     btn.disabled = false;
+    btn.textContent = 'Send the link';
   }
 }
 
