@@ -894,6 +894,13 @@ console.log('\n=== Forgotten password on the office site ===');
 {
   const src = fs.readFileSync('customer-intake.html', 'utf8');
   check('there is a Forgot your password button', src.indexOf('id="btnForgotPassword"') !== -1);
+  check('it opens a box with its own email field', src.indexOf('id="forgotScreen"') !== -1
+        && src.indexOf('id="forgotEmail"') !== -1);
+  check('the box starts with whatever was already typed',
+        src.indexOf("field.value = (document.getElementById('siteUsername').value || '').trim()") !== -1);
+  check('it has Send and Cancel', src.indexOf('id="btnSendReset"') !== -1 && src.indexOf('id="btnCancelForgot"') !== -1);
+  check('an address with no @ is refused before anything is sent',
+        src.indexOf("email.indexOf('@') === -1") !== -1);
   check('and a screen for setting a new one', src.indexOf('id="resetScreen"') !== -1);
   check('it asks the server for a reset link', src.indexOf("/auth/v1/recover") !== -1);
   check('the link comes back to this same page', src.indexOf('redirect_to: here') !== -1);
