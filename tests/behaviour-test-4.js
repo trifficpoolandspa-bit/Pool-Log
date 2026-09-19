@@ -1901,6 +1901,20 @@ async function serverTechniciansTab(){
       w.eval("openTechDetail(technicians.find(t => t.name === 'List Lister'))"); await sleep(300);
       const tab = Array.from(d.querySelectorAll('[data-techtab]')).find(b2 => b2.dataset.techtab === 'customers');
       check('there is a Customers tab', !!tab, Array.from(d.querySelectorAll('[data-techtab]')).map(x => x.dataset.techtab).join('|'));
+      // It belongs on the technician's own page. It once ended up on the list
+      // page instead, which showed every customer there and nothing here.
+      const cardHome = (()=>{
+        let el = d.getElementById('techCustomersCard');
+        while(el && !(el.classList && el.classList.contains('view'))) el = el.parentElement;
+        return el ? el.id : 'nowhere';
+      })();
+      check('the assigned-customers card lives on the technician page', cardHome === 'view-tech-detail', cardHome);
+      const overlayHome = (()=>{
+        let el = d.getElementById('techAssignOverlay');
+        while(el && !(el.classList && el.classList.contains('view'))) el = el.parentElement;
+        return el ? el.id : 'nowhere';
+      })();
+      check('and so does Edit customers', overlayHome === 'view-tech-detail', overlayHome);
       tab.click(); await sleep(250);
       check('it opens that card', d.getElementById('techCustomersCard').style.display !== 'none');
 
@@ -2464,6 +2478,56 @@ async function serverFieldSignIn(){
       srv.offline = false;
       await asUser(OWNER, 'select public.update_technician_account($1, $2, $3, $4)', ['t_sam', null, null, true]);
       a.close();
+    }
+
+    console.log('\n=== admin-readings-app.html: the route is your own ===');
+    {
+      await makeTech(OWNER, 'ada', 'adapass1234', 't_ada', 'Ada Admin', true);
+      await makeTech(OWNER, 'ben', 'benpass1234', 't_ben', 'Ben Field', false);
+      const t = new Date().toISOString();
+      for(const [id, name, tech] of [['ad1', 'Ada Pool', 't_ada'], ['bn1', 'Ben Pool', 't_ben'], ['no1', 'Nobody Pool', '']]){
+        await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
+          [id, JSON.stringify({id: {t, v: id}, name: {t, v: name}, day: {t, v: today}, active: {t, v: true},
+                               hasPool: {t, v: true}, technicianId: {t, v: tech}})]);
+      }
+      // Their profiles, so the office has technicians to send to the phone
+      for(const [id, name] of [['t_ada', 'Ada Admin'], ['t_ben', 'Ben Field']]){
+        await asUser(OWNER, 'select public.push_record_fields($1,$2,$3::jsonb,null)',
+          ['technician', id, JSON.stringify({id: {t, v: id}, name: {t, v: name}})]);
+      }
+      const admin = await boot(srv, 'admin-readings-app.html', {storage: {
+        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+      await signIn(admin, 'ada', 'adapass1234');
+      for(let i = 0; i < 900 && admin.w.eval('syncRunning'); i++) await sleep(10);
+      await sleep(300);
+
+      check('every customer in the company reaches the phone',
+            JSON.parse(admin.storage()['poollog:customers'] || '[]').length >= 3,
+            admin.storage()['poollog:customers']);
+      check('but the route shows only their own', routeNames(admin.d).join() === 'Ada Pool',
+            routeNames(admin.d).join(' | ') + ' | started: ' + String(admin.w.eval('adminRouteStarted'))
+            + ' | who: ' + String(admin.w.eval('currentUser && currentUser.id'))
+            + ' | pick: ' + String(admin.w.eval('adminViewTechId')));
+      check('and the selector starts on them', admin.d.getElementById('adminViewTech').value === 't_ada',
+            admin.d.getElementById('adminViewTech').value);
+
+      // Another technician's day is still one tap away
+      const sel = admin.d.getElementById('adminViewTech');
+      sel.value = 't_ben';
+      sel.dispatchEvent(new admin.w.Event('change', {bubbles: true}));
+      await sleep(250);
+      check('another technician\'s day can be looked at', routeNames(admin.d).join() === 'Ben Pool',
+            routeNames(admin.d).join(' | '));
+      check('and it stays on that choice', admin.d.getElementById('adminViewTech').value === 't_ben');
+
+      sel.value = '';
+      sel.dispatchEvent(new admin.w.Event('change', {bubbles: true}));
+      await sleep(250);
+      const everyone = routeNames(admin.d);
+      check('All customers still shows everybody',
+            ['Ada Pool', 'Ben Pool', 'Nobody Pool'].every(n => everyone.indexOf(n) !== -1) && everyone.length > 1,
+            everyone.join(' | '));
+      admin.close();
     }
 
     console.log('\n=== technician-app.html: an admin\'s own route ===');
