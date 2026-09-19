@@ -3911,7 +3911,11 @@ async function syncPushPhotos(state){
                   'x-upsert': 'true'},
         body: file.blob
       });
-      res = {ok: r.ok, status: r.status};
+      let why = '';
+      if(!r.ok && r.status !== 409){
+        try{ const b = await r.json(); why = b.message || b.error || ''; }catch(e){}
+      }
+      res = {ok: r.ok, status: r.status, why: why};
     }catch(e){
       return {ok: false, offline: true, pushed: pushed};
     }
@@ -3920,7 +3924,10 @@ async function syncPushPhotos(state){
       const again = await fieldRefresh();
       return {ok: again === true, offline: again === 'offline', pushed: pushed};
     }
-    if(!res.ok && res.status !== 409) return {ok: false, pushed: pushed};
+    if(!res.ok && res.status !== 409){
+      return {ok: false, pushed: pushed,
+              why: 'the office refused the file (' + res.status + (res.why ? ': ' + res.why : '') + ')'};
+    }
 
     const noted = await fieldAuthed('/rest/v1/rpc/push_photo', {
       method: 'POST',
@@ -3940,7 +3947,11 @@ async function syncPushPhotos(state){
       saveFieldSyncState(state);
       continue;
     }
-    if(!noted.ok || !noted.body || !noted.body.result) return {ok: false, pushed: pushed};
+    if(!noted.ok || !noted.body || !noted.body.result){
+      const msg = noted.body && (noted.body.message || noted.body.msg);
+      return {ok: false, pushed: pushed,
+              why: 'the office would not record it (' + (noted.status || '?') + (msg ? ': ' + msg : '') + ')'};
+    }
     ph.sent[item.id] = {path: path, at: new Date().toISOString()};
     pushed++;
     saveFieldSyncState(state);      // one at a time, so a dropped signal resumes
@@ -4054,7 +4065,13 @@ async function fieldSync(){
     const photos = await syncPushPhotos(state);
     result.photos = photos.pushed || 0;
     saveFieldSyncState(state);
-    if(!photos.ok){ result.reason = photos.offline ? 'offline' : 'push-failed'; state.lastTrouble = 'a photo could not be sent'; saveFieldSyncState(state); setTimeout(fieldRenderSyncCard, 0); return result; }
+    if(!photos.ok){
+      result.reason = photos.offline ? 'offline' : 'push-failed';
+      state.lastTrouble = 'a photo could not be sent' + (photos.why ? ' — ' + photos.why : '');
+      saveFieldSyncState(state);
+      setTimeout(fieldRenderSyncCard, 0);
+      return result;
+    }
     if(photos.more) setTimeout(()=> fieldSync(), 2500);
     try{ await syncCleanUploadedPhotos(state); }catch(e){}
 
