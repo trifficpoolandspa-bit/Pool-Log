@@ -903,7 +903,8 @@ console.log('\n=== Forgotten password on the office site ===');
         src.indexOf("email.indexOf('@') === -1") !== -1);
   check('and a screen for setting a new one', src.indexOf('id="resetScreen"') !== -1);
   check('it asks the server for a reset link', src.indexOf("/auth/v1/recover") !== -1);
-  check('the link comes back to this same page', src.indexOf('redirect_to: here') !== -1);
+  check('the link comes back to this same page',
+        src.indexOf("'/auth/v1/recover?redirect_to=' + encodeURIComponent(here)") !== -1);
   check('the same answer either way, so it gives nothing away',
         src.indexOf('If that address has an account') !== -1);
   check('the new password must be typed twice', src.indexOf('id="resetPassword2"') !== -1);
