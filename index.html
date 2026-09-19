@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PoolLog — Sign in</title>
+<title>Weir — Sign in</title>
 <link rel="manifest" href="./manifest.json">
 <meta name="theme-color" content="#114B4F">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -111,7 +111,7 @@ input:focus{
       </svg>
     </div>
     <div>
-      <h1>PoolLog</h1>
+      <h1>Weir</h1>
       <p class="sub">Sign in to get to your route.</p>
     </div>
   </div>
@@ -141,7 +141,7 @@ input:focus{
 </div>
 
 <script>
-const LS_PREFIX = 'poollog:';
+const LS_PREFIX = 'weir:';
 function lsGet(key){
   try { return JSON.parse(localStorage.getItem(LS_PREFIX + key)); }
   catch(e){ return null; }
@@ -168,7 +168,30 @@ function lsSet(key, value){
 // Shared word for word by index.html, technician-app.html and admin-readings-app.html.
 const FIELD_SUPABASE_URL = 'https://myxxahrlmzvrbcmopwyo.supabase.co';
 const FIELD_SUPABASE_KEY = 'sb_publishable_32m_kcK3pQpClCGAvAAogg_Ut9RBFS1';
-const DEVICE_PREFIX = 'poollogdevice:';
+// ---------- The move from PoolLog to Weir ----------
+// Every device files its data under names that used to start "poollog". They
+// are copied across to "weir" once, the first time this runs, and the old ones
+// are left where they are: if anything goes wrong, nothing has been lost.
+function weirRenameStoredKeys(){
+  try{
+    if(localStorage.getItem('weir:__renamed')) return;
+    const old = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf('poollog') === 0) old.push(k);
+    }
+    old.forEach(k=>{
+      const moved = 'weir' + k.slice('poollog'.length);
+      if(localStorage.getItem(moved) === null){
+        try{ localStorage.setItem(moved, localStorage.getItem(k)); }catch(e){}
+      }
+    });
+    localStorage.setItem('weir:__renamed', new Date().toISOString());
+  }catch(e){}
+}
+weirRenameStoredKeys();
+
+const DEVICE_PREFIX = 'weirdevice:';
 
 function deviceGet(key){
   try{ return JSON.parse(localStorage.getItem(DEVICE_PREFIX + key)); }catch(e){ return null; }
@@ -281,7 +304,7 @@ async function fieldSignInOffline(company, username, password, needAdmin){
   if(!scrambled || !fieldSameSecret(scrambled, saved.scrambled)) return {ok: false, message: FIELD_NO_MATCH};
   const m = saved.membership;
   if(needAdmin && !(m && m.full_access)){
-    return {ok: false, message: 'This app is for admins. Use the PoolLog technician app instead.'};
+    return {ok: false, message: 'This app is for admins. Use the Weir technician app instead.'};
   }
   // No access token until there is signal: the first call once the phone is
   // back online swaps this for a fresh session, or signs them out if the
@@ -366,7 +389,7 @@ async function fieldSignIn(username, password, needAdmin){
   let refusal = null;
   if(!m || !m.technician_id || m.company_id !== company.id) refusal = "This account can't sign in here. Check with your office.";
   else if(m.removed) refusal = 'This sign-in has been removed. Check with your office.';
-  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the PoolLog technician app instead.';
+  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the Weir technician app instead.';
   if(refusal){
     await fieldSignOut();
     fieldForgetLogin(company.id, u);
@@ -438,7 +461,7 @@ async function fieldCheckAccount(needAdmin, onGone){
 
 function fieldGoneMessage(reason){
   if(reason === 'removed') return 'Your sign-in was removed. Check with your office.';
-  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the PoolLog technician app instead.';
+  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the Weir technician app instead.';
   return 'You were signed out. Sign in again.';
 }
 

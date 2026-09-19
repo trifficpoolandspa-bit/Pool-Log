@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PoolLog Technician — Readings & Reports</title>
+<title>Weir Technician — Readings & Reports</title>
 <link rel="manifest" href="./manifest.json">
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <meta name="theme-color" content="#114B4F">
@@ -429,7 +429,7 @@ select#customerSelect{font-weight:600;}
 <body>
 <div id="loginScreen" style="display:none;position:fixed;inset:0;z-index:200;background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);align-items:center;justify-content:center;padding:24px;">
   <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
-    <h2 style="font-size:20px;margin:0 0 4px;">PoolLog</h2>
+    <h2 style="font-size:20px;margin:0 0 4px;">Weir</h2>
     <p style="font-size:12.5px;color:#5E7371;margin:0 0 18px;">Sign in to see your route.</p>
     <div class="field"><label>Username</label><input id="loginUsername" autocomplete="username" placeholder="sam.rivera"></div>
     <div class="field"><label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
@@ -450,7 +450,7 @@ select#customerSelect{font-weight:600;}
       </svg>
     </div>
     <div>
-      <h1>PoolLog Technician</h1>
+      <h1>Weir Technician</h1>
       <p>Chemical readings & reports</p>
     </div>
   </div>
@@ -537,7 +537,7 @@ select#customerSelect{font-weight:600;}
 
     <div class="card" id="visitClipSection" style="display:none;">
       <h2>Send a clip</h2>
-      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Up to 15 seconds, with sound, for something a photo cannot explain &mdash; a pump making a noise, water tracking to a leak. It goes straight to your phone&rsquo;s share sheet, so you can text or email it to the office. Nothing is saved in PoolLog.</p>
+      <p style="font-size:12.5px;color:var(--muted);margin:-6px 0 14px;">Up to 15 seconds, with sound, for something a photo cannot explain &mdash; a pump making a noise, water tracking to a leak. It goes straight to your phone&rsquo;s share sheet, so you can text or email it to the office. Nothing is saved in Weir.</p>
       <div class="btn-row">
         <button class="btn btn-primary" id="btnRecordClip" type="button" style="width:auto;">Record a clip</button>
       </div>
@@ -851,7 +851,7 @@ select#customerSelect{font-weight:600;}
 // with a button to copy the details. Kept deliberately dependency-free and
 // early in the file, so it works even if the rest of the script dies.
 const APP_VERSION = 'technician-2026-09-11';
-const ERROR_LOG_KEY = 'poollog:errorLog';
+const ERROR_LOG_KEY = 'weir:errorLog';
 const ERROR_LOG_MAX = 20;
 
 function recordError(kind, message, source, line, col, stack){
@@ -881,7 +881,7 @@ function recordError(kind, message, source, line, col, stack){
 }
 
 function errorText(entry){
-  return 'PoolLog problem report\n'
+  return 'Weir problem report\n'
     + '----------------------\n'
     + 'When:    ' + entry.when + '\n'
     + 'Version: ' + entry.version + '\n'
@@ -997,7 +997,30 @@ function reportStorageFailure(where, err){
   showErrorBanner(entry);
 }
 
-const STORAGE_PREFIX = 'poollog:';
+// ---------- The move from PoolLog to Weir ----------
+// Every device files its data under names that used to start "poollog". They
+// are copied across to "weir" once, the first time this runs, and the old ones
+// are left where they are: if anything goes wrong, nothing has been lost.
+function weirRenameStoredKeys(){
+  try{
+    if(localStorage.getItem('weir:__renamed')) return;
+    const old = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf('poollog') === 0) old.push(k);
+    }
+    old.forEach(k=>{
+      const moved = 'weir' + k.slice('poollog'.length);
+      if(localStorage.getItem(moved) === null){
+        try{ localStorage.setItem(moved, localStorage.getItem(k)); }catch(e){}
+      }
+    });
+    localStorage.setItem('weir:__renamed', new Date().toISOString());
+  }catch(e){}
+}
+weirRenameStoredKeys();
+
+const STORAGE_PREFIX = 'weir:';
 
 // ---------- Leading zero on decimals ----------
 // Typing ".5" is quicker than "0.5", so accept it and tidy it up. One
@@ -2084,7 +2107,7 @@ function lsSet(key, value){
 // Shared word for word by index.html, technician-app.html and admin-readings-app.html.
 const FIELD_SUPABASE_URL = 'https://myxxahrlmzvrbcmopwyo.supabase.co';
 const FIELD_SUPABASE_KEY = 'sb_publishable_32m_kcK3pQpClCGAvAAogg_Ut9RBFS1';
-const DEVICE_PREFIX = 'poollogdevice:';
+const DEVICE_PREFIX = 'weirdevice:';
 
 function deviceGet(key){
   try{ return JSON.parse(localStorage.getItem(DEVICE_PREFIX + key)); }catch(e){ return null; }
@@ -2197,7 +2220,7 @@ async function fieldSignInOffline(company, username, password, needAdmin){
   if(!scrambled || !fieldSameSecret(scrambled, saved.scrambled)) return {ok: false, message: FIELD_NO_MATCH};
   const m = saved.membership;
   if(needAdmin && !(m && m.full_access)){
-    return {ok: false, message: 'This app is for admins. Use the PoolLog technician app instead.'};
+    return {ok: false, message: 'This app is for admins. Use the Weir technician app instead.'};
   }
   // No access token until there is signal: the first call once the phone is
   // back online swaps this for a fresh session, or signs them out if the
@@ -2282,7 +2305,7 @@ async function fieldSignIn(username, password, needAdmin){
   let refusal = null;
   if(!m || !m.technician_id || m.company_id !== company.id) refusal = "This account can't sign in here. Check with your office.";
   else if(m.removed) refusal = 'This sign-in has been removed. Check with your office.';
-  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the PoolLog technician app instead.';
+  else if(needAdmin && !m.full_access) refusal = 'This app is for admins. Use the Weir technician app instead.';
   if(refusal){
     await fieldSignOut();
     fieldForgetLogin(company.id, u);
@@ -2362,7 +2385,7 @@ async function fieldCheckAccount(needAdmin, onGone){
 
 function fieldGoneMessage(reason){
   if(reason === 'removed') return 'Your sign-in was removed. Check with your office.';
-  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the PoolLog technician app instead.';
+  if(reason === 'not-admin') return 'Admin access was turned off for your account. Use the Weir technician app instead.';
   return 'You were signed out. Sign in again.';
 }
 
@@ -2712,7 +2735,7 @@ function fieldCollectBackup(){
     const k = localStorage.key(i);
     if(k && k.indexOf(STORAGE_PREFIX) === 0) data[k.slice(STORAGE_PREFIX.length)] = localStorage.getItem(k);
   }
-  return {app: 'PoolLog', createdAt: new Date().toISOString(), data: data};
+  return {app: 'Weir', createdAt: new Date().toISOString(), data: data};
 }
 
 async function fieldFirstSyncBackup(companyId){
@@ -4624,7 +4647,7 @@ function renderClipSection(){
 // For a technician showing the office something a photo cannot explain — a pump
 // making a noise, water tracking to a leak. Recorded in the app, then handed to
 // the phone's own share sheet, so it goes wherever they normally send things.
-// Nothing is stored in PoolLog: passing a clip from a phone to the office needs
+// Nothing is stored in Weir: passing a clip from a phone to the office needs
 // a server, and that is backend work.
 const CLIP_MAX_SECONDS = 15;
 
@@ -4659,7 +4682,7 @@ async function recordClip(){
       audio: true            // a noise is often the whole point
     });
   }catch(e){
-    await alertDialog('The camera could not be opened. Check PoolLog is allowed to use '
+    await alertDialog('The camera could not be opened. Check Weir is allowed to use '
       + 'the camera and microphone.', 'No camera');
     return null;
   }
@@ -4729,7 +4752,7 @@ async function recordClip(){
         const blob = new Blob(chunks, {type: blobType});
         if(!blob.size){ finish(null); return; }
         const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
-        finish(new File([blob], 'poollog-' + stamp + '.' + ext, {type: blobType}));
+        finish(new File([blob], 'weir-' + stamp + '.' + ext, {type: blobType}));
       };
 
       recorder.start();
@@ -4758,10 +4781,10 @@ async function shareClip(file, customer){
   if(!file) return;
 
   const who = customer ? (customer.name || '') : '';
-  const title = who ? 'PoolLog \u2014 ' + who : 'PoolLog clip';
+  const title = who ? 'Weir \u2014 ' + who : 'Weir clip';
   const text = who
     ? who + (customer && customer.address ? ' \u2014 ' + customer.address : '')
-    : 'Clip from PoolLog';
+    : 'Clip from Weir';
 
   try{
     if(navigator.canShare && navigator.canShare({files: [file]})){

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PoolLog — Customer Intake</title>
+<title>Weir — Customer Intake</title>
 <!-- Its own manifest, so adding this to a Home Screen gives an icon that
      opens the office site rather than the technician sign-in. -->
   <link rel="manifest" href="./manifest-office.json">
@@ -395,7 +395,7 @@ input::placeholder{color:#A9BCB9;}
 <body>
 <div id="loginScreen" style="display:none;position:fixed;inset:0;z-index:400;background:linear-gradient(168deg,#16585C 0%,#114B4F 55%,#0D3E42 100%);align-items:center;justify-content:center;padding:24px;">
   <div style="background:#fff;border-radius:16px;padding:26px 22px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,0.28);">
-    <h2 style="font-size:20px;margin:0 0 4px;">PoolLog</h2>
+    <h2 style="font-size:20px;margin:0 0 4px;">Weir</h2>
     <p style="font-size:12.5px;color:#5E7371;margin:0 0 18px;">Sign in to manage your customers and settings.</p>
     <div class="field"><label>Email</label><input id="siteUsername" type="email" autocomplete="username" inputmode="email" placeholder="you@yourcompany.com"></div>
     <div class="field"><label>Password</label><input id="sitePassword" type="password" autocomplete="current-password" placeholder="Your password"></div>
@@ -440,7 +440,7 @@ input::placeholder{color:#A9BCB9;}
         </svg>
       </div>
       <div>
-        <h1>PoolLog</h1>
+        <h1>Weir</h1>
         <p>Customer intake</p>
       </div>
     </div>
@@ -493,7 +493,7 @@ input::placeholder{color:#A9BCB9;}
     <main>
   <div class="notice">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;"><circle cx="12" cy="12" r="10" stroke="#0A3739" stroke-width="2"/><path d="M12 8V13" stroke="#0A3739" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.2" r="1.1" fill="#0A3739"/></svg>
-    <span>Customers added here appear automatically in the main PoolLog app — both pages share the same on-device storage. Add a test customer, then check the main app to confirm before relying on this for real customers.</span>
+    <span>Customers added here appear automatically in the main Weir app — both pages share the same on-device storage. Add a test customer, then check the main app to confirm before relying on this for real customers.</span>
   </div>
 
   <div class="view active" id="view-customers">
@@ -1672,7 +1672,7 @@ input::placeholder{color:#A9BCB9;}
 // with a button to copy the details. Kept deliberately dependency-free and
 // early in the file, so it works even if the rest of the script dies.
 const APP_VERSION = 'website-2026-09-11';
-const ERROR_LOG_KEY = 'poollog:errorLog';
+const ERROR_LOG_KEY = 'weir:errorLog';
 const ERROR_LOG_MAX = 20;
 
 function recordError(kind, message, source, line, col, stack){
@@ -1702,7 +1702,7 @@ function recordError(kind, message, source, line, col, stack){
 }
 
 function errorText(entry){
-  return 'PoolLog problem report\n'
+  return 'Weir problem report\n'
     + '----------------------\n'
     + 'When:    ' + entry.when + '\n'
     + 'Version: ' + entry.version + '\n'
@@ -1818,7 +1818,30 @@ function reportStorageFailure(where, err){
   showErrorBanner(entry);
 }
 
-const STORAGE_PREFIX = 'poollog:';
+// ---------- The move from PoolLog to Weir ----------
+// Every device files its data under names that used to start "poollog". They
+// are copied across to "weir" once, the first time this runs, and the old ones
+// are left where they are: if anything goes wrong, nothing has been lost.
+function weirRenameStoredKeys(){
+  try{
+    if(localStorage.getItem('weir:__renamed')) return;
+    const old = [];
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if(k && k.indexOf('poollog') === 0) old.push(k);
+    }
+    old.forEach(k=>{
+      const moved = 'weir' + k.slice('poollog'.length);
+      if(localStorage.getItem(moved) === null){
+        try{ localStorage.setItem(moved, localStorage.getItem(k)); }catch(e){}
+      }
+    });
+    localStorage.setItem('weir:__renamed', new Date().toISOString());
+  }catch(e){}
+}
+weirRenameStoredKeys();
+
+const STORAGE_PREFIX = 'weir:';
 let keepProfileTab = false;   // true while stepping between customers
 
 // ---------- Leading zero on decimals ----------
@@ -6016,7 +6039,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
 // Edits are dated by this device's clock. Sync state lives under its own
 // prefix, not STORAGE_PREFIX, so a downloaded backup never carries it and
 // restoring one never rewinds it.
-const SYNC_PREFIX = 'poollogsync:';
+const SYNC_PREFIX = 'weirsync:';
 const SYNC_MASS_DELETE = 5;
 const SYNC_INTERVAL_MS = 60000;
 const SYNC_PAGE = 500;
@@ -6678,7 +6701,7 @@ function startCustomerSync(){
 // one gets a made-up address on a reserved domain that can never receive mail;
 // nobody sees or types it. The rules — who may create, rename, reset or remove —
 // are enforced by the database (snippet 06); this only asks.
-const TECH_ACCOUNT_DOMAIN = 'accounts.poollog.invalid';
+const TECH_ACCOUNT_DOMAIN = 'accounts.weir.invalid';
 let techAccounts = null;   // technician id -> {username, is_admin}; null until loaded
 
 function techErrorMessage(res, fallback){
@@ -7482,7 +7505,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'poollog-before-first-sync-' + String(payload.createdAt || '').slice(0,19).replace(/[:T]/g,'-') + '.json';
+    a.download = 'weir-before-first-sync-' + String(payload.createdAt || '').slice(0,19).replace(/[:T]/g,'-') + '.json';
     a.click();
     URL.revokeObjectURL(a.href);
   });
@@ -7586,7 +7609,7 @@ function renderAccountPlan(){
   });
 
   if(note){
-    note.textContent = 'PoolLog runs entirely in this browser at the moment \u2014 there is no '
+    note.textContent = 'Weir runs entirely in this browser at the moment \u2014 there is no '
       + 'subscription, no server and nothing to pay for. Billing and per-account sign-in arrive '
       + 'with the hosted version.';
   }
@@ -12867,7 +12890,7 @@ function collectBackup(){
     }
   }
   return {
-    app: 'PoolLog',
+    app: 'Weir',
     version: 1,
     createdAt: new Date().toISOString(),
     keyCount: Object.keys(data).length,
@@ -12916,8 +12939,9 @@ document.getElementById('backupFileInput').addEventListener('change', async (e)=
     showToast("That file isn't a valid backup");
     return;
   }
-  if(!payload || payload.app !== 'PoolLog' || !payload.data){
-    showToast("That doesn't look like a PoolLog backup");
+  // A backup made before the rename still says PoolLog, and still opens
+  if(!payload || (payload.app !== 'Weir' && payload.app !== 'PoolLog') || !payload.data){
+    showToast("That doesn't look like a Weir backup");
     return;
   }
 
@@ -12935,7 +12959,7 @@ document.getElementById('backupFileInput').addEventListener('change', async (e)=
     'Restore this backup from ' + made + '? It contains ' + custCount +
     (custCount === 1 ? ' customer' : ' customers') + ' and ' + techCount +
     (techCount === 1 ? ' technician' : ' technicians') +
-    '. Everything currently in PoolLog will be replaced. A copy of your current data will download first, so you can undo this.'
+    '. Everything currently in Weir will be replaced. A copy of your current data will download first, so you can undo this.'
   );
   if(!confirmed) return;
 
@@ -12954,7 +12978,7 @@ document.getElementById('backupFileInput').addEventListener('change', async (e)=
   }catch(err){}
 
   try{
-    // Clear existing PoolLog keys, then write the backup in
+    // Clear existing Weir keys, then write the backup in
     const toRemove = [];
     for(let i = 0; i < localStorage.length; i++){
       const k = localStorage.key(i);
@@ -15559,7 +15583,7 @@ function openImportMapper(rows){
   overlay.innerHTML = `
     <div class="confirm-box" style="max-width:560px;max-height:86vh;display:flex;flex-direction:column;">
       <h3 style="font-size:16px;margin:0 0 4px;">Import customers</h3>
-      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Found ${dataRows.length} row${dataRows.length === 1 ? '' : 's'}. Match your spreadsheet columns to PoolLog fields — anything left as "Skip" is ignored. These are added to your existing customers, nothing is replaced.</p>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 14px;">Found ${dataRows.length} row${dataRows.length === 1 ? '' : 's'}. Match your spreadsheet columns to Weir fields — anything left as "Skip" is ignored. These are added to your existing customers, nothing is replaced.</p>
       <div id="importMapBody" style="flex:1;overflow-y:auto;"></div>
       <div id="importPreview" style="font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;margin-top:10px;"></div>
       <div class="btn-row" style="margin-top:12px;">
