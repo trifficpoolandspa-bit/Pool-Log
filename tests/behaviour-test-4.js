@@ -2140,7 +2140,8 @@ async function serverFieldSignIn(){
         // Real storage refuses an overwrite unless asked, and the bucket rules
         // do not allow one at all
         if((o.headers || {})['x-upsert']) return [400, {message: 'new row violates row-level security policy'}];
-        if(srv.files[path]) return [409, {message: 'The resource already exists'}];
+        // Real storage reports this as a 400 carrying a 409 inside it
+        if(srv.files[path]) return [400, {statusCode: '409', message: 'The resource already exists'}];
         srv.files[path] = o.body;
         return [200, {Key: path}];
       }
