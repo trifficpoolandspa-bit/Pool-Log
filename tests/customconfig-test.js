@@ -33,7 +33,7 @@ function boot(file){
       w.console.warn=()=>{};w.console.error=()=>{};
       w.indexedDB=global.indexedDB;w.IDBKeyRange=global.IDBKeyRange;
       w.addEventListener('error',e=>console.log('  UNCAUGHT:',e.error?e.error.message:e.message));
-      Object.keys(seed).forEach(k=>w.localStorage.setItem('poollog:'+k,JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=>w.localStorage.setItem('weir:'+k,JSON.stringify(seed[k])));
     }});
 }
 const wait=ms=>new Promise(r=>setTimeout(r,ms));

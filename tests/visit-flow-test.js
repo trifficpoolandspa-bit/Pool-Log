@@ -38,7 +38,7 @@ function boot(file, seed){
       w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
       w.console.warn=()=>{}; w.console.error=()=>{};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
     }
   });
 }
@@ -177,7 +177,7 @@ async function walkVisit(w, d, maxPresses){
       await walkVisit(w, d);                 // the spa, which ends the visit
       check('  the visit finished', w.eval('currentViewName') === 'home', String(w.eval('currentViewName')));
 
-      const saved = JSON.parse(w.localStorage.getItem('poollog:readings:a') || '[]');
+      const saved = JSON.parse(w.localStorage.getItem('weir:readings:a') || '[]');
       check('  the pool reading records the salt cell as cleaned', saved[0] && saved[0].saltCellCleaned === true, JSON.stringify(saved[0]));
       check('  and the filter as backwashed', saved[0] && saved[0].filterBackwashed === true);
 

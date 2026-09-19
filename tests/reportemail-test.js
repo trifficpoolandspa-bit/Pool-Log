@@ -20,7 +20,7 @@ function boot(file, seed){
       w.console.warn=()=>{}; w.console.error=()=>{};
       w.Element.prototype.scrollIntoView = function(){};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
     }
   });
 }

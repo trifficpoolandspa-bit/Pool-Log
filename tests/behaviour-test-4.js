@@ -21,7 +21,7 @@ function load(file, opts = {}){
       w.console.error = (...a) => errors.push(a.join(' '));
       if(opts.seed){
         Object.keys(opts.seed).forEach(k=>{
-          w.localStorage.setItem('poollog:' + k, JSON.stringify(opts.seed[k]));
+          w.localStorage.setItem('weir:' + k, JSON.stringify(opts.seed[k]));
         });
       }
       // Lets a test stub a browser API the app depends on, such as the camera
@@ -890,6 +890,23 @@ console.log('\n=== No development shortcuts remain ===');
 }
 
 
+console.log('\n=== The app is called Weir ===');
+{
+  const files = ['customer-intake.html', 'technician-app.html', 'admin-readings-app.html', 'index.html'];
+  files.forEach(f=>{
+    const src = fs.readFileSync(f, 'utf8');
+    // The only PoolLog left is the note explaining the move and the line that
+    // keeps an older backup readable
+    const strays = src.split('\n').filter(l => l.indexOf('PoolLog') !== -1
+      && l.indexOf('move from PoolLog to Weir') === -1
+      && l.indexOf('still says PoolLog') === -1
+      && l.indexOf("payload.app !== 'PoolLog'") === -1);
+    check(f + ' says Weir, not PoolLog', strays.length === 0, strays.slice(0, 2).join(' // '));
+    check(f + ' files its data under weir', src.indexOf("'poollog:'") === -1 && src.indexOf("'poollogdevice:'") === -1);
+    check(f + ' copies what a device already has across', src.indexOf('weirRenameStoredKeys') !== -1);
+  });
+}
+
 console.log('\n=== Forgotten password on the office site ===');
 {
   const src = fs.readFileSync('customer-intake.html', 'utf8');
@@ -950,8 +967,8 @@ console.log('\n=== The starter account is gone; the field apps sign in against t
   const {dom} = load('technician-app.html', {seed: {customers: []}});
   deferred.push(()=>{
     check('a fresh phone gets no technicians made up for it',
-          dom.window.localStorage.getItem('poollog:technicians') === null,
-          String(dom.window.localStorage.getItem('poollog:technicians')));
+          dom.window.localStorage.getItem('weir:technicians') === null,
+          String(dom.window.localStorage.getItem('weir:technicians')));
     check('and nobody is signed in', dom.window.eval('currentUser') === null);
   });
 
@@ -961,7 +978,7 @@ console.log('\n=== The starter account is gone; the field apps sign in against t
     technicians: [{id:'x', name:'Their Own Person', username:'bob'}]
   }});
   deferred.push(()=>{
-    const list = JSON.parse(own.dom.window.localStorage.getItem('poollog:technicians'));
+    const list = JSON.parse(own.dom.window.localStorage.getItem('weir:technicians'));
     check('an existing technician list is left alone',
           list.length === 1 && list[0].name === 'Their Own Person',
           JSON.stringify(list.map(t=>t.name)));
@@ -1152,7 +1169,7 @@ console.log('\n=== Admin app: a past day hides the customers finished that day =
         const laterIso = new Date(later.getTime() - later.getTimezoneOffset()*60000).toISOString().slice(0,10);
         const c = id => customers.find(x => x.id === id);
         customers.forEach(x => { delete x.lastServicedDate; });
-        ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('poollog:' + k));
+        ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('weir:' + k));
         readingsCache = {};
         c('done').lastServicedDate = iso;
         lsSet('readings:done', [{id:'r1', date: at(9, 0), chlorine:'3'}]);
@@ -1187,7 +1204,7 @@ console.log('\n=== Admin app: a past day hides the customers finished that day =
       selectedHomeDay = DAYS_OF_WEEK[new Date().getDay()]; weekOffset = 0;
       customers.forEach(x => { x.day = selectedHomeDay; delete x.lastServicedDate; });
       customers.find(x => x.id === 'done').lastServicedDate = todayDateStr();
-      ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('poollog:' + k));
+      ['readings:done','readings:again','readings:reserv','readings:evening','skippedVisits:skipped'].forEach(k => localStorage.removeItem('weir:' + k));
       readingsCache = {};
       lsSet('customers', customers);
       renderHomeList();
@@ -1254,8 +1271,8 @@ async function serverAccounts(){
       await pool.query('truncate public.customers, public.customer_versions');
       await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
       await pool.query(`insert into auth.users(id, email) values ($1,'john@triffic.test'),($2,'owner@affinity.test'),
-        ($3,'tech-a1@accounts.poollog.invalid'),($4,'tech-b2@accounts.poollog.invalid'),
-        ($5,'tech-c3@accounts.poollog.invalid'),($6,'someone@gmail.test')`, [OWNER, OUTSIDER, ALEX, SAM, OLD, GMAIL]);
+        ($3,'tech-a1@accounts.weir.invalid'),($4,'tech-b2@accounts.weir.invalid'),
+        ($5,'tech-c3@accounts.weir.invalid'),($6,'someone@gmail.test')`, [OWNER, OUTSIDER, ALEX, SAM, OLD, GMAIL]);
       await pool.query(`update auth.users set created_at = now() - interval '1 day' where id = $1`, [OLD]);
       await pool.query(`insert into public.companies(id, name) values ($1,'Triffic'),($2,'Affinity')`, [CO, OTHER_CO]);
       await pool.query(`insert into public.members(user_id, company_id, role) values ($1,$2,'owner'),($3,$4,'owner')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
@@ -1286,7 +1303,7 @@ async function serverAccounts(){
 
       console.log('\n=== Two companies can use the same username ===');
       const OTHER_ALEX = '77777777-7777-7777-7777-777777777777';
-      await pool.query(`insert into auth.users(id, email) values ($1, 'tech-z9@accounts.poollog.invalid')`, [OTHER_ALEX]);
+      await pool.query(`insert into auth.users(id, email) values ($1, 'tech-z9@accounts.weir.invalid')`, [OTHER_ALEX]);
       r = await as(OUTSIDER, 'select public.username_available($1) a', ['alex.r']);
       check('a username used by one company is free for another', val(r) === true);
       r = await attach(OUTSIDER, OTHER_ALEX, 'Alex.R', 'their-t1', false);
@@ -1302,9 +1319,9 @@ async function serverAccounts(){
       r = await as('anon', 'select public.company_for_code($1) c', ['NOPE99']);
       check('a wrong code finds nothing', r.ok && val(r) === null, JSON.stringify(r));
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, '  ALEX.R ']);
-      check('within a company, a username gives that account\'s sign-in address', val(r) === 'tech-a1@accounts.poollog.invalid', JSON.stringify(r));
+      check('within a company, a username gives that account\'s sign-in address', val(r) === 'tech-a1@accounts.weir.invalid', JSON.stringify(r));
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [OTHER_CO, 'alex.r']);
-      check('the same username in the other company gives the other account', val(r) === 'tech-z9@accounts.poollog.invalid', JSON.stringify(r));
+      check('the same username in the other company gives the other account', val(r) === 'tech-z9@accounts.weir.invalid', JSON.stringify(r));
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, 'nobody']);
       check('an unknown username gives nothing', r.ok && val(r) === null, JSON.stringify(r));
       r = await as(OWNER, 'select public.my_membership() m');
@@ -1318,7 +1335,7 @@ async function serverAccounts(){
       r = await as('anon', 'select public.company_for_code($1) c', [trifficCode]);
       check('the old code no longer does', r.ok && val(r) === null);
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, 'alex.r']);
-      check('a phone already set up still signs in after the code changes', val(r) === 'tech-a1@accounts.poollog.invalid');
+      check('a phone already set up still signs in after the code changes', val(r) === 'tech-a1@accounts.weir.invalid');
       r = await as(OUTSIDER, 'select public.set_company_code($1) c', ['TRIFFIC']);
       check('another company cannot take a code in use', !r.ok && /already used/.test(r.error), r.error);
       r = await as(OWNER, 'select public.set_company_code($1) c', ['ab!']);
@@ -1373,11 +1390,11 @@ async function serverAccounts(){
       r = await as(OWNER, 'select public.update_technician_account($1,$2,$3,$4) j', ['t1', 'alex.rivera', null, true]);
       check('an owner renames a technician and gives admin access', r.ok && val(r).username === 'alex.rivera' && val(r).is_admin === true, r.error);
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, 'alex.rivera']);
-      check('the new username signs in to the same account', val(r) === 'tech-a1@accounts.poollog.invalid');
+      check('the new username signs in to the same account', val(r) === 'tech-a1@accounts.weir.invalid');
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, 'alex.r']);
       check('the old one no longer does', r.ok && val(r) === null);
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [OTHER_CO, 'alex.r']);
-      check('and the other company\'s alex.r is unaffected', val(r) === 'tech-z9@accounts.poollog.invalid');
+      check('and the other company\'s alex.r is unaffected', val(r) === 'tech-z9@accounts.weir.invalid');
       r = await as(OWNER, 'select public.update_technician_account($1,$2,$3,$4) j', ['t1', 'SAM', null, null]);
       check('renaming to a taken username is refused', !r.ok && /already taken/.test(r.error), r.error);
       check('admin access takes effect at once', await ids(ALEX) === 'c1,c2,c3,c4', await ids(ALEX));
@@ -1424,11 +1441,11 @@ async function serverAccounts(){
       r = await as(OWNER, 'select public.remove_technician_account($1) j', ['t1']);
       check('removing twice does nothing', r.ok && val(r) === null, JSON.stringify(r));
       const NEW_ALEX = '88888888-8888-8888-8888-888888888888';
-      await pool.query(`insert into auth.users(id, email) values ($1, 'tech-n8@accounts.poollog.invalid')`, [NEW_ALEX]);
+      await pool.query(`insert into auth.users(id, email) values ($1, 'tech-n8@accounts.weir.invalid')`, [NEW_ALEX]);
       r = await attach(OWNER, NEW_ALEX, 'alex.rivera', 't1', false);
       check('the same profile and username can get a fresh account during the grace period', r.ok, r.error);
       r = await as('anon', 'select public.sign_in_address($1, $2) a', [CO, 'alex.rivera']);
-      check('which is the one that signs in', val(r) === 'tech-n8@accounts.poollog.invalid', JSON.stringify(r));
+      check('which is the one that signs in', val(r) === 'tech-n8@accounts.weir.invalid', JSON.stringify(r));
       check('the new account sees the customer', (await ids(NEW_ALEX)) === 'c3', await ids(NEW_ALEX));
       check('the removed one still does not', (await ids(ALEX)) === '');
 
@@ -1561,8 +1578,8 @@ async function serverTechniciansTab(){
           const [status, body] = await srv.handle(OWNER, url, o2);
           return {ok: status >= 200 && status < 300, status, json: async () => body};
         };
-        w.localStorage.setItem('poollog:sbSession', JSON.stringify({access_token: 'owner-token', refresh_token: 'r'}));
-        Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('poollog:' + k, JSON.stringify(v)));
+        w.localStorage.setItem('weir:sbSession', JSON.stringify({access_token: 'owner-token', refresh_token: 'r'}));
+        Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('weir:' + k, JSON.stringify(v)));
       }
     });
     const w = dom.window;
@@ -1635,12 +1652,12 @@ async function serverTechniciansTab(){
       let ms = await members();
       check('a sign-in is created on the server', ms.length === 1 && ms[0].username === 'alex', JSON.stringify(ms));
       check('linked to the technician profile', ms.length === 1 && ms[0].technician_id === w.eval("technicians.find(t => t.name === 'Alex Rivera').id"));
-      check('using a hidden address on the reserved domain', ms.length === 1 && /^tech-[a-z0-9]{24}@accounts\.poollog\.invalid$/.test(ms[0].email), ms[0] && ms[0].email);
+      check('using a hidden address on the reserved domain', ms.length === 1 && /^tech-[a-z0-9]{24}@accounts\.weir\.invalid$/.test(ms[0].email), ms[0] && ms[0].email);
       check('confirmed, so it works straight away', ms.length === 1 && !!ms[0].email_confirmed_at);
       const pwOk = (await pool.query(`select encrypted_password = extensions.crypt('goodpassword', encrypted_password) ok from auth.users where email = $1`, [ms[0].email])).rows[0].ok;
       check('with the password the owner typed', pwOk === true);
       check('sign-up did not carry the owner\'s session', !('Authorization' in srv.lastSignup.headers) && !('authorization' in srv.lastSignup.headers), JSON.stringify(srv.lastSignup.headers));
-      check('and the owner is still signed in as themselves', JSON.parse(w.localStorage.getItem('poollog:sbSession')).access_token === 'owner-token');
+      check('and the owner is still signed in as themselves', JSON.parse(w.localStorage.getItem('weir:sbSession')).access_token === 'owner-token');
       check('the list shows who they sign in as', /Signs in as alex/.test(rowText(d, 'Alex Rivera')), rowText(d, 'Alex Rivera'));
       check('the toast says so', /sign in as alex/.test(toasts(w)), toasts(w));
 
@@ -1695,7 +1712,7 @@ async function serverTechniciansTab(){
       w.eval('resetTechForm(); hideTechForm();');
 
       console.log('\n=== Another company can use the same username ===');
-      const THEIR = (await pool.query(`insert into auth.users(id, email) values (gen_random_uuid(), 'tech-other@accounts.poollog.invalid') returning id`)).rows[0].id;
+      const THEIR = (await pool.query(`insert into auth.users(id, email) values (gen_random_uuid(), 'tech-other@accounts.weir.invalid') returning id`)).rows[0].id;
       await asUser(OUTSIDER, 'select public.attach_technician($1, $2, $3, $4, $5)', [THEIR, 'sam', 'their_sam', 'Sam', false]);
       d.getElementById('btnAddTech').click(); await sleep(50);
       fill(d, w, {techName: 'Sam Admin', techUsername: 'sam', techPassword: 'adminpass1', techIsAdmin: true});
@@ -2266,8 +2283,8 @@ async function serverFieldSignIn(){
     p.d.getElementById('btnLogin').click(); await sleep(350);
   }
   const seedStorage = extra => Object.assign({
-    'poollog:technicians': JSON.stringify([{id: 't_alex', name: 'Alex (phone copy)', requireAfterPhoto: true}]),
-    'poollog:customers': JSON.stringify([
+    'weir:technicians': JSON.stringify([{id: 't_alex', name: 'Alex (phone copy)', requireAfterPhoto: true}]),
+    'weir:customers': JSON.stringify([
       {id: 'c1', name: 'Alex Pool', day: today, active: true, technicianId: 't_alex', hasPool: true},
       {id: 'c2', name: 'Sam Pool', day: today, active: true, technicianId: 't_sam', hasPool: true}])
   }, extra || {});
@@ -2297,7 +2314,7 @@ async function serverFieldSignIn(){
       p.d.getElementById('btnLoginCompany').click(); await sleep(100);
       check('then the company is shown above the sign-in', shown(p.d.getElementById('loginCompanyRow')) && p.d.getElementById('loginCompanyName').textContent === 'Triffic Pool and Spa');
       check('and username and password appear', shown(p.d.getElementById('loginUsername').closest('.field')) && shown(p.d.getElementById('btnLogin')));
-      check('the phone remembers the company itself', JSON.parse(p.storage()['poollogdevice:company']).id === CO);
+      check('the phone remembers the company itself', JSON.parse(p.storage()['weirdevice:company']).id === CO);
 
       console.log('\n=== technician-app.html: signing in ===');
       await signIn(p, 'alex', 'wrongpass');
@@ -2315,7 +2332,7 @@ async function serverFieldSignIn(){
       check('their route shows their customers', routeNames(p.d).join() === 'Alex Pool', routeNames(p.d).join(' | '));
       const st = p.storage();
       check('the sign-in is kept apart from company data, so backups never carry it',
-            !!st['poollogdevice:session'] && !st['poollog:session'] && !Object.keys(st).some(k => k.startsWith('poollog:') && /at-|rt-/.test(st[k])));
+            !!st['weirdevice:session'] && !st['weir:session'] && !Object.keys(st).some(k => k.startsWith('weir:') && /at-|rt-/.test(st[k])));
       check('no password is stored on the phone', !Object.values(st).some(v => v.indexOf('alexpass1') !== -1));
 
       console.log('\n=== technician-app.html: another company\'s alex ===');
@@ -2354,7 +2371,7 @@ async function serverFieldSignIn(){
       await signIn(p, 'alex', 'resetpass99');
       p.w.eval('logout()'); await sleep(200);
       check('Sign out goes back to the sign-in screen', loginVisible(p.d) && p.w.eval('currentUser') === null);
-      check('the session is gone from the phone', !p.storage()['poollogdevice:session']);
+      check('the session is gone from the phone', !p.storage()['weirdevice:session']);
       check('the company stays', shown(p.d.getElementById('loginCompanyRow')));
 
       console.log('\n=== technician-app.html: the owner removes the technician ===');
@@ -2369,8 +2386,8 @@ async function serverFieldSignIn(){
       // The phone clears itself once what it was holding has reached the office
     for(let i = 0; i < 400 && p.w.eval("!!deviceGet('wipe')"); i++) await sleep(20);
     check('the company\'s customers are cleared off this phone',
-          !p.storage()['poollog:customers'] || JSON.parse(p.storage()['poollog:customers']).length === 0,
-          p.storage()['poollog:customers']);
+          !p.storage()['weir:customers'] || JSON.parse(p.storage()['weir:customers']).length === 0,
+          p.storage()['weir:customers']);
       p.close();
       srv.offline = true;
       p = await boot(srv, 'technician-app.html', {storage: kept});
@@ -2386,13 +2403,13 @@ async function serverFieldSignIn(){
         // sync card says so, because nothing done at the desk can reach it
         await makeTech(OWNER, 'orla', 'orlapass123', 't_alex', 'Orla Field', false);
         const seeded = await boot(srv, 'technician-app.html', {storage: seedStorage({
-          'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
+          'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
         await signIn(seeded, 'orla', 'orlapass123');
         for(let i = 0; i < 900 && seeded.w.eval('syncRunning'); i++) await sleep(10);
         await sleep(200);
         check('the phone keeps a customer the office does not have',
-              JSON.parse(seeded.storage()['poollog:customers'] || '[]').some(x => x.id === 'c1'),
-              seeded.storage()['poollog:customers']);
+              JSON.parse(seeded.storage()['weir:customers'] || '[]').some(x => x.id === 'c1'),
+              seeded.storage()['weir:customers']);
         seeded.w.eval('fieldRenderSyncCard()');
         const text = seeded.d.getElementById('fieldSyncStatus').textContent;
         check('and the sync card says the office does not know about it',
@@ -2407,15 +2424,15 @@ async function serverFieldSignIn(){
       await asUser(OWNER, 'select public.push_customer_fields($1, $2::jsonb, null)',
         ['c1', JSON.stringify({technicianId: {t: new Date().toISOString(), v: 't_ray'}})]);
       p = await boot(srv, 'technician-app.html', {storage: seedStorage({
-        'poollog:technicians': JSON.stringify([{id: 't_ray', name: 'Ray (phone copy)'}]),
-        'poollog:customers': JSON.stringify([{id: 'c1', name: 'Alex Pool', day: today, active: true, technicianId: 't_ray', hasPool: true}])})});
+        'weir:technicians': JSON.stringify([{id: 't_ray', name: 'Ray (phone copy)'}]),
+        'weir:customers': JSON.stringify([{id: 'c1', name: 'Alex Pool', day: today, active: true, technicianId: 't_ray', hasPool: true}])})});
       await typeCode(p, 'TRIFFIC'); p.d.getElementById('btnLoginCompany').click(); await sleep(100);
       await signIn(p, 'ray', 'raypass123');
       check('signed in with signal first', !loginVisible(p.d));
-      const remembered = JSON.parse(p.storage()['poollogdevice:logins'] || '[]');
+      const remembered = JSON.parse(p.storage()['weirdevice:logins'] || '[]');
       check('the phone remembers that technician', remembered.length === 1 && remembered[0].username === 'ray', JSON.stringify(remembered.map(x => x.username)));
       check('without keeping the password', !JSON.stringify(remembered).includes('raypass123'));
-      check('and not in a backup-able place', !Object.keys(p.storage()).some(k => k.startsWith('poollog:') && p.storage()[k].indexOf('scrambled') !== -1));
+      check('and not in a backup-able place', !Object.keys(p.storage()).some(k => k.startsWith('weir:') && p.storage()[k].indexOf('scrambled') !== -1));
 
       p.w.eval('logout()'); await sleep(200);
       srv.offline = true;
@@ -2435,7 +2452,7 @@ async function serverFieldSignIn(){
       p.w.dispatchEvent(new p.w.Event('online')); await sleep(500);
       check('when the password is reset, the phone signs out', loginVisible(p.d));
       check('and forgets them, so the old password cannot be used offline either',
-            JSON.parse(p.storage()['poollogdevice:logins'] || '[]').length === 0, p.storage()['poollogdevice:logins']);
+            JSON.parse(p.storage()['weirdevice:logins'] || '[]').length === 0, p.storage()['weirdevice:logins']);
       srv.offline = true;
       await signIn(p, 'ray', 'raypass123');
       check('the old password is refused offline', loginVisible(p.d) && /need a connection the first time/.test(errorText(p.d)), errorText(p.d));
@@ -2458,14 +2475,14 @@ async function serverFieldSignIn(){
       p.w.eval('logout()'); await sleep(200);
       await signIn(p, 'sam', 'sampass12');
       check('and the second', p.w.eval('currentUser && currentUser.id') === 't_sam');
-      check('both are remembered', JSON.parse(p.storage()['poollogdevice:logins']).length === 2);
+      check('both are remembered', JSON.parse(p.storage()['weirdevice:logins']).length === 2);
       srv.offline = false;
       p.close();
     }
 
     console.log('\n=== admin-readings-app.html: offline sign-in is admins only ===');
     {
-      const a = await boot(srv, 'admin-readings-app.html', {storage: seedStorage({'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
+      const a = await boot(srv, 'admin-readings-app.html', {storage: seedStorage({'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
       await signIn(a, 'sam', 'sampass12');
       check('an admin signs in with signal', !loginVisible(a.d));
       srv.offline = true;
@@ -2501,14 +2518,14 @@ async function serverFieldSignIn(){
           ['technician', id, JSON.stringify({id: {t, v: id}, name: {t, v: name}})]);
       }
       const admin = await boot(srv, 'admin-readings-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
       await signIn(admin, 'ada', 'adapass1234');
       for(let i = 0; i < 900 && admin.w.eval('syncRunning'); i++) await sleep(10);
       await sleep(300);
 
       check('every customer in the company reaches the phone',
-            JSON.parse(admin.storage()['poollog:customers'] || '[]').length >= 3,
-            admin.storage()['poollog:customers']);
+            JSON.parse(admin.storage()['weir:customers'] || '[]').length >= 3,
+            admin.storage()['weir:customers']);
       check('but the route shows only their own', routeNames(admin.d).join() === 'Ada Pool',
             routeNames(admin.d).join(' | ') + ' | started: ' + String(admin.w.eval('adminRouteStarted'))
             + ' | who: ' + String(admin.w.eval('currentUser && currentUser.id'))
@@ -2547,7 +2564,7 @@ async function serverFieldSignIn(){
                                hasPool: {t, v: true}, technicianId: {t, v: 't_boss'}, gateCode: {t, v: '1111'}})]);
       }
       const boss = await boot(srv, 'technician-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
       await signIn(boss, 'boss', 'bosspass123');
       for(let i = 0; i < 900 && boss.w.eval('syncRunning'); i++) await sleep(10);
       await sleep(200);
@@ -2559,7 +2576,7 @@ async function serverFieldSignIn(){
       await boss.w.eval('fieldSync()');
       for(let i = 0; i < 600 && boss.w.eval('syncRunning'); i++) await sleep(10);
       check('a gate code change reaches the admin\'s phone',
-            (JSON.parse(boss.storage()['poollog:customers']).find(x => x.id === 'b1') || {}).gateCode === '9999');
+            (JSON.parse(boss.storage()['weir:customers']).find(x => x.id === 'b1') || {}).gateCode === '9999');
 
       // The office takes one off their route (nobody else gets it)
       await asUser(OWNER, 'select public.push_customer_fields($1,$2::jsonb,null)',
@@ -2567,7 +2584,7 @@ async function serverFieldSignIn(){
       await boss.w.eval('fieldSync()');
       for(let i = 0; i < 600 && boss.w.eval('syncRunning'); i++) await sleep(10);
       await sleep(100);
-      const held = JSON.parse(boss.storage()['poollog:customers']).find(x => x.id === 'b1');
+      const held = JSON.parse(boss.storage()['weir:customers']).find(x => x.id === 'b1');
       check('the phone knows the customer belongs to nobody', held && !held.technicianId, JSON.stringify(held));
       check('and they come off the admin\'s route', routeNames(boss.d).sort().join() === 'Boss Pool Two', routeNames(boss.d).join(' | '));
       boss.close();
@@ -2581,7 +2598,7 @@ async function serverFieldSignIn(){
         ['x1', JSON.stringify({id: {t, v: 'x1'}, name: {t, v: 'Refused Pool'}, day: {t, v: today}, active: {t, v: true},
                                hasPool: {t, v: true}, technicianId: {t, v: 't_rex'}, gateCode: {t, v: '1111'}})]);
       const rex = await boot(srv, 'technician-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
       await signIn(rex, 'rex', 'rexpass1234');
       for(let i = 0; i < 900 && rex.w.eval('syncRunning'); i++) await sleep(10);
       check('the customer is on their route', routeNames(rex.d).join() === 'Refused Pool', routeNames(rex.d).join(' | '));
@@ -2595,7 +2612,7 @@ async function serverFieldSignIn(){
       await rex.w.eval('fieldSync()');
       for(let i = 0; i < 600 && rex.w.eval('syncRunning'); i++) await sleep(10);
       await sleep(100);
-      const back = JSON.parse(rex.storage()['poollog:customers']).find(x => x.id === 'x1');
+      const back = JSON.parse(rex.storage()['weir:customers']).find(x => x.id === 'x1');
       check('and the phone goes back to the office\'s version', back && back.technicianId === 't_rex', JSON.stringify(back));
       rex.w.eval('fieldRenderSyncCard()');
       check('the sync card says a change was not accepted',
@@ -2621,10 +2638,10 @@ async function serverFieldSignIn(){
                                active: {t, v: true}, hasPool: {t, v: true}, technicianId: {t, v: 't_wes'},
                                gateCode: {t, v: 'SECRET-GATE'}})]);
       const wes = await boot(srv, 'technician-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
       await signIn(wes, 'wes', 'wespass123');
       for(let i = 0; i < 600 && wes.w.eval('syncRunning'); i++) await sleep(10);
-      check('their customer is on the phone', JSON.parse(wes.storage()['poollog:customers'] || '[]').some(x => x.id === 'w1'));
+      check('their customer is on the phone', JSON.parse(wes.storage()['weir:customers'] || '[]').some(x => x.id === 'w1'));
 
       // A visit recorded just before being removed, with no signal
       srv.offline = true;
@@ -2640,16 +2657,16 @@ async function serverFieldSignIn(){
 
       const held = (await pool.query("select data from public.visits where id = 'read_last'")).rows[0];
       check('the visit it was holding reaches the office first', held && held.data.chlorine === '3.2', JSON.stringify(held));
-      check('then the customers are gone from the phone', !wes.storage()['poollog:customers']
-            || JSON.parse(wes.storage()['poollog:customers']).length === 0, wes.storage()['poollog:customers']);
-      check('and so is the visit history', !wes.storage()['poollog:readings:w1'], wes.storage()['poollog:readings:w1']);
+      check('then the customers are gone from the phone', !wes.storage()['weir:customers']
+            || JSON.parse(wes.storage()['weir:customers']).length === 0, wes.storage()['weir:customers']);
+      check('and so is the visit history', !wes.storage()['weir:readings:w1'], wes.storage()['weir:readings:w1']);
       check('nothing of the company is left on it',
-            !Object.entries(wes.storage()).some(([k, v]) => k.indexOf('poollog:') === 0 && String(v).indexOf('SECRET-GATE') !== -1),
-            Object.keys(wes.storage()).filter(k => k.indexOf('poollog:') === 0).join(','));
+            !Object.entries(wes.storage()).some(([k, v]) => k.indexOf('weir:') === 0 && String(v).indexOf('SECRET-GATE') !== -1),
+            Object.keys(wes.storage()).filter(k => k.indexOf('weir:') === 0).join(','));
       check('the phone is signed out', loginVisible(wes.d) && wes.w.eval('currentUser') === null);
       check('with a message saying why', /sign-in was removed/i.test(errorText(wes.d)), errorText(wes.d));
       check('and it cannot be signed into offline any more',
-            !(JSON.parse(wes.storage()['poollogdevice:logins'] || '[]')).some(l => l.username === 'wes'));
+            !(JSON.parse(wes.storage()['weirdevice:logins'] || '[]')).some(l => l.username === 'wes'));
       wes.close();
     }
 
@@ -2661,7 +2678,7 @@ async function serverFieldSignIn(){
         ['i1', JSON.stringify({id: {t, v: 'i1'}, name: {t, v: 'Ivy Pool'}, day: {t, v: today},
                                active: {t, v: true}, hasPool: {t, v: true}, technicianId: {t, v: 't_ivy'}})]);
       const ivy = await boot(srv, 'technician-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})}});
       await signIn(ivy, 'ivy', 'ivypass1234');
       for(let i = 0; i < 600 && ivy.w.eval('syncRunning'); i++) await sleep(10);
       ivy.w.eval(`lsSet('readings:i1', [{id:'read_stuck', date: new Date().toISOString(), chlorine:'4.4'}]);`);
@@ -2677,15 +2694,15 @@ async function serverFieldSignIn(){
       await ivy.w.eval('fieldFinishWipe()');
       await sleep(100);
       check('with no signal, the phone keeps what it has not sent',
-            JSON.parse(ivy.storage()['poollog:readings:i1'] || '[]').some(x => x.id === 'read_offline_last'),
-            ivy.storage()['poollog:readings:i1']);
-      check('and remembers it still has to clear itself', !!ivy.storage()['poollogdevice:wipe']);
+            JSON.parse(ivy.storage()['weir:readings:i1'] || '[]').some(x => x.id === 'read_offline_last'),
+            ivy.storage()['weir:readings:i1']);
+      check('and remembers it still has to clear itself', !!ivy.storage()['weirdevice:wipe']);
       srv.offline = false;
       await ivy.w.eval('fieldFinishWipe()');
       await sleep(200);
       const late = (await pool.query("select data from public.visits where id = 'read_offline_last'")).rows[0];
       check('once signal returns the last visit goes up', late && late.data.chlorine === '5.5', JSON.stringify(late));
-      check('and then the phone is cleared', !ivy.storage()['poollog:readings:i1'] && !ivy.storage()['poollogdevice:wipe']);
+      check('and then the phone is cleared', !ivy.storage()['weir:readings:i1'] && !ivy.storage()['weirdevice:wipe']);
       ivy.close();
     }
 
@@ -2699,7 +2716,7 @@ async function serverFieldSignIn(){
       check('Back keeps the company', p.d.getElementById('loginCompanyName').textContent === 'Triffic Pool and Spa');
       p.d.getElementById('btnLoginChangeCompany').click(); await sleep(50);
       await typeCode(p, 'AFFIN1'); p.d.getElementById('btnLoginCompany').click(); await sleep(100);
-      check('a new code switches the company', p.d.getElementById('loginCompanyName').textContent === 'Affinity Pools' && JSON.parse(p.storage()['poollogdevice:company']).id === OTHER_CO);
+      check('a new code switches the company', p.d.getElementById('loginCompanyName').textContent === 'Affinity Pools' && JSON.parse(p.storage()['weirdevice:company']).id === OTHER_CO);
       p.close();
 
       console.log('\n=== technician-app.html: a setup link ===');
@@ -2711,12 +2728,12 @@ async function serverFieldSignIn(){
       const samSaved = p.storage(); p.close();
       p = await boot(srv, 'technician-app.html', {storage: samSaved, query: '?company=AFFIN1'});
       check('a link for a different company asks before switching', p.dialogs.some(t => /set up for Triffic Pool and Spa. Switch it to Affinity Pools/.test(t)), p.dialogs.join(' | '));
-      check('switching signs out whoever was in', loginVisible(p.d) && p.w.eval('currentUser') === null && !p.storage()['poollogdevice:session']);
+      check('switching signs out whoever was in', loginVisible(p.d) && p.w.eval('currentUser') === null && !p.storage()['weirdevice:session']);
       p.close();
       p = await boot(srv, 'technician-app.html', {storage: samSaved, query: '?company=AFFIN1', wait: 50});
       p.w.__answer = 'cancel';
       await sleep(900);
-      check('saying no leaves the phone as it was', !loginVisible(p.d) && JSON.parse(p.storage()['poollogdevice:company']).id === CO, p.storage()['poollogdevice:company']);
+      check('saying no leaves the phone as it was', !loginVisible(p.d) && JSON.parse(p.storage()['weirdevice:company']).id === CO, p.storage()['weirdevice:company']);
       p.close();
 
       console.log('\n=== technician-app.html: what the office sets reaches the phone ===');
@@ -2736,8 +2753,8 @@ async function serverFieldSignIn(){
       }
 
       const phone = await boot(srv, 'technician-app.html', {storage: {
-        'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'}),
-        'poollog:settings': JSON.stringify({voiceModeEnabled: true, micSide: 'left', storePhotos: false, showGatePhoto: false})
+        'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'}),
+        'weir:settings': JSON.stringify({voiceModeEnabled: true, micSide: 'left', storePhotos: false, showGatePhoto: false})
       }});
       await signIn(phone, 'nina', 'ninapass12');
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
@@ -2747,20 +2764,20 @@ async function serverFieldSignIn(){
 
       for(let i = 0; i < 900 && phone.w.eval('syncRunning'); i++) await sleep(20);
       await sleep(100);
-      check('their own profile arrives', (localOf('poollog:technicians') || []).some(x => x.id === 't_nina' && x.requireGatePhoto === true),
-            st['poollog:technicians']);
+      check('their own profile arrives', (localOf('weir:technicians') || []).some(x => x.id === 't_nina' && x.requireGatePhoto === true),
+            st['weir:technicians']);
       check('and is what the app uses for them', phone.w.eval('currentUser && currentUser.requireGatePhoto') === true);
-      check('nobody else\'s profile arrives', (localOf('poollog:technicians') || []).every(x => x.id === 't_nina'), st['poollog:technicians']);
-      check('company details arrive', localOf('poollog:companyName') === 'Triffic Pool and Spa' && localOf('poollog:licenseNumber') === 'ROC-284419');
-      check('the chemical setup arrives', localOf('poollog:chemConfig').pool.chemicals[0].label === 'Free chlorine');
-      check('company settings arrive', localOf('poollog:settings').showGatePhoto === true && localOf('poollog:settings').requireSkipReason === true,
-            st['poollog:settings']);
+      check('nobody else\'s profile arrives', (localOf('weir:technicians') || []).every(x => x.id === 't_nina'), st['weir:technicians']);
+      check('company details arrive', localOf('weir:companyName') === 'Triffic Pool and Spa' && localOf('weir:licenseNumber') === 'ROC-284419');
+      check('the chemical setup arrives', localOf('weir:chemConfig').pool.chemicals[0].label === 'Free chlorine');
+      check('company settings arrive', localOf('weir:settings').showGatePhoto === true && localOf('weir:settings').requireSkipReason === true,
+            st['weir:settings']);
       check('and the app is using them', phone.w.eval('appSettings.showGatePhoto') === true);
       check('this phone\'s own settings are left alone',
-            localOf('poollog:settings').voiceModeEnabled === true && localOf('poollog:settings').micSide === 'left'
-            && localOf('poollog:settings').storePhotos === false, st['poollog:settings']);
-      check('only their own customers arrive', (localOf('poollog:customers') || []).map(x => x.id).sort().join() === 'n1,n2',
-            st['poollog:customers']);
+            localOf('weir:settings').voiceModeEnabled === true && localOf('weir:settings').micSide === 'left'
+            && localOf('weir:settings').storePhotos === false, st['weir:settings']);
+      check('only their own customers arrive', (localOf('weir:customers') || []).map(x => x.id).sort().join() === 'n1,n2',
+            st['weir:customers']);
       check('and show on their route', routeNames(phone.d).sort().join() === 'Pool n1,Pool n2', routeNames(phone.d).join(' | '));
 
       console.log('\n=== technician-app.html: what happens on the phone reaches the office ===');
@@ -2777,8 +2794,8 @@ async function serverFieldSignIn(){
       await put('technician', 't_nina', {requireGatePhoto: false});
       await phone.w.eval('fieldSync()');
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
-      check('a customer change from the office arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n2') || {}).notes === 'Office note');
-      check('a profile change from the office arrives', JSON.parse(phone.storage()['poollog:technicians'])[0].requireGatePhoto === false);
+      check('a customer change from the office arrives', (JSON.parse(phone.storage()['weir:customers']).find(x => x.id === 'n2') || {}).notes === 'Office note');
+      check('a profile change from the office arrives', JSON.parse(phone.storage()['weir:technicians'])[0].requireGatePhoto === false);
 
       console.log('\n=== photos go up to the office ===');
       {
@@ -2864,7 +2881,7 @@ async function serverFieldSignIn(){
           ['n1', JSON.stringify({gateCode: {t: new Date().toISOString(), v: 'CHANGED-1'}})]);
         await phone.w.eval('fieldSync()');
         for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
-        check('a real change still arrives', (JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n1') || {}).gateCode === 'CHANGED-1');
+        check('a real change still arrives', (JSON.parse(phone.storage()['weir:customers']).find(x => x.id === 'n1') || {}).gateCode === 'CHANGED-1');
         check('and even that does not close the open panel', !!phone.d.querySelector('.route-brief'));
         // Closing it lets the route catch up
         phone.d.querySelector('#homeCustomerList .cust-row').click(); await sleep(200);
@@ -2931,8 +2948,8 @@ async function serverFieldSignIn(){
         await putRec('reschedule', 'res_p1', {id: 'res_p1', customerId: 'n1', fromDate: '2026-09-17', toDate: '2026-09-18'});
         await phone.w.eval('fieldSync()');
         for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
-        const localList = key => JSON.parse(phone.storage()['poollog:' + key] || '[]');
-        check('their own task arrives on the phone', localList('tasks').some(x => x.id === 'task_p1'), phone.storage()['poollog:tasks']);
+        const localList = key => JSON.parse(phone.storage()['weir:' + key] || '[]');
+        check('their own task arrives on the phone', localList('tasks').some(x => x.id === 'task_p1'), phone.storage()['weir:tasks']);
         check('somebody else\'s does not', !localList('tasks').some(x => x.id === 'task_p2'));
         check('their scheduled filter clean arrives', localList('scheduledFilterCleans').some(x => x.id === 'fc_p1'));
         check('a one-day move for their customer arrives', localList('rescheduledVisits').some(x => x.id === 'res_p1'));
@@ -3025,7 +3042,7 @@ async function serverFieldSignIn(){
               ? true : String((v.find(x => x.id === 'skip_a') || {}).service_date).indexOf('2026-09-16') !== -1,
               String((v.find(x => x.id === 'skip_a') || {}).service_date));
         check('stamped with who recorded it', v.filter(x => x.customer_id === 'n1').every(x => x.technician_id === 't_nina'));
-        check('and the photos are still on the phone', JSON.parse(phone.storage()['poollog:readings:n1'])[0].photo === 'data:image/jpeg;base64,AAAA');
+        check('and the photos are still on the phone', JSON.parse(phone.storage()['weir:readings:n1'])[0].photo === 'data:image/jpeg;base64,AAAA');
 
         // Nothing is sent twice, and a correction at the office is not undone
         await asUser(OWNER, "select public.amend_visit('n1','reading','pool','read_a','{\"chlorine\":\"3.5\"}'::jsonb,null)");
@@ -3055,16 +3072,16 @@ async function serverFieldSignIn(){
         ['n2', JSON.stringify({technicianId: {t: new Date().toISOString(), v: 't_sam'}})]);
       await phone.w.eval('fieldSync()');
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
-      check('comes off this phone', !JSON.parse(phone.storage()['poollog:customers']).some(x => x.id === 'n2'),
-            phone.storage()['poollog:customers']);
-      check('and the one still theirs stays', JSON.parse(phone.storage()['poollog:customers']).some(x => x.id === 'n1'));
+      check('comes off this phone', !JSON.parse(phone.storage()['weir:customers']).some(x => x.id === 'n2'),
+            phone.storage()['weir:customers']);
+      check('and the one still theirs stays', JSON.parse(phone.storage()['weir:customers']).some(x => x.id === 'n1'));
 
       console.log('\n=== technician-app.html: offline, and a settings change mid-visit ===');
       srv.offline = true;
       phone.w.eval("customers.find(c => c.id === 'n1').gateCode = 'OFFLINE-EDIT'; lsSet('customers', customers);");
       await sleep(2400);
       for(let i = 0; i < 400 && phone.w.eval('syncRunning'); i++) await sleep(10);
-      check('an edit made offline stays on the phone', JSON.parse(phone.storage()['poollog:customers']).find(x => x.id === 'n1').gateCode === 'OFFLINE-EDIT');
+      check('an edit made offline stays on the phone', JSON.parse(phone.storage()['weir:customers']).find(x => x.id === 'n1').gateCode === 'OFFLINE-EDIT');
       const serverBefore = (await pool.query("select data from public.customers where id = 'n1'")).rows[0].data;
       check('and has not reached the server', serverBefore.gateCode !== 'OFFLINE-EDIT', serverBefore.gateCode);
       srv.offline = false;
@@ -3094,12 +3111,12 @@ async function serverFieldSignIn(){
     }
 
     console.log('\n=== admin-readings-app.html: admin technicians only ===');
-      p = await boot(srv, 'admin-readings-app.html', {storage: seedStorage({'poollogdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
+      p = await boot(srv, 'admin-readings-app.html', {storage: seedStorage({'weirdevice:company': JSON.stringify({id: CO, name: 'Triffic Pool and Spa'})})});
       check('the admin app asks for a sign-in', loginVisible(p.d));
       await makeTech(OWNER, 'plain', 'plainpass1', 't_plain', 'Plain Tech', false);
       await signIn(p, 'plain', 'plainpass1');
       check('a plain technician is turned away', loginVisible(p.d) && /for admins/.test(errorText(p.d)), errorText(p.d));
-      check('and not left signed in', !p.storage()['poollogdevice:session']);
+      check('and not left signed in', !p.storage()['weirdevice:session']);
       await signIn(p, 'sam', 'sampass12');
       check('an admin technician gets in', !loginVisible(p.d) && p.w.eval('currentUser && currentUser.id') === 't_sam');
       check('shown by name', p.d.getElementById('adminSignedInAs').textContent === 'Sam Admin', p.d.getElementById('adminSignedInAs').textContent);
@@ -3110,7 +3127,7 @@ async function serverFieldSignIn(){
       await signIn(p, 'sam', 'sampass12');
       const adminSaved = p.storage();
       p.d.getElementById('btnAdminLogout').click(); await sleep(200);
-      check('Sign out works in the admin app', loginVisible(p.d) && !p.storage()['poollogdevice:session']);
+      check('Sign out works in the admin app', loginVisible(p.d) && !p.storage()['weirdevice:session']);
       p.close();
       srv.offline = true;
       p = await boot(srv, 'admin-readings-app.html', {storage: adminSaved});

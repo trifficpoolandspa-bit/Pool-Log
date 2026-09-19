@@ -21,7 +21,7 @@ function boot(file){
       w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
       w.console.warn=()=>{}; w.console.error=()=>{};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      w.localStorage.setItem('poollog:customers', '[]');
+      w.localStorage.setItem('weir:customers', '[]');
     }
   });
 }
@@ -83,14 +83,14 @@ console.log('\n=== Closing the camera never raises an error ===');
             d.querySelectorAll('[data-error-banner]').length === 1);
 
       // What actually gets sent
-      const log = JSON.parse(w.localStorage.getItem('poollog:errorLog') || '[]');
+      const log = JSON.parse(w.localStorage.getItem('weir:errorLog') || '[]');
       check('  errors are logged for later', log.length >= 1, log.length + ' logged');
       check('  with the line it failed on',
             log[0].where.indexOf('4812') !== -1, log[0].where);
       check('  and the version', !!log[0].version);
       check('  and the device', !!log[0].agent);
 
-      const report = w.eval('errorText(JSON.parse(localStorage.getItem("poollog:errorLog"))[0])');
+      const report = w.eval('errorText(JSON.parse(localStorage.getItem("weir:errorLog"))[0])');
       ['Version:', 'Page:', 'Message:', 'Where:', 'Device:'].forEach(bit=>{
         check('  the copyable report has ' + bit.replace(':',''),
               report.indexOf(bit) !== -1);
@@ -126,7 +126,7 @@ console.log('\n=== Closing the camera never raises an error ===');
 
       // The log must not grow without limit
       w.eval('for(let i=0;i<40;i++) recordError("Error", "flood " + i, "", 0, 0, "");');
-      const capped = JSON.parse(w.localStorage.getItem('poollog:errorLog') || '[]');
+      const capped = JSON.parse(w.localStorage.getItem('weir:errorLog') || '[]');
       check('  the log is capped', capped.length <= 20, capped.length + ' kept');
       check('  keeping the most recent',
             capped[capped.length - 1].message.indexOf('flood 39') !== -1,

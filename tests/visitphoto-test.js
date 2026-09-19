@@ -26,7 +26,7 @@ function boot(file){
       w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
       w.console.warn=()=>{};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
     }
   });
 }
@@ -42,7 +42,7 @@ function boot(file){
       // the whole point of it — so by now the photo may already have moved.
       await w.eval("migrateVisitPhotos()");
 
-      const after = JSON.parse(w.localStorage.getItem('poollog:readings:a'))[0];
+      const after = JSON.parse(w.localStorage.getItem('weir:readings:a'))[0];
       check('  the visit photo is now a reference',
             after.photo.indexOf('idb:') === 0, after.photo.slice(0, 30));
       check('  the before photo too', after.beforePhoto.indexOf('idb:') === 0);
@@ -57,7 +57,7 @@ function boot(file){
 
       check('  the migration is marked done', w.eval("lsGet('visitPhotosMigrated') === true"));
       await w.eval("migrateVisitPhotos()");
-      const twice = JSON.parse(w.localStorage.getItem('poollog:readings:a'))[0];
+      const twice = JSON.parse(w.localStorage.getItem('weir:readings:a'))[0];
       check('  running it twice is harmless', twice.photo === after.photo);
 
       // An unmigrated photo still displays
@@ -66,7 +66,7 @@ function boot(file){
 
       // Saving a new reading stores a reference
       await w.eval("saveReadings('a', [{id:'r2', date:'2026-09-02T10:00:00Z', photo:'data:image/jpeg;base64,QQQQ'}], 'pool')");
-      const saved = JSON.parse(w.localStorage.getItem('poollog:readings:a'))[0];
+      const saved = JSON.parse(w.localStorage.getItem('weir:readings:a'))[0];
       check('  a newly saved photo is stored by reference',
             saved.photo.indexOf('idb:') === 0, saved.photo.slice(0, 30));
       const savedBack = await w.eval("resolvePhoto(" + JSON.stringify(saved.photo) + ")");
@@ -100,7 +100,7 @@ function boot(file){
           w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
           w.console.warn=()=>{}; w.console.error=()=>{};
           w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-          Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+          Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
         }
       });
       await new Promise(r => setTimeout(r, 1400));

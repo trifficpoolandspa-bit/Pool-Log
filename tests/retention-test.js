@@ -32,7 +32,7 @@ const yearsAgo = y => new Date(now - y*365*86400000).toISOString();
         w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
         w.console.warn=()=>{};
         w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-        Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+        Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
       }
     });
     await new Promise(r => setTimeout(r, 1500));
@@ -47,7 +47,7 @@ const yearsAgo = y => new Date(now - y*365*86400000).toISOString();
       const removed = await w.eval("removeExpiredPhotos()");
       check('  it removes the expired ones', removed === 3, removed + ' removed');
 
-      const after = JSON.parse(w.localStorage.getItem('poollog:readings:a'));
+      const after = JSON.parse(w.localStorage.getItem('weir:readings:a'));
       const byId = {}; after.forEach(r => byId[r.id] = r);
 
       check('  a recent photo is untouched', byId.r1.photo === 'idb:recent1');

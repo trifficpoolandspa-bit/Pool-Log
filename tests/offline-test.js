@@ -41,7 +41,7 @@ function boot(file){
       w.console.warn=()=>{}; w.console.error=()=>{};
       w.Element.prototype.scrollIntoView = function(){};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      w.localStorage.setItem('poollog:customers', '[]');
+      w.localStorage.setItem('weir:customers', '[]');
     }
   });
 }
@@ -289,7 +289,7 @@ async function serverCustomerSync(){
           return {ok: status >= 200 && status < 300, status, json: async () => body};
         };
         if(o.signedIn !== false){
-          w.localStorage.setItem('poollog:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
+          w.localStorage.setItem('weir:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
         }
         Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)));
       }
@@ -319,7 +319,7 @@ async function serverCustomerSync(){
   }
   async function sync(w){ const r = await w.eval('syncCustomers()'); await idle(w); return r; }
   async function edit(w, js){ w.eval(js + '; saveCustomers();'); await sleep(15); }
-  const local = w => JSON.parse(w.localStorage.getItem('poollog:customers') || '[]');
+  const local = w => JSON.parse(w.localStorage.getItem('weir:customers') || '[]');
   const find = (w, id) => local(w).find(c => c.id === id);
   const cust = (id, name, extra) => Object.assign({id, name, active: true, gateCode: '1111', day: 'Monday'}, extra || {});
   const status = w => w.document.getElementById('syncStatus').textContent;
@@ -334,7 +334,7 @@ async function serverCustomerSync(){
       console.log('\n=== The website knows who is signed in, with technicians in the company ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': []});
+        const d = await boot(srv, {'weir:customers': []});
         check('the signed-in person is the owner, not a technician', d.w.eval('siteUser && siteUser.role') === 'owner',
               d.w.eval('JSON.stringify(siteUser)'));
         check('with the owner\'s own name', d.w.eval('siteUser && siteUser.name') === 'John', d.w.eval('JSON.stringify(siteUser)'));
@@ -346,7 +346,7 @@ async function serverCustomerSync(){
       {
         await reset(); const srv = makeServer();
         for(let i = 1; i <= 10; i++) await serverPut(OWNER, 's' + i, cust('s' + i, 'Server ' + i));
-        const d = await boot(srv, {'poollog:customers': []});
+        const d = await boot(srv, {'weir:customers': []});
         check('the ten server customers arrive', local(d.w).length === 10, local(d.w).length);
         check('nothing at all is pushed', srv.rpcCount === 0, srv.rpcCount);
         check('the server still has all ten, none deleted', (await rows()).length === 10 && (await rows()).every(r => !r.deleted));
@@ -361,7 +361,7 @@ async function serverCustomerSync(){
       {
         await reset(); const srv = makeServer();
         srv.broken = u => u.pathname === '/rest/v1/customers';
-        const d = await boot(srv, {'poollog:customers': [cust('n1', 'N1'), cust('n2', 'N2')]});
+        const d = await boot(srv, {'weir:customers': [cust('n1', 'N1'), cust('n2', 'N2')]});
         check('no push happens without a completed pull', srv.rpcCount === 0, srv.rpcCount);
         check('the device keeps its customers', local(d.w).length === 2);
         check('the status says it could not reach the server', /could not reach/.test(status(d.w)), status(d.w));
@@ -388,7 +388,7 @@ async function serverCustomerSync(){
         await serverPut(OWNER, 's1', cust('s1', 'Server One'));
         await serverPut(OWNER, 'shared', cust('shared', 'Shared', {gateCode: 'SERVER'}));
         const mine = [cust('m1', 'Mine One'), cust('m2', 'Mine Two'), cust('shared', 'Shared', {gateCode: 'STALE', notes: 'only here'})];
-        const d = await boot(srv, {'poollog:customers': mine});
+        const d = await boot(srv, {'weir:customers': mine});
         const firstPush = srv.calls.findIndex(c => c.includes('push_customer'));
         const firstPull = srv.calls.findIndex(c => c.startsWith('GET /rest/v1/customers'));
         check('a pull happened', firstPull !== -1);
@@ -413,7 +413,7 @@ async function serverCustomerSync(){
       console.log('\n=== Everyday edits and deletes through the real screens ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('a', 'Alpha'), cust('b', 'Bravo')]});
+        const d = await boot(srv, {'weir:customers': [cust('a', 'Alpha'), cust('b', 'Bravo')]});
         check('both reach the server', (await rows()).length === 2);
         const before = srv.rpcCount;
         await edit(d.w, "customers.find(c => c.id === 'a').gateCode = '9999'");
@@ -442,8 +442,8 @@ async function serverCustomerSync(){
       console.log('\n=== Technician and owner edit the same customer the same day ===');
       {
         await reset(); const srv = makeServer();
-        const owner = await boot(srv, {'poollog:customers': [cust('c', 'Charlie', {gateCode: 'ORIG', day: 'Monday', notes: 'none'})]});
-        const tech = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+        const owner = await boot(srv, {'weir:customers': [cust('c', 'Charlie', {gateCode: 'ORIG', day: 'Monday', notes: 'none'})]});
+        const tech = await boot(srv, {'weir:customers': []}, {uid: TECH});
         check('the technician\'s device has Charlie', !!find(tech.w, 'c'));
 
         // Both offline; different fields
@@ -546,8 +546,8 @@ async function serverCustomerSync(){
           equipment: [{id: 'e1', type: 'Filter', photos: []}, {id: 'e2', type: 'Pump', photos: []}],
           dogs: [{id: 'd1', name: 'Rex'}],
           fountains: []});
-        const owner = await boot(srv, {'poollog:customers': [start]});
-        const tech = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+        const owner = await boot(srv, {'weir:customers': [start]});
+        const tech = await boot(srv, {'weir:customers': []}, {uid: TECH});
         check('the technician has the customer with both pieces of equipment', find(tech.w, 'eq') && find(tech.w, 'eq').equipment.length === 2);
 
         srv.offline = true;
@@ -623,8 +623,8 @@ async function serverCustomerSync(){
         // As the first version stored them: no per-field times at all
         await pool.query('insert into public.customers(company_id,id,data,edited_at,updated_at) values ($1,$2,$3,$4,$4)',
           [COMPANY, 'leg', cust('leg', 'Legacy', {gateCode: 'G1', day: 'Monday', equipment: [{id: 'x1', type: 'Filter'}]}), '2026-09-15T08:00:00+00:00']);
-        const owner = await boot(srv, {'poollog:customers': []});
-        const tech = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+        const owner = await boot(srv, {'weir:customers': []});
+        const tech = await boot(srv, {'weir:customers': []}, {uid: TECH});
         srv.offline = true;
         await edit(tech.w, "customers[0].day = 'Friday'");        // made first
         await sleep(40);
@@ -645,7 +645,7 @@ async function serverCustomerSync(){
       console.log('\n=== An edit made while a push is in flight is not lost ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('f', 'Foxtrot')]});
+        const d = await boot(srv, {'weir:customers': [cust('f', 'Foxtrot')]});
         const real = srv.handle;
         srv.handle = async (uid, url, o) => {
           if(url.includes('push_customer_fields') && !srv.edited){
@@ -670,7 +670,7 @@ async function serverCustomerSync(){
         const list = [];
         for(let i = 1; i <= 6; i++) list.push(cust('p' + i, 'P' + i));
         srv.failRpcAfter = 2;
-        const d = await boot(srv, {'poollog:customers': list});
+        const d = await boot(srv, {'weir:customers': list});
         check('the first two are saved', (await rows()).length === 2);
         check('the rest are still waiting', /4 customers still waiting/.test(status(d.w)), status(d.w));
         srv.failRpcAfter = null;
@@ -686,7 +686,7 @@ async function serverCustomerSync(){
         await reset(); const srv = makeServer();
         const list = [];
         for(let i = 1; i <= 9; i++) list.push(cust('v' + i, 'V' + i));
-        const d = await boot(srv, {'poollog:customers': list});
+        const d = await boot(srv, {'weir:customers': list});
         d.w.__answer = 'cancel';
         await edit(d.w, "customers = customers.slice(0, 2)");
         await sleep(2300); await idle(d.w);
@@ -709,7 +709,7 @@ async function serverCustomerSync(){
         await reset(); const srv = makeServer();
         const list = [];
         for(let i = 1; i <= 7; i++) list.push(cust('f' + i, 'F' + i));
-        const d = await boot(srv, {'poollog:customers': list});
+        const d = await boot(srv, {'weir:customers': list});
         await edit(d.w, "customers = customers.slice(0, 2)");
         await sleep(2300); await idle(d.w);
         check('no question for exactly five', d.dialogs.length === 0, d.dialogs.join(' | '));
@@ -721,7 +721,7 @@ async function serverCustomerSync(){
       {
         await reset(); const srv = makeServer();
         for(let i = 1; i <= 8; i++) await serverPut(OWNER, 'x' + i, cust('x' + i, 'X' + i));
-        const d = await boot(srv, {'poollog:customers': []});
+        const d = await boot(srv, {'weir:customers': []});
         check('device has all eight', local(d.w).length === 8);
         for(let i = 1; i <= 7; i++) await serverSet(TECH, 'x' + i, {_deleted: {t: new Date().toISOString(), v: true}});
         d.w.__answer = 'cancel';
@@ -741,7 +741,7 @@ async function serverCustomerSync(){
       {
         await reset(); const srv = makeServer();
         for(let i = 1; i <= 7; i++) await serverPut(OWNER, 'h' + i, cust('h' + i, '<img src=x onerror=alert(1)>'));
-        const d = await boot(srv, {'poollog:customers': []});
+        const d = await boot(srv, {'weir:customers': []});
         for(let i = 1; i <= 7; i++) await serverSet(OWNER, 'h' + i, {_deleted: {t: new Date().toISOString(), v: true}});
         let injected = false;
         const iv2 = setInterval(()=>{ if(d.w.document.querySelector('.confirm-overlay img')) injected = true; }, 1);
@@ -755,8 +755,8 @@ async function serverCustomerSync(){
       console.log('\n=== Another company never sees or touches these customers ===');
       {
         await reset(); const srv = makeServer();
-        const mine = await boot(srv, {'poollog:customers': [cust('iso', 'Mine', {gateCode: 'SECRET'})]});
-        const theirs = await boot(srv, {'poollog:customers': [cust('iso', 'Theirs', {gateCode: 'THEIRS'})]}, {uid: OUTSIDER});
+        const mine = await boot(srv, {'weir:customers': [cust('iso', 'Mine', {gateCode: 'SECRET'})]});
+        const theirs = await boot(srv, {'weir:customers': [cust('iso', 'Theirs', {gateCode: 'THEIRS'})]}, {uid: OUTSIDER});
         check('the other company\'s device does not receive mine', !local(theirs.w).some(c => c.gateCode === 'SECRET'));
         check('and its own customer with the same id does not overwrite mine', (await row('iso')).data.gateCode === 'SECRET');
         await sync(mine.w);
@@ -767,7 +767,7 @@ async function serverCustomerSync(){
       console.log('\n=== Signed out, nothing talks to the server ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('z', 'Zulu')]}, {signedIn: false});
+        const d = await boot(srv, {'weir:customers': [cust('z', 'Zulu')]}, {signedIn: false});
         const r = await d.w.eval('syncCustomers()');
         check('sync refuses', r.ok === false && r.reason === 'signed-out');
         check('no customer calls made', !srv.calls.some(c => c.includes('customers') || c.includes('rpc')), srv.calls.join(', '));
@@ -777,9 +777,9 @@ async function serverCustomerSync(){
       console.log('\n=== Backups and restores never carry sync state ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('k', 'Kilo')]});
+        const d = await boot(srv, {'weir:customers': [cust('k', 'Kilo')]});
         const keys = []; for(let i = 0; i < d.w.localStorage.length; i++) keys.push(d.w.localStorage.key(i));
-        check('sync state exists', keys.some(k => k.startsWith('poollogsync:')));
+        check('sync state exists', keys.some(k => k.startsWith('weirsync:')));
         const b = d.w.eval('collectBackup()');
         check('a downloaded backup does not include it', !Object.keys(b.data).some(k => /poollogsync|^state:/.test(k)), Object.keys(b.data).join(','));
         d.close();
@@ -790,7 +790,7 @@ async function serverCustomerSync(){
         await reset(); const srv = makeServer();
         await serverPut(OWNER, 'old1', cust('old1', 'From Server'));
         const stale = {pulledOnce: true, cursor: '2030-01-01T00:00:00+00:00', known: {old1: {h: 'x', u: '2030-01-01', d: false}}, seen: {}, edits: {}};
-        const d = await boot(srv, {'poollog:customers': [], ['poollogsync:state:' + COMPANY]: stale});
+        const d = await boot(srv, {'weir:customers': [], ['weirsync:state:' + COMPANY]: stale});
         check('it starts over with a full pull', local(d.w).some(c => c.id === 'old1'));
         check('nothing was deleted', (await rows()).every(r => !r.deleted));
         d.close();
@@ -809,7 +809,7 @@ async function serverCustomerSync(){
           known: {u1: {h: 'a', u: saved, d: false}, u2: {h: 'b', u: saved, d: false}, u3: {h: 'c', u: saved, d: false}},
           seen: {}, edits: {u1: unsentAt, u3: unsentAt}};
         const here = [cust('u1', 'Uniform', {gateCode: 'EDITED-NOT-SENT'}), cust('u2', 'Victor')];   // u3 deleted here, not sent
-        const d = await boot(srv, {'poollog:customers': here, ['poollogsync:state:' + COMPANY]: v1state});
+        const d = await boot(srv, {'weir:customers': here, ['weirsync:state:' + COMPANY]: v1state});
         check('no question is asked', d.dialogs.length === 0, d.dialogs.join(' | '));
         check('the unsent edit is not overwritten by the server', find(d.w, 'u1').gateCode === 'EDITED-NOT-SENT', find(d.w, 'u1').gateCode);
         check('it reaches the server', (await row('u1')).data.gateCode === 'EDITED-NOT-SENT', (await row('u1')).data.gateCode);
@@ -831,7 +831,7 @@ async function serverCustomerSync(){
             [COMPANY, 'bulk' + i, data, Object.fromEntries(Object.keys(data).map(k => [k, t])), t]));
         }
         await Promise.all(values);
-        const d = await boot(srv, {'poollog:customers': []});
+        const d = await boot(srv, {'weir:customers': []});
         check('all 1,203 arrive across pages', local(d.w).length === 1203, local(d.w).length);
         check('without pushing any back', srv.rpcCount === 0, srv.rpcCount);
         d.close();
@@ -840,8 +840,8 @@ async function serverCustomerSync(){
       console.log('\n=== Deleted customers can be found and restored ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('r1', 'Romeo', {address: '1 Palm Way', gateCode: 'R-GATE'}), cust('r2', 'Sierra', {address: '2 Palm Way'}), cust('r3', 'Tango')]});
-        const other = await boot(srv, {'poollog:customers': []}, {uid: TECH});
+        const d = await boot(srv, {'weir:customers': [cust('r1', 'Romeo', {address: '1 Palm Way', gateCode: 'R-GATE'}), cust('r2', 'Sierra', {address: '2 Palm Way'}), cust('r3', 'Tango')]});
+        const other = await boot(srv, {'weir:customers': []}, {uid: TECH});
         d.w.__answer = 'ok';
         d.w.eval("deleteCustomer(customers.find(c => c.id === 'r1'))"); await sleep(60);
         d.w.eval("deleteCustomer(customers.find(c => c.id === 'r2'))"); await sleep(60);
@@ -920,7 +920,7 @@ async function serverCustomerSync(){
       console.log('\n=== The Settings card is wired ===');
       {
         await reset(); const srv = makeServer();
-        const d = await boot(srv, {'poollog:customers': [cust('q', 'Quebec')]});
+        const d = await boot(srv, {'weir:customers': [cust('q', 'Quebec')]});
         const doc = d.w.document;
         check('Sync now button exists', !!doc.getElementById('btnSyncNow'));
         check('pre-sync backup button exists', !!doc.getElementById('btnSyncBackup'));
@@ -979,7 +979,7 @@ async function serverCompanyRecords(){
     try{
       await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions');
       await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
-      await pool.query(`insert into auth.users(id, email) values ($1,'john@triffic.test'),($2,'mike@affinity.test'),($3,'tech-a@accounts.poollog.invalid'),($4,'tech-s@accounts.poollog.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
+      await pool.query(`insert into auth.users(id, email) values ($1,'john@triffic.test'),($2,'mike@affinity.test'),($3,'tech-a@accounts.weir.invalid'),($4,'tech-s@accounts.weir.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
       await pool.query(`insert into public.companies(id, name, code) values ($1,'Triffic','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
       await pool.query(`insert into public.members(user_id, company_id, role, name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
       await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [ALEX, 'alex', 't_alex', 'Alex', false]);
@@ -1039,7 +1039,32 @@ async function serverCompanyRecords(){
       r = await as(ALEX, 'select count(*)::int n from public.record_versions');
       check('but not for technicians', val(r) === 0, JSON.stringify(r));
 
-      console.log('\n=== tasks, jobs and day moves ===');
+      console.log('\n=== sign-in addresses move to Weir ===');
+  {
+    // An account made before the rename, still on the old address
+    const OLD = '77777777-7777-7777-7777-777777777777';
+    await pool.query(`insert into auth.users(id, email) values ($1, 'tech-oldone@accounts.poollog.invalid')
+                      on conflict (id) do update set email = excluded.email`, [OLD]);
+    await pool.query(`update auth.users set email = replace(email, '@accounts.poollog.invalid', '@accounts.weir.invalid')
+                      where email like 'tech-%@accounts.poollog.invalid'`);
+    const moved = (await pool.query('select email from auth.users where id = $1', [OLD])).rows[0].email;
+    check('an address made before the rename moves across', moved === 'tech-oldone@accounts.weir.invalid', moved);
+    check('and keeps the same name in front of the @', moved.indexOf('tech-oldone@') === 0);
+
+    // New accounts arrive on the new address and can be attached
+    const NEWER = '88888888-8888-8888-8888-888888888888';
+    await pool.query(`insert into auth.users(id, email) values ($1, 'tech-newone@accounts.weir.invalid')`, [NEWER]);
+    let r = await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5) j', [NEWER, 'newone', 't_new', 'New One', false]);
+    check('a new sign-in on the Weir address is accepted', r.ok, r.error);
+
+    // Anything else is still refused
+    const ODD = '99999999-9999-9999-9999-999999999999';
+    await pool.query(`insert into auth.users(id, email) values ($1, 'someone@gmail.com')`, [ODD]);
+    r = await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5) j', [ODD, 'oddone', 't_odd', 'Odd One', false]);
+    check('an ordinary email address is still refused', !r.ok && /cannot be attached/.test(r.error), r.error);
+  }
+
+  console.log('\n=== tasks, jobs and day moves ===');
   {
     const T2 = n => new Date(Date.now() - (10 - n) * 60000).toISOString();
     // Alex holds c_alex; Sam is an admin
@@ -1225,8 +1250,8 @@ async function websiteCompanyRecords(){
             blob: async () => new w.Blob([body && body.__file !== undefined ? body.__file : ''])
           };
         };
-        w.localStorage.setItem('poollog:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
-        Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('poollog:' + k, JSON.stringify(v)));
+        w.localStorage.setItem('weir:sbSession', JSON.stringify({access_token: 'tok', refresh_token: 'r'}));
+        Object.entries(seed || {}).forEach(([k, v]) => w.localStorage.setItem('weir:' + k, JSON.stringify(v)));
       }
     });
     const w = dom.window;
@@ -1237,7 +1262,7 @@ async function websiteCompanyRecords(){
   const idle = async w => { for(let i = 0; i < 600; i++){ await sleep(10); if(!w.eval('syncRunning')){ await sleep(20); if(!w.eval('syncRunning')) return; } } };
   const syncNow = async w => { await w.eval('syncCustomers()'); await idle(w); };
   const record = async (kind, id) => (await pool.query('select data, deleted from public.company_records where company_id = $1 and kind = $2 and id = $3', [CO, kind, id])).rows[0];
-  const local = (w, key) => JSON.parse(w.localStorage.getItem('poollog:' + key) || 'null');
+  const local = (w, key) => JSON.parse(w.localStorage.getItem('weir:' + key) || 'null');
 
   console.log('\n=== the website puts company records on the server ===');
   try{
@@ -1526,7 +1551,7 @@ async function serverVisits(){
   try{
     await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions, public.visits');
     await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
-    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.poollog.invalid'),($4,'tech-s@accounts.poollog.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
+    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.weir.invalid'),($4,'tech-s@accounts.weir.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
     await pool.query(`insert into public.companies(id,name,code) values ($1,'Triffic','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
     await pool.query(`insert into public.members(user_id,company_id,role,name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
     await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [ALEX, 'alex', 't_alex', 'Alex', false]);
@@ -1617,7 +1642,7 @@ async function serverPhotos(){
   try{
     await pool.query('truncate public.customers, public.customer_versions, public.company_records, public.record_versions, public.visits, public.photos');
     await pool.query('delete from public.members; delete from public.companies; delete from auth.users;');
-    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.poollog.invalid'),($4,'tech-s@accounts.poollog.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
+    await pool.query(`insert into auth.users(id,email) values ($1,'john@t.test'),($2,'mike@a.test'),($3,'tech-a@accounts.weir.invalid'),($4,'tech-s@accounts.weir.invalid')`, [OWNER, OUTSIDER, ALEX, SAM]);
     await pool.query(`insert into public.companies(id,name,code) values ($1,'Triffic','TRIFFIC'),($2,'Affinity','AFFIN1')`, [CO, OTHER_CO]);
     await pool.query(`insert into public.members(user_id,company_id,role,name) values ($1,$2,'owner','John'),($3,$4,'owner','Mike')`, [OWNER, CO, OUTSIDER, OTHER_CO]);
     await as(OWNER, 'select public.attach_technician($1,$2,$3,$4,$5)', [ALEX, 'alex', 't_alex', 'Alex', false]);

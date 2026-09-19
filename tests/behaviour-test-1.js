@@ -21,7 +21,7 @@ function load(file, opts = {}){
       w.console.error = (...a) => errors.push(a.join(' '));
       if(opts.seed){
         Object.keys(opts.seed).forEach(k=>{
-          w.localStorage.setItem('poollog:' + k, JSON.stringify(opts.seed[k]));
+          w.localStorage.setItem('weir:' + k, JSON.stringify(opts.seed[k]));
         });
       }
       // Lets a test stub a browser API the app depends on, such as the camera
@@ -691,8 +691,8 @@ console.log('\n=== Live refresh across tabs on the same device ===');
 
     const updated = JSON.parse(JSON.stringify(seed.customers));
     updated[0].lastServicedDate = '2026-08-20';
-    w.localStorage.setItem('poollog:customers', JSON.stringify(updated));
-    w.dispatchEvent(new w.StorageEvent('storage', {key:'poollog:customers'}));
+    w.localStorage.setItem('weir:customers', JSON.stringify(updated));
+    w.dispatchEvent(new w.StorageEvent('storage', {key:'weir:customers'}));
 
     // The refresh is debounced, so force it through for the test
     w.eval("customers = lsGet('customers') || customers;");

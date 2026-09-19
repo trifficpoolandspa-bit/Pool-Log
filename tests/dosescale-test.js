@@ -48,7 +48,7 @@ function doses(file, gallons, scale){
         w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
         w.console.warn=()=>{}; w.console.error=()=>{};
         w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-        Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+        Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
       }
     });
     setTimeout(()=>{
@@ -117,8 +117,8 @@ function doses(file, gallons, scale){
         w.console.warn=()=>{}; w.console.error=()=>{};
         w.Element.prototype.scrollIntoView = function(){};
         w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-        w.localStorage.setItem('poollog:customers','[]');
-        w.localStorage.setItem('poollog:chemConfig', JSON.stringify({
+        w.localStorage.setItem('weir:customers','[]');
+        w.localStorage.setItem('weir:chemConfig', JSON.stringify({
           pool:{chemicals: chemFor(false), dosages: DOSES},
           spa:{chemicals:[],dosages:[]}, fountain:{chemicals:[],dosages:[]}}));
       }
@@ -171,7 +171,7 @@ function doses(file, gallons, scale){
             w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
             w.console.warn=()=>{}; w.console.error=()=>{};
             w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-            Object.keys(s).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(s[k])));
+            Object.keys(s).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(s[k])));
           }
         });
         setTimeout(()=>{

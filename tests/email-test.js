@@ -33,7 +33,7 @@ function boot(){
       w.console.warn=()=>{};
       w.Element.prototype.scrollIntoView=function(){};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
     }
   });
 }
@@ -193,7 +193,7 @@ function boot(){
         w.console.warn=()=>{};
         w.Element.prototype.scrollIntoView=function(){};
         w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-        Object.keys(schedSeed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(schedSeed[k])));
+        Object.keys(schedSeed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(schedSeed[k])));
       }
     });
     await new Promise(r => setTimeout(r, 1500));
@@ -256,7 +256,7 @@ function boot(){
       check('  unticking takes the other off',
             w.eval("filterGroups.find(g=>g.id==='g2').finalized") === false);
 
-      const sched = JSON.parse(w.localStorage.getItem('poollog:scheduledFilterCleans'));
+      const sched = JSON.parse(w.localStorage.getItem('weir:scheduledFilterCleans'));
       check('  its route entries were created',
             sched.filter(s => s.groupId === 'g1').length === 2,
             sched.map(s => s.groupId).join(','));
@@ -277,7 +277,7 @@ function boot(){
         w.console.warn=()=>{}; w.console.error=()=>{};
         w.Element.prototype.scrollIntoView = function(){};
         w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-        w.localStorage.setItem('poollog:customers',
+        w.localStorage.setItem('weir:customers',
           JSON.stringify([{id:'a', name:'Alpha', active:true, email:'a@x.com'}]));
       }
     });

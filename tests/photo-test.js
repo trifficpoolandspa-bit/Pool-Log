@@ -29,7 +29,7 @@ const dom = new JSDOM(fs.readFileSync('customer-intake.html','utf8'), {
     w.console.warn=()=>{};
     w.indexedDB = global.indexedDB;
     w.IDBKeyRange = global.IDBKeyRange;
-    Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+    Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
   }
 });
 

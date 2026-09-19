@@ -39,7 +39,7 @@ function boot(file, seed, keepStorage){
       w.HTMLCanvasElement.prototype.getContext=()=>({drawImage(){},fillRect(){}});
       w.console.warn=()=>{}; w.console.error=()=>{};
       w.indexedDB = global.indexedDB; w.IDBKeyRange = global.IDBKeyRange;
-      Object.keys(seed).forEach(k=> w.localStorage.setItem('poollog:'+k, JSON.stringify(seed[k])));
+      Object.keys(seed).forEach(k=> w.localStorage.setItem('weir:'+k, JSON.stringify(seed[k])));
       if(keepStorage) Object.keys(keepStorage).forEach(k=>
         w.localStorage.setItem(k, keepStorage[k]));
     }

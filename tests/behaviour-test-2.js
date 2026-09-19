@@ -21,7 +21,7 @@ function load(file, opts = {}){
       w.console.error = (...a) => errors.push(a.join(' '));
       if(opts.seed){
         Object.keys(opts.seed).forEach(k=>{
-          w.localStorage.setItem('poollog:' + k, JSON.stringify(opts.seed[k]));
+          w.localStorage.setItem('weir:' + k, JSON.stringify(opts.seed[k]));
         });
       }
       // Lets a test stub a browser API the app depends on, such as the camera
