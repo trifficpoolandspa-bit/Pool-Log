@@ -3517,10 +3517,12 @@ async function syncPushPhotos(state){
     try{
       const r = await fetch(FIELD_SUPABASE_URL + '/storage/v1/object/' + SYNC_PHOTO_BUCKET + '/' + path, {
         method: 'POST',
+        // No overwrite flag: that turns the upload into an update, which the
+        // bucket rules do not allow, and every photo was refused because of it.
+        // A photo sent twice comes back as "already there", which is fine.
         headers: {'apikey': FIELD_SUPABASE_KEY,
                   'Authorization': 'Bearer ' + (s && s.access_token),
-                  'Content-Type': file.type,
-                  'x-upsert': 'true'},
+                  'Content-Type': file.type},
         body: file.blob
       });
       let why = '';
