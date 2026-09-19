@@ -10119,6 +10119,54 @@ function buildReportEmailHtml(customer, whenText, sections, opts){
     + '</table></td></tr></table></body></html>';
 }
 
+// ---- Sending a report from the office ----
+// The phone hands the report over and the office sends it, so a phone that is
+// off, closed or out of signal no longer holds somebody's report up. It goes
+// out as "<the company> via Weir", with replies going to the company's own
+// address — both read from the server, so nobody can send as anyone else.
+async function sendReportFromOffice(customerId, type){
+  const actions = document.getElementById('reportActions');
+  const email = actions.dataset.email;
+  const custName = actions.dataset.customerName;
+  const session = deviceGet('session');
+  if(!session || !session.access_token) return {ok: false, reason: 'signed-out'};
+
+  const photos = [];
+  for(const p of (currentReportPhotos || [])){
+    try{
+      const jpeg = await webpToJpegDataUrl(p.source);
+      const content = String(jpeg).split(',')[1];
+      if(content) photos.push({filename: p.name || 'photo.jpg', content: content});
+    }catch(e){}
+  }
+
+  try{
+    const res = await fetch(FIELD_SUPABASE_URL + '/functions/v1/send-report', {
+      method: 'POST',
+      headers: {'apikey': FIELD_SUPABASE_KEY,
+                'Authorization': 'Bearer ' + session.access_token,
+                'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        to: email,
+        subject: reportTypeLabel(type) + ' service report \u2014 ' + custName,
+        html: currentReportHtml || currentReportText,
+        customerId: customerId,
+        photos: photos
+      })
+    });
+    if(res.status === 401){
+      // The sign-in needed refreshing; the next attempt will carry a fresh one
+      const again = await fieldRefresh();
+      return {ok: false, reason: again === true ? 'retry' : 'signed-out'};
+    }
+    const body = await res.json().catch(()=> ({}));
+    if(!res.ok) return {ok: false, reason: 'refused', message: body.error || ''};
+    return {ok: true};
+  }catch(e){
+    return {ok: false, reason: 'offline'};
+  }
+}
+
 async function sendViaEmailJS(customerId, type){
   const actions = document.getElementById('reportActions');
   const email = actions.dataset.email;
@@ -10174,7 +10222,19 @@ async function attemptAutoSend(customerId, type, manual){
     return;
   }
 
-  // True one-press send, once EmailJS is configured — no share sheet, no manual "To" field
+  // The office sends it, so it goes whether or not this phone is around
+  const fromOffice = await sendReportFromOffice(customerId, type);
+  if(fromOffice.ok){
+    showToast('Report sent to ' + email);
+    return;
+  }
+  if(fromOffice.reason === 'retry'){
+    const second = await sendReportFromOffice(customerId, type);
+    if(second.ok){ showToast('Report sent to ' + email); return; }
+  }
+
+  // The office could not send it — no signal, or it refused. The old way is
+  // still here, so nothing is worse than it was before.
   if(emailjsIsConfigured()){
     const sent = await sendViaEmailJS(customerId, type);
     if(sent) return;
