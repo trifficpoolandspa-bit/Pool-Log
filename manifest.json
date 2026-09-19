@@ -1,6 +1,6 @@
 {
-  "name": "PoolLog",
-  "short_name": "PoolLog",
+  "name": "Weir",
+  "short_name": "Weir",
   "start_url": "./index.html?app=service",
   "scope": "./",
   "display": "standalone",

@@ -1,4 +1,4 @@
-// PoolLog offline cache.
+// Weir offline cache.
 //
 // The app has to open with no signal — technicians work in back yards with bad
 // coverage, and a demo should never fail because a hotspot dropped. This keeps
@@ -6,7 +6,9 @@
 // it whenever there is a connection.
 //
 // Bump the version to force every device to take a fresh copy.
-const CACHE_NAME = 'poollog-cache-v7';
+// Renamed with the app. The new name means every device builds a fresh
+// cache and drops the old one, which is what the line below already does.
+const CACHE_NAME = 'weir-cache-v8';
 
 const PRECACHE_URLS = [
   './',
@@ -32,7 +34,7 @@ async function precache(){
     })
   );
   const failed = results.filter(r => r.status === 'rejected').length;
-  if(failed) console.warn('[PoolLog] ' + failed + ' file(s) could not be cached');
+  if(failed) console.warn('[Weir] ' + failed + ' file(s) could not be cached');
 }
 
 self.addEventListener('install', (event)=>{
