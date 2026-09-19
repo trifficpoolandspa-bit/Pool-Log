@@ -2886,6 +2886,31 @@ async function serverFieldSignIn(){
         await sleep(200);
         check('Sync now sends it', (await pool.query("select data->>'gateCode' g from public.customers where id='n1'")).rows[0].g === 'WAITING');
         check('and the card says it is up to date', /Up to date/.test(card.textContent), card.textContent);
+
+        // The time must move on every successful sync, not only on perfect ones
+        const firstTime = phone.w.eval("loadFieldSyncState().lastReachedAt || loadFieldSyncState().lastSyncedAt");
+        await sleep(1100);
+        phone.d.getElementById('btnSyncNow').click();
+        for(let i = 0; i < 600 && phone.w.eval('syncRunning'); i++) await sleep(10);
+        await sleep(200);
+        const secondTime = phone.w.eval("loadFieldSyncState().lastReachedAt || loadFieldSyncState().lastSyncedAt");
+        check('syncing again moves the time on', secondTime > firstTime, String(firstTime) + ' then ' + String(secondTime));
+
+        // And when something cannot be sent, the card says so instead of
+        // claiming everything is fine
+        phone.w.eval(`(function(){
+          const st = loadFieldSyncState();
+          st.lastTrouble = 'a photo could not be sent';
+          saveFieldSyncState(st);
+        })()`);
+        phone.w.eval('fieldRenderSyncCard()');
+        check('a failed step is not hidden behind "up to date"',
+              !/Up to date/.test(card.textContent) && /could not be sent/i.test(card.textContent), card.textContent);
+        phone.w.eval(`(function(){
+          const st = loadFieldSyncState();
+          st.lastTrouble = null;
+          saveFieldSyncState(st);
+        })()`);
       }
 
       console.log('\n=== technician-app.html: tasks and day moves ===');
