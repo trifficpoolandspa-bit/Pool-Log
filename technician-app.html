@@ -3525,11 +3525,17 @@ async function syncPushPhotos(state){
                   'Content-Type': file.type},
         body: file.blob
       });
-      let why = '';
-      if(!r.ok && r.status !== 409){
-        try{ const b = await r.json(); why = b.message || b.error || ''; }catch(e){}
+      let why = '', already = r.status === 409;
+      if(!r.ok && !already){
+        try{
+          const b = await r.json();
+          why = b.message || b.error || '';
+          // Storage reports a file that is already there as a plain 400 with
+          // this message, which is not a failure: the photo is where it belongs
+          if(String(b.statusCode) === '409' || /already exists/i.test(why)) already = true;
+        }catch(e){}
       }
-      res = {ok: r.ok, status: r.status, why: why};
+      res = {ok: r.ok, status: r.status, why: why, already: already};
     }catch(e){
       return {ok: false, offline: true, pushed: pushed};
     }
@@ -3538,7 +3544,7 @@ async function syncPushPhotos(state){
       const again = await fieldRefresh();
       return {ok: again === true, offline: again === 'offline', pushed: pushed};
     }
-    if(!res.ok && res.status !== 409){
+    if(!res.ok && !res.already){
       return {ok: false, pushed: pushed,
               why: 'the office refused the file (' + res.status + (res.why ? ': ' + res.why : '') + ')'};
     }
