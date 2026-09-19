@@ -2889,6 +2889,62 @@ async function serverFieldSignIn(){
               !phone.d.querySelector('.route-brief'), 'panel still open');
       }
 
+      console.log('\n=== reports are sent by the office ===');
+      {
+        // What the phone hands over, and what it does when the office cannot
+        srv.reports = [];
+        const realHandle2 = srv.handle;
+        srv.handle = async (url, o2) => {
+          if(String(url).indexOf('/functions/v1/send-report') !== -1){
+            if(srv.offline) throw new TypeError('Failed to fetch');
+            const sent = JSON.parse((o2 && o2.body) || '{}');
+            if(srv.reportFails) return [500, {error: 'the email service refused it'}];
+            const who = ((o2 && o2.headers) || {})['Authorization'] || '';
+            srv.reports.push({who, sent});
+            return [200, {sent: true, id: 'mail_1'}];
+          }
+          return realHandle2(url, o2);
+        };
+
+        const ok = await phone.w.eval(`(async ()=>{
+          currentReportHtml = '<html><body>The pool was serviced.</body></html>';
+          currentReportText = 'The pool was serviced.';
+          currentReportPhotos = [];
+          const actions = document.getElementById('reportActions');
+          actions.dataset.email = 'customer@example.test';
+          actions.dataset.customerName = 'Nina Pool';
+          const r = await sendReportFromOffice('n1', 'pool');
+          return JSON.stringify(r);
+        })()`);
+        check('the phone hands the report to the office', JSON.parse(ok).ok === true, ok);
+        check('with the address, subject and the report itself',
+              srv.reports.length === 1
+              && srv.reports[0].sent.to === 'customer@example.test'
+              && /service report/.test(srv.reports[0].sent.subject)
+              && /The pool was serviced/.test(srv.reports[0].sent.html),
+              JSON.stringify(srv.reports[0] && srv.reports[0].sent).slice(0, 200));
+        check('carrying their sign-in, so the office knows who sent it',
+              /^Bearer .+/.test(srv.reports[0].who), srv.reports[0].who);
+
+        srv.reportFails = true;
+        const refused = await phone.w.eval(`(async ()=>{
+          const r = await sendReportFromOffice('n1', 'pool');
+          return JSON.stringify(r);
+        })()`);
+        check('when the office cannot send it, the phone is told', JSON.parse(refused).ok === false, refused);
+        check('and says why', JSON.parse(refused).reason === 'refused', refused);
+
+        srv.reportFails = false;
+        srv.offline = true;
+        const noSignal = await phone.w.eval(`(async ()=>{
+          const r = await sendReportFromOffice('n1', 'pool');
+          return JSON.stringify(r);
+        })()`);
+        check('with no signal it is not lost, just not sent yet', JSON.parse(noSignal).reason === 'offline', noSignal);
+        srv.offline = false;
+        srv.handle = realHandle2;
+      }
+
       console.log('\n=== technician-app.html: the Office sync card ===');
       {
         const card = phone.d.getElementById('fieldSyncStatus');

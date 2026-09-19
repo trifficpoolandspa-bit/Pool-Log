@@ -227,6 +227,45 @@ const base = {
     });
   }
 
-  console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
+  
+// ---- The photos inside a report sent from the office ----
+// The Edge Function is TypeScript for Deno, which cannot run here. The part
+// worth checking is how it builds the page, so that is lifted out and run.
+(function(){
+  console.log('\n=== send-report: photos inside the report ===');
+  const fs2 = require('fs');
+  const where = ['send-report.ts', 'functions/send-report/index.ts', 'supabase/functions/send-report/index.ts']
+    .find(f => { try{ fs2.accessSync(f); return true; }catch(e){ return false; } });
+  if(!where){
+    check('the send-report function is here to check', false, 'put send-report.ts beside the tests');
+    return;
+  }
+  const src = fs2.readFileSync(where, 'utf8');
+
+  const shown = ['photo-1\u0001before.jpg', 'photo-2\u0001after.jpg'];
+  const piece = src.slice(src.indexOf('function photoSection()'), src.indexOf('const from ='));
+  const build = new Function('shown', piece
+    .replace(/:\s*string\)/g, ')')
+    .replace(/function photoSection\(\)/, 'function photoSection()')
+    + '; return {photoSection, withPhotos};');
+  const {photoSection, withPhotos} = build(shown);
+
+  const section = photoSection();
+  check('each photo is shown in the page', (section.match(/<img src="cid:photo-/g) || []).length === 2, section.slice(0, 120));
+  check('with a heading that matches how many there are', /Photos from this visit/.test(section));
+  check('and a caption under each', /before/.test(section) && /after/.test(section));
+  check('the file extension is not used as the caption', section.indexOf('before.jpg<') === -1);
+
+  const page = '<html><body><table><tr><td>The report</td></tr></table></td></tr></table></body></html>';
+  const withThem = withPhotos(page);
+  check('the photos go inside the report, not after it',
+        withThem.indexOf('cid:photo-1') < withThem.lastIndexOf('</table></td></tr></table>'), 'placed at the end');
+  check('the report itself is untouched', withThem.indexOf('The report') !== -1);
+
+  const none = build([]);
+  check('a report with no photos is left exactly as it was', none.withPhotos(page) === page);
+})();
+
+console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
   process.exit(fail ? 1 : 0);
 })();
