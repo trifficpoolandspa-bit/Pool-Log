@@ -11995,10 +11995,17 @@ async function attemptAutoSend(customerId, type, manual){
   }
 
   // The office could not send it — no signal, or it refused. The old way is
-  // still here, so nothing is worse than it was before.
+  // still here, so nothing is worse than it was before, but say what happened
+  // rather than falling back without a word.
+  const officeSaid = fromOffice.reason === 'offline' ? 'no connection'
+    : fromOffice.reason === 'signed-out' ? 'this phone needs signing in again'
+    : (fromOffice.message || fromOffice.reason || 'it was refused');
   if(emailjsIsConfigured()){
     const sent = await sendViaEmailJS(customerId, type);
-    if(sent) return;
+    if(sent){
+      showToast('Sent the old way \u2014 the office could not: ' + officeSaid);
+      return;
+    }
     // fall through to the manual fallbacks below if sending failed
   }
 
