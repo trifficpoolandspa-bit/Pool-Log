@@ -5815,11 +5815,14 @@ async function sendPasswordReset(){
   btn.textContent = 'Sending\u2026';
   say('');
   try{
+    // Where the emailed link should land. It has to ride along in the address
+    // of the request: sent inside the message instead, the server ignores it
+    // and the link goes to the project's default page.
     const here = location.origin + location.pathname;
-    await fetch(SUPABASE_URL + '/auth/v1/recover', {
+    await fetch(SUPABASE_URL + '/auth/v1/recover?redirect_to=' + encodeURIComponent(here), {
       method: 'POST',
       headers: {'apikey': SUPABASE_KEY, 'Content-Type': 'application/json'},
-      body: JSON.stringify({email: email, gotrue_meta_security: {}, redirect_to: here})
+      body: JSON.stringify({email: email, gotrue_meta_security: {}})
     });
     // The same message either way: whether an address has an account here is
     // nobody else's business
