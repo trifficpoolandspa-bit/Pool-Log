@@ -2666,6 +2666,11 @@ function loadFieldSyncState(){
     pulledOnce: base.pulledOnce === true,
     backupAt: base.backupAt || null,
     lastSyncedAt: base.lastSyncedAt || null,
+    // When the phone last reached the office at all, and what went wrong on the
+    // way, if anything. Kept apart so the card can never say "up to date" while
+    // something quietly failed.
+    lastReachedAt: base.lastReachedAt || null,
+    lastTrouble: base.lastTrouble || null,
     unknownHere: base.unknownHere || {},
     lastRefusedAt: base.lastRefusedAt || null,
     lastRefusedName: base.lastRefusedName || null,
@@ -3345,7 +3350,9 @@ function fieldSyncSummary(){
   const state = loadFieldSyncState();
   let pending = 0;
   try{ pending = fieldPendingCount(state); }catch(e){}
-  const last = state.lastSyncedAt ? new Date(state.lastSyncedAt) : null;
+  const last = (state.lastReachedAt || state.lastSyncedAt)
+    ? new Date(state.lastReachedAt && state.lastReachedAt > (state.lastSyncedAt || '')
+               ? state.lastReachedAt : state.lastSyncedAt || state.lastReachedAt) : null;
   const when = last && !isNaN(last)
     ? last.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : null;
   if(typeof navigator !== 'undefined' && navigator.onLine === false){
@@ -3354,6 +3361,8 @@ function fieldSyncSummary(){
   }
   if(!when) return pending ? pending + (pending === 1 ? ' change' : ' changes') + ' to send.'
     : 'Waiting for the first sync\u2026';
+  const trouble = state.lastTrouble ? ' ' + state.lastTrouble.charAt(0).toUpperCase()
+    + state.lastTrouble.slice(1) + ' — it will try again.' : '';
   const unknown = Object.values(state.unknownHere || {});
   const unknownNote = unknown.length
     ? ' ' + unknown.length + (unknown.length === 1 ? ' customer on this phone is' : ' customers on this phone are')
@@ -3364,9 +3373,11 @@ function fieldSyncSummary(){
     ? ' The office did not accept a change to ' + (state.lastRefusedName || 'a customer')
       + ' (' + (state.lastRefusedWhy || 'refused') + '), so its version is being used.'
     : '';
-  return (pending
+  const headline = pending
     ? 'Last synced ' + when + ' — ' + pending + (pending === 1 ? ' change' : ' changes') + ' still to send.'
-    : 'Up to date with the office. Last synced ' + when + '.') + refused + unknownNote;
+    : (state.lastTrouble ? 'Last reached the office ' + when + '.'
+       : 'Up to date with the office. Last synced ' + when + '.');
+  return headline + trouble + refused + unknownNote;
 }
 
 function fieldRenderSyncCard(){
@@ -3620,6 +3631,9 @@ async function fieldSync(){
 
     const pulled = await syncPullCustomers(state);
     if(!pulled.ok){ result.reason = pulled.offline ? 'offline' : 'pull-failed'; saveFieldSyncState(state); return result; }
+    // It reached the office: whatever happens next, that much is true
+    state.lastReachedAt = new Date().toISOString();
+    saveFieldSyncState(state);
     result.customers = pulled.count;
 
     // Nothing goes up until a full pull has finished on this phone
@@ -3638,25 +3652,26 @@ async function fieldSync(){
     const work = await syncPushWork(state);
     result.work = work.pushed || 0;
     saveFieldSyncState(state);
-    if(!work.ok){ result.reason = work.offline ? 'offline' : 'push-failed'; return result; }
+    if(!work.ok){ result.reason = work.offline ? 'offline' : 'push-failed'; state.lastTrouble = 'a change made here could not be sent'; saveFieldSyncState(state); setTimeout(fieldRenderSyncCard, 0); return result; }
 
     // Readings and skips recorded here
     const visits = await syncPushVisits(state);
     result.visits = visits.pushed || 0;
     result.visitsRefused = visits.refused || 0;
     saveFieldSyncState(state);
-    if(!visits.ok){ result.reason = visits.offline ? 'offline' : 'push-failed'; return result; }
+    if(!visits.ok){ result.reason = visits.offline ? 'offline' : 'push-failed'; state.lastTrouble = 'a visit could not be sent'; saveFieldSyncState(state); setTimeout(fieldRenderSyncCard, 0); return result; }
     if(visits.more) setTimeout(()=> fieldSync(), 1500);   // more to send, a batch at a time
 
     // Photos, after the visits they belong to
     const photos = await syncPushPhotos(state);
     result.photos = photos.pushed || 0;
     saveFieldSyncState(state);
-    if(!photos.ok){ result.reason = photos.offline ? 'offline' : 'push-failed'; return result; }
+    if(!photos.ok){ result.reason = photos.offline ? 'offline' : 'push-failed'; state.lastTrouble = 'a photo could not be sent'; saveFieldSyncState(state); setTimeout(fieldRenderSyncCard, 0); return result; }
     if(photos.more) setTimeout(()=> fieldSync(), 2500);
     try{ await syncCleanUploadedPhotos(state); }catch(e){}
 
     state.lastSyncedAt = new Date().toISOString();
+    state.lastTrouble = null;                 // everything went up and came down
     setTimeout(fieldRenderSyncCard, 0);
     saveFieldSyncState(state);
     result.ok = true;
