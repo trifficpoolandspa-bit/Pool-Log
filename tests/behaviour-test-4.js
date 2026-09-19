@@ -2137,6 +2137,10 @@ async function serverFieldSignIn(){
       srv.files = srv.files || {};
       if((o.method || 'GET') === 'POST'){
         if(!bearer || !uid) return [401, {message: 'not signed in'}];
+        // Real storage refuses an overwrite unless asked, and the bucket rules
+        // do not allow one at all
+        if((o.headers || {})['x-upsert']) return [400, {message: 'new row violates row-level security policy'}];
+        if(srv.files[path]) return [409, {message: 'The resource already exists'}];
         srv.files[path] = o.body;
         return [200, {Key: path}];
       }
@@ -2805,6 +2809,8 @@ async function serverFieldSignIn(){
         for(let i = 0; i < 600 && phone.w.eval('syncRunning'); i++) await sleep(10);
         check('a photo already sent is not sent again',
               (await pool.query("select count(*)::int n from public.photos")).rows[0].n === rows.length);
+        check('and no sync trouble was recorded', !phone.w.eval("loadFieldSyncState().lastTrouble"),
+              String(phone.w.eval("loadFieldSyncState().lastTrouble")));
 
         // Thirty days later the phone lets its copy go
         await phone.w.eval(`(async ()=>{
